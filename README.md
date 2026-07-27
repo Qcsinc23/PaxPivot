@@ -1,3 +1,3 @@
-# Sherwyn’s Wallet
+# PaxPivot
 
 A local wallet project.
