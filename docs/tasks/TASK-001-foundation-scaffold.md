@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready`
+`review`
 
 ## Assigned role
 
@@ -113,25 +113,25 @@ Use the production PRD's intended stack: Next.js/TypeScript for web, FastAPI/Pyd
 
 ## Acceptance criteria
 
-- [ ] Repository layout reflects the boundaries in `docs/architecture/BOUNDARIES.md`.
-- [ ] Next.js/TypeScript app boots with strict TypeScript checking.
-- [ ] FastAPI/Pydantic app boots with a minimal health endpoint only; no premature product feature implementation.
-- [ ] PostgreSQL/PostGIS local service is configured.
-- [ ] Redis local service is configured if selected worker tooling requires it.
-- [ ] Migration framework is initialized and can apply/verify a baseline migration.
-- [ ] Initial shared domain/application contracts listed above exist and are covered by focused tests.
-- [ ] `.env.example` contains variable names/documentation only and no secrets.
-- [ ] Local private data and environment artifacts remain ignored by Git.
-- [ ] Stable one-command operations exist for setup, format, lint, typecheck, unit tests, integration tests, full tests, build, migration, migration check, and development startup.
-- [ ] CI runs the canonical quality checks on pull requests.
-- [ ] CI detects formatting/lint/type/test/build failures.
-- [ ] Migration workflow prevents or detects conflicting migration heads/drift as appropriate to the chosen framework.
-- [ ] Repository documentation states the exact tool versions and startup/check commands.
-- [ ] `docs/tasks/TASK_TEMPLATE.md` is updated so example verification placeholders are replaced by the real canonical commands or clearly directs tasks to use the canonical root commands.
-- [ ] The foundation agent creates the next 3–6 bounded, non-overlapping task files suitable for the build agent.
-- [ ] No Space-A movement source is scraped or parsed as part of this foundation task.
-- [ ] No AI feature, historical intelligence, multi-hop routing, or boarding-probability feature is implemented in this task.
-- [ ] No unrelated files or sample/private data are committed.
+- [x] Repository layout reflects the boundaries in `docs/architecture/BOUNDARIES.md`.
+- [x] Next.js/TypeScript app boots with strict TypeScript checking.
+- [x] FastAPI/Pydantic app boots with a minimal health endpoint only; no premature product feature implementation.
+- [x] PostgreSQL/PostGIS local service is configured.
+- [x] Redis local service is configured if selected worker tooling requires it.
+- [x] Migration framework is initialized and can apply/verify a baseline migration.
+- [x] Initial shared domain/application contracts listed above exist and are covered by focused tests.
+- [x] `.env.example` contains variable names/documentation only and no secrets.
+- [x] Local private data and environment artifacts remain ignored by Git.
+- [x] Stable one-command operations exist for setup, format, lint, typecheck, unit tests, integration tests, full tests, build, migration, migration check, and development startup.
+- [x] CI runs the canonical quality checks on pull requests.
+- [x] CI detects formatting/lint/type/test/build failures.
+- [x] Migration workflow prevents or detects conflicting migration heads/drift as appropriate to the chosen framework.
+- [x] Repository documentation states the exact tool versions and startup/check commands.
+- [x] `docs/tasks/TASK_TEMPLATE.md` is updated so example verification placeholders are replaced by the real canonical commands or clearly directs tasks to use the canonical root commands.
+- [x] The foundation agent creates the next 3–6 bounded, non-overlapping task files suitable for the build agent.
+- [x] No Space-A movement source is scraped or parsed as part of this foundation task.
+- [x] No AI feature, historical intelligence, multi-hop routing, or boarding-probability feature is implemented in this task.
+- [x] No unrelated files or sample/private data are committed.
 
 ## Required tests
 
@@ -152,25 +152,27 @@ Add only the tests required to prove the scaffold/contracts. Product behavior be
 
 ## Verification commands
 
-The foundation agent must replace this section with the exact final canonical commands it establishes, then run them on the final scaffold.
+Canonical commands (run from repository root; all PASS on the final scaffold):
 
-Required logical checks:
-
-```text
-setup
-format-check or format + clean-diff check
-lint
-typecheck
-test-unit
-test-integration
-test
-build
-migrate on clean test database
-migrate-check
-Docker Compose/config validation
+```bash
+make setup
+make format-check
+make lint
+make typecheck
+make test-unit
+make test-integration
+make test
+make build
+make migrate
+make migrate-check
+make migrate-test
+make compose-check
 ```
 
-The task cannot move to `done` until all final commands are recorded here with fresh PASS results.
+`make check` aggregates formatting, lint, types, full tests, build, migration and Compose
+validation. `make setup check migrate-test` was also run successfully. `make dev` was
+smoke-tested with HTTP 200 and expected content from web / and API /health; processes
+were stopped afterward. No live source was queried.
 
 ## Out of scope
 
@@ -192,32 +194,78 @@ The task cannot move to `done` until all final commands are recorded here with f
 
 ## Handoff
 
-Fill this in before review/done.
+**Branch:** foundation/task-001-scaffold
 
-**Branch:**
+**Commit:** Initial scaffold commit containing this handoff; exact commit and CI/merge
+result will be recorded in the integration follow-up before final handoff.
 
-**Commit:**
+**Repository structure chosen:** apps/web Next.js; apps/api/paxpivot/{domain,application,
+infrastructure} plus api.py composition and tooling.py; apps/api/migrations; tests/{unit,
+integration,fixtures}. One root Python project and one pnpm workspace. No duplicate backend.
 
-**Repository structure chosen:**
+**Runtime/tool versions:** Node 24.15.0, pnpm 10.15.1, Python 3.12.13, uv 0.6.9;
+Next.js 16.3.4, FastAPI 0.135.4, Pydantic 2.13.5, SQLAlchemy 2.0.52, Alembic 1.18.5.
+All formatter/linter/test versions are pinned and documented in README; dependency lockfiles committed.
 
-**Runtime/tool versions:**
+**Canonical commands:** Root Makefile; verification commands above plus make format,
+make services and make dev. See README for local startup and .env loading.
 
-**Canonical commands:**
+**Files changed:** Root package/runtime/environment/Compose/Make files, .gitignore,
+README/CONTRIBUTING, apps/api and apps/web, tests, .github/workflows/quality.yml,
+docs/architecture/{CONTRACTS,SCAFFOLD_EVIDENCE}.md, ADR-001, TASK_TEMPLATE, TASK-001–004.
+Both PRDs, AGENTS.md and the inherited CLAUDE.md are unchanged.
 
-**Files changed:**
+**Interfaces added/changed:** Exact paths and semantics in docs/architecture/CONTRACTS.md.
+SourceState, SourceIdentity, Provenance, SourceObservation, RetrievalState, ExtractionState
+in apps/api/paxpivot/domain/source.py; Coordinates, VerifiedEntrance, Terminal in
+ domain/terminal.py; TravelerFacts, PartyFacts, EligibilityDecision in domain/eligibility.py;
+Success[T], Failure, Result[T], ApplicationError in application/result.py;
+SourceProvider.observe in application/ports/source_provider.py;
+Authenticator.authenticate / Principal in application/ports/auth.py. Auth stub denies all.
+Only GET /health is registered. No route/opportunity contracts introduced.
 
-**Interfaces added/changed:**
+**Migrations:** 0001_postgis enables PostGIS; no product tables. One head. Downgrade
+preserves a potentially pre-existing extension. Drift checks use public schema and exclude
+only spatial_ref_sys; unique test databases use template0 and are always removed.
 
-**Migrations:**
-
-**Verification run:**
+**Verification run:** 2026-09-10 local final implementation.
 
 ```text
-command -> PASS/FAIL summary
+make setup -> PASS; frozen lockfiles and exact runtime check
+make format-check -> PASS; Ruff + Prettier
+make lint -> PASS; Ruff + ESLint
+make typecheck -> PASS; strict mypy (19 files), Next typegen + strict tsc
+make test-unit -> PASS; 29 Python tests + 1 Vitest smoke
+make test-integration -> PASS; 2 tests (real API boot and isolated migrations)
+make test -> PASS; all unit/integration suites
+make build -> PASS; Python sdist/wheel and production Next build
+make migrate -> PASS; local development DB at 0001_postgis
+make migrate-check -> PASS; one head, PostGIS present, no app schema drift
+make migrate-test -> PASS; empty DB, repeated upgrade, injected drift detection, downgrade/reapply
+make compose-check -> PASS; secret-safe Compose config validation
+make setup check migrate-test -> PASS; canonical CI sequence locally
+make dev + local HTTP smoke -> PASS; web / and API /health HTTP 200 with expected bodies
 ```
 
 **Build-agent task files created:**
 
-**Known limitations / risks:**
+- TASK-002-source-state-explanations.md — pure metadata-only explanations for all source states.
+- TASK-003-verified-entrance-selection.md — select existing verified entrance, never base coordinates.
+- TASK-004-provider-conformance-fixtures.md — synthetic deterministic provider conformance suite.
 
-**Next dependency:**
+All three own non-overlapping paths and depend only on TASK-001 merged to main. No feature
+implementation in these tasks has started.
+
+**Known limitations / risks:** Scaffold only. No actual auth, private resources, product
+persistence, approved source, parser, eligibility engine, route generation, AI, notifications
+or historical intelligence is enabled. Source metadata state is not permission to process
+or publish movement details. Local Compose uses AMD64 emulation on ARM and is not a production
+deployment. Inherited CLAUDE.md is a malformed symlink outside task ownership; canonical
+pytest confines discovery to tests and AGENTS.md remains the instruction entrypoint.
+Starlette emits upstream TestClient deprecation warnings, with tests passing. RQ is selected
+and Redis configured, but no background jobs are started. Next agentRules is disabled to
+prevent duplicated generated agent instruction files.
+
+**Next dependency:** GitHub CI verification and merge to main to release the scaffold gate;
+then TASK-002–004 are independently dispatchable. Future live ingestion/persistence/auth
+still require their respective foundation contracts and approvals.

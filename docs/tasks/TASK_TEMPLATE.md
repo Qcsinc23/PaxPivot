@@ -83,15 +83,27 @@ tests/integration/...
 
 ## Verification commands
 
-Use exact commands. Replace examples after scaffolding establishes the repository commands.
+Use the canonical root Makefile commands. Keep all affected checks; do not invent a second runner.
+`make test-unit` runs all bounded unit/contract/web tests; add test files under the task's owned paths.
 
 ```bash
-# targeted test
-<exact command>
-
-# repository-required checks affected by this task
-<exact command>
+make setup
+make format-check
+make lint
+make typecheck
+make test-unit
+make test-integration
+make test
+make build
+make migrate
+make migrate-check
+make compose-check
+# Also required when migrations change:
+make migrate-test
 ```
+
+Use `make format` to repair formatting before checking. `make check` aggregates the required
+quality checks for CI and local use; record individual failures/results when a check fails.
 
 A task cannot move to `done` unless these commands were run successfully after the final change.
 

@@ -68,3 +68,6 @@ exports/
 # Never commit local private trip/source samples
 private-data/
 private-fixtures/
+
+*.tsbuildinfo
+.lavish/
