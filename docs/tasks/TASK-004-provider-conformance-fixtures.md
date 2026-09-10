@@ -107,18 +107,69 @@ record the exact proposed change here and stop; foundation owns the resolution.
 
 ## Handoff
 
-**Branch:** Pending execution.
+**Branch:** `build/TASK-004-provider-conformance-fixtures` from merged `main` @ `001de48`
+(TASK-003 merge commit; TASK-002 was `e79776d`).
 
-**Commit:** Pending execution.
+**Commit:** Single focused commit in this PR, titled "TASK-004: add SourceProvider
+conformance fixtures". The exact SHA is reported in the PR body, because amending this file
+to embed the SHA would itself change the SHA.
 
-**Files changed:** Pending execution.
+**Files changed:**
+- `tests/unit/test_source_provider_conformance.py` (new) — 32 tests.
+- `tests/fixtures/source_provider/README.md` (new) — fixture conventions.
+- `docs/tasks/TASK-004-provider-conformance-fixtures.md` — Handoff only.
 
-**Interfaces added/changed:** Only the produced interface above is authorized.
+**Interfaces added/changed:** None in production. Test-local `SyntheticObservation` inputs
+and three deterministic fakes (`FixtureProvider`, `ConfigurationFailureProvider`,
+`InvalidAbsenceProvider`) consumed only through `SourceProvider`. `SourceProvider`,
+`SourceIdentity`, `SourceObservation`, `Provenance`, `RetrievalState`, `ExtractionState`,
+`Result`, `Success`, `Failure` and `ApplicationError` are consumed unchanged.
 
-**Migrations:** None allowed.
+**Migrations:** None. No dependency, schema, API registration or config change.
 
-**Verification run:** Pending execution; no PASS claim yet.
+**Coverage:** five synthetic fixture inputs (`unreachable`, `missing`, `changed_unparsed`,
+`restricted`, and the valid `no_departures_published` state) plus a configuration `Failure`.
+Tests prove protocol-typed consumption (an annotated `SourceProvider` assignment that mypy
+enforces), source identity and timestamp survival through JSON, `source_time=None` staying
+`null`, three-call determinism, that a failed-retrieval `no_departures_published` is rejected
+by `SourceObservation` validation rather than accepted, that failure is reported as
+`source_unreachable` and never as absence, and that no fixture carries a credential.
 
-**Known limitations / risks:** Synthetic-only helper/test work; does not enable a live source or product release.
+**Verification run:** All commands were run after the final code change:
 
-**Next dependency:** Foundation reviews/merges the task before integrating any future consumer.
+| Command | Result |
+| --- | --- |
+| `make setup` | PASS (exit 0) |
+| `make format-check` | PASS (exit 0) |
+| `make lint` | PASS (exit 0) |
+| `make typecheck` | PASS (exit 0), mypy strict clean |
+| `make test-unit` | PASS (exit 0), 151 passed (32 in this task's file) |
+| `make test-integration` | PASS (exit 0), 2 passed |
+| `make test` | PASS (exit 0) |
+| `make build` | PASS (exit 0) |
+| `make migrate` | PASS (exit 0) |
+| `make migrate-check` | PASS (exit 0) |
+| `make compose-check` | PASS (exit 0) |
+
+**Review notes:** A module-wide autouse `no_network` fixture refuses `socket.getaddrinfo` and
+`socket.create_connection` for every test, so the whole suite runs offline. A dedicated test
+proves the guard actually refuses, so the offline claim cannot become vacuous. An earlier
+draft used a worker thread plus a stack-walking socket guard; that was replaced because it
+was roughly forty lines of machinery to prove the same thing, and patching `socket.socket`
+globally breaks asyncio's own event-loop self-pipe. Mutation testing confirmed the suite is
+load-bearing: neutering the guard, dropping `source_time`, using a non-synthetic host,
+hard-coding the returned state, making the configuration provider succeed, and renaming a
+fixture were all caught (6 of 6), and sneaking an HTTP client import back into the module
+is caught by the static import check.
+
+**Known limitations / risks:** The guard intercepts DNS and TCP connection establishment, the
+entry points realistic HTTP clients use; a hand-rolled raw `socket.connect()` would evade it,
+which is why the guard is paired with a static check that the module imports no network
+client. The owned `tests/fixtures/source_provider/**` path holds convention documentation
+rather than loadable fixture modules, because the current pytest configuration puts only
+`tests/unit` and site-packages on `sys.path`, so a module under `tests/fixtures/` cannot be
+imported from `tests/unit/`; making it importable is a shared-config change for the
+foundation agent. This task enables no live provider: no Firecrawl, no AMC access, no HTTP,
+no production adapter, and no endpoint.
+
+**Next dependency:** Foundation review and merge of this PR. No TASK-005 exists yet.
