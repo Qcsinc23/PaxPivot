@@ -106,18 +106,64 @@ record the exact proposed change here and stop; foundation owns the resolution.
 
 ## Handoff
 
-**Branch:** Pending execution.
+**Branch:** `build/TASK-003-verified-entrance-selection` from merged `main` @ `e79776d`
+(TASK-002 merge commit; TASK-001 was `e138634`).
 
-**Commit:** Pending execution.
+**Commit:** Single focused commit in this PR, titled "TASK-003: add verified terminal
+entrance selection". The exact SHA is reported in the PR body, because amending this file to
+embed the SHA would itself change the SHA.
 
-**Files changed:** Pending execution.
+**Files changed:**
+- `apps/api/paxpivot/application/terminal_entrance.py` (new) — produced interface.
+- `tests/unit/test_terminal_entrance.py` (new) — 13 focused unit tests.
+- `docs/tasks/TASK-003-verified-entrance-selection.md` — Handoff only.
 
-**Interfaces added/changed:** Only the produced interface above is authorized.
+**Interfaces added/changed:** Added
+`paxpivot.application.terminal_entrance.select_entrance(terminal: Terminal) -> Result[VerifiedEntrance]`
+only. `Terminal`, `VerifiedEntrance`, `Result`, `Success`, `Failure` and `ApplicationError`
+are consumed unchanged.
 
-**Migrations:** None allowed.
+**Migrations:** None. No dependency, schema, API registration or config change.
 
-**Verification run:** Pending execution; no PASS claim yet.
+**Behavior:** `conflict` is checked before `ended`, and both before the entrance test, so a
+conflicting or ended terminal fails with its own key even when an entrance is present.
+`unknown` and a missing entrance share `terminal.entrance_unverified`. Every failure is
+`retryable=False`. Success returns the terminal's existing entrance object itself, so
+coordinates, `verification` provenance and `instructions` cannot be copied, rewritten or
+re-derived. Airfield/base coordinates are never read: `base_coordinates` does not appear in
+the module.
 
-**Known limitations / risks:** Synthetic-only helper/test work; does not enable a live source or product release.
+**Verification run:** All commands were run after the final code change (two review findings
+were fixed, then every command below was rerun):
 
-**Next dependency:** Foundation reviews/merges the task before integrating any future consumer.
+| Command | Result |
+| --- | --- |
+| `make setup` | PASS (exit 0) |
+| `make format-check` | PASS (exit 0) |
+| `make lint` | PASS (exit 0) |
+| `make typecheck` | PASS (exit 0), mypy strict clean |
+| `make test-unit` | PASS (exit 0), 119 passed (13 in this task's file) |
+| `make test-integration` | PASS (exit 0), 2 passed |
+| `make test` | PASS (exit 0) |
+| `make build` | PASS (exit 0) |
+| `make migrate` | PASS (exit 0) |
+| `make migrate-check` | PASS (exit 0) |
+| `make compose-check` | PASS (exit 0) |
+
+**Review notes:** An independent truth-table probe covered all 16 combinations of
+`{verified, unknown, conflict, ended}` x entrance present/absent x base coordinates
+present/absent; every outcome matched the contract, and no failure payload contained any
+coordinate. Two findings were fixed during review: two tests were tautological (one exercised
+`zoneinfo`/the domain validator against a test-helper value, one asserted a nonexistent JSON
+field was absent under `extra="forbid"`) and were removed, and a local `ErrorCode` alias that
+re-declared the `ApplicationError.code` literal set was deleted in favour of explicit
+inline failure construction.
+
+**Known limitations / risks:** This helper reports registry evidence only. It cannot tell
+whether an entrance is still physically correct, reachable, or open; that remains the
+separately controlled verification process described in `CONTRACTS.md`. It deliberately
+performs no geocoding or provider call, so a terminal with only base coordinates always
+fails rather than approximating a location.
+
+**Next dependency:** Foundation review and merge of this PR. TASK-004 declares no dependency
+on this task, but per the work queue it must branch from merged `main`.
