@@ -2,7 +2,7 @@
 
 ## Status
 
-`review`
+`done`
 
 ## Assigned role
 
@@ -196,8 +196,11 @@ were stopped afterward. No live source was queried.
 
 **Branch:** foundation/task-001-scaffold
 
-**Commit:** Initial scaffold commit containing this handoff; exact commit and CI/merge
-result will be recorded in the integration follow-up before final handoff.
+**Commit:** Implementation `764b871`; this documentation-only handoff follow-up records
+verification. Integration PR: https://github.com/Qcsinc23/PaxPivot/pull/3.
+GitHub Quality run 34503990736 passed on the implementation commit (2026-09-10), including
+make setup, make check, make migrate-test and the clean-diff check. The final handoff commit
+must also pass the same PR checks before merge. Resolve final integration identity from PR #3.
 
 **Repository structure chosen:** apps/web Next.js; apps/api/paxpivot/{domain,application,
 infrastructure} plus api.py composition and tooling.py; apps/api/migrations; tests/{unit,
@@ -218,7 +221,7 @@ Both PRDs, AGENTS.md and the inherited CLAUDE.md are unchanged.
 **Interfaces added/changed:** Exact paths and semantics in docs/architecture/CONTRACTS.md.
 SourceState, SourceIdentity, Provenance, SourceObservation, RetrievalState, ExtractionState
 in apps/api/paxpivot/domain/source.py; Coordinates, VerifiedEntrance, Terminal in
- domain/terminal.py; TravelerFacts, PartyFacts, EligibilityDecision in domain/eligibility.py;
+domain/terminal.py; TravelerFacts, PartyFacts, EligibilityDecision in domain/eligibility.py;
 Success[T], Failure, Result[T], ApplicationError in application/result.py;
 SourceProvider.observe in application/ports/source_provider.py;
 Authenticator.authenticate / Principal in application/ports/auth.py. Auth stub denies all.
@@ -266,6 +269,6 @@ Starlette emits upstream TestClient deprecation warnings, with tests passing. RQ
 and Redis configured, but no background jobs are started. Next agentRules is disabled to
 prevent duplicated generated agent instruction files.
 
-**Next dependency:** GitHub CI verification and merge to main to release the scaffold gate;
-then TASK-002–004 are independently dispatchable. Future live ingestion/persistence/auth
+**Next dependency:** TASK-002–004 are independently dispatchable from main once PR #3
+is merged with successful final CI. All scaffold outputs and local checks are complete. Future live ingestion/persistence/auth
 still require their respective foundation contracts and approvals.
