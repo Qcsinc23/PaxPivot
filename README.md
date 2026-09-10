@@ -1,13 +1,31 @@
 # PaxPivot
 
-PaxPivot is a source-aware, end-to-end Space-A journey planning project. Its goal is to help eligible travelers understand what official sources currently support, which passenger terminals are practical to reach, how direct and multi-hop Space-A paths connect to a real-world destination, and what fallback options reduce stranding risk.
+PaxPivot is a source-aware, end-to-end Space-A journey planning project. It is designed to help eligible travelers understand what official sources currently support, which passenger terminals are practical to reach, how direct and multi-hop paths connect to a real-world destination, and which fallbacks reduce stranding risk.
 
-## Development target
+## Current repository state
 
-The production development specification is in [PAXPIVOT_PRODUCTION_PRD.md](PAXPIVOT_PRODUCTION_PRD.md).
+The repository contains the product/architecture baseline and multi-agent development rules. Application scaffolding is the next implementation step.
 
-The original [bounded validation pilot PRD](paxpivot.md) remains the evidence and regression baseline for source truth, privacy/OPSEC, parser accuracy, failure states, uncertainty, and no-guarantee behavior.
+## Start here
+
+**Coding agents:** read [`AGENTS.md`](AGENTS.md) first.
+
+**Product/development scope:** [`PAXPIVOT_PRODUCTION_PRD.md`](PAXPIVOT_PRODUCTION_PRD.md)
+
+**Inherited validation/safety baseline:** [`paxpivot.md`](paxpivot.md)
+
+**Architecture boundaries:** [`docs/architecture/BOUNDARIES.md`](docs/architecture/BOUNDARIES.md)
+
+**Multi-agent workflow:** [`docs/agent/WORKFLOW.md`](docs/agent/WORKFLOW.md)
+
+**Initial scaffold gate:** [`docs/agent/SCAFFOLD_GATE.md`](docs/agent/SCAFFOLD_GATE.md)
+
+## Multi-agent development
+
+PaxPivot is structured for a stronger foundation/scaffold agent and a faster implementation agent. Shared contracts, migrations, toolchain, CI, and architecture stay foundation-owned. Bounded implementation work is assigned through task contracts under `docs/tasks/` with explicit owned paths, interfaces, acceptance criteria, and verification commands.
+
+Do not use chat history as project state; keep decisions, task handoffs, contracts, and verification evidence in the repository.
 
 ## Product direction
 
-The planned build evolves from direct, source-verified planning into a production PWA with destination intelligence, nationwide terminal discovery, a temporal multi-hop route graph, OCONUS support where policy permits, commercial/ground positioning, historical descriptive intelligence, and a tool-grounded conversational “Ask PaxPivot” interface.
+The build evolves from source-verified direct planning into a production PWA with destination intelligence, nationwide terminal discovery, a temporal multi-hop route graph, policy-permitted OCONUS support, commercial/ground positioning, historical descriptive intelligence, and a tool-grounded conversational “Ask PaxPivot” interface.
