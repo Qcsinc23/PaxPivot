@@ -1,0 +1,70 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+htmlcov/
+.coverage
+*.egg-info/
+
+# Test / tooling artifacts
+playwright-report/
+test-results/
+.cache/
+.tmp/
+tmp/
+
+# Local databases / state
+*.sqlite
+*.sqlite3
+*.db
+redis-data/
+postgres-data/
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Logs
+*.log
+logs/
+
+# Local backups / exports
+backups/
+exports/
+
+# Agent/harness scratch state that should not become project truth
+.codex/
+.claude/settings.local.json
+.agent/
+.agent-cache/
+
+# Never commit local private trip/source samples
+private-data/
+private-fixtures/
