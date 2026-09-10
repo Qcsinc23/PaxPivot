@@ -195,6 +195,8 @@ When tasks depend on one another:
 
 Never merge a consumer before the contract it relies on.
 
+Branch protection, required checks and who may merge are defined in `docs/agent/MERGE_POLICY.md`.
+
 ## 12. Communication rule
 
 If an agent encounters ambiguity, it should prefer the narrowest implementation consistent with the PRD and existing contracts. It should not invent new product behavior merely to keep moving.
