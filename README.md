@@ -23,9 +23,13 @@ Read [AGENTS.md](AGENTS.md), [production PRD](PAXPIVOT_PRODUCTION_PRD.md), the
   These are local development images, not an approved production deployment.
 
 Install the exact Node/Python versions with your runtime manager, then pnpm and uv.
-`make setup` verifies the runtime pins, installs frozen dependencies, and creates a
-random local database password in `.env` with mode 0600. Existing `.env` values are
-preserved. `.env.example` is documentation only. Never use production credentials here.
+`make setup` verifies the runtime pins, installs frozen dependencies, and creates `.env`
+(mode 0600) with a random local database password plus a per-checkout Compose project name
+and loopback ports derived from the checkout path ([ADR-002](docs/decisions/ADR-002-local-environment-isolation.md)).
+Each checkout or worktree therefore owns its own database volume and ports; an older `.env`
+is upgraded in place to the legacy `paxpivot` project so its volume keeps working. Existing
+`.env` values are preserved. `.env.example` is documentation only. Never use production
+credentials here.
 CI installs Python explicitly because the pinned uv release predates that Python patch.
 
 ## Commands
@@ -53,8 +57,8 @@ Run from the repository root:
 
 Web: http://127.0.0.1:3000. API liveness: http://127.0.0.1:8000/health
 returns `{"status":"ok"}`. It does not prove provider/database readiness.
-Postgres binds loopback 55432; Redis binds loopback 56379. No RQ jobs, worker or scheduler
-are started yet. After development, `docker compose stop` stops these local services
+Postgres and Redis bind loopback ports from `POSTGRES_PORT`/`REDIS_PORT` in `.env`. No RQ
+jobs, worker or scheduler are started yet. After development, `docker compose stop` stops these local services
 without deleting the named PostgreSQL volume.
 
 Root `.env` is loaded by backend tooling with existing process environment taking

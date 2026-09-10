@@ -1,5 +1,6 @@
 """Root Makefile support; local development only, never production orchestration."""
 
+import hashlib
 import os
 import platform
 import secrets
@@ -7,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -38,22 +40,68 @@ def migration_check() -> None:
     command.check(config)
 
 
+@dataclass(frozen=True)
+class LocalIdentity:
+    """Per-checkout Compose project name and loopback ports; see ADR-002."""
+
+    project: str
+    postgres_port: int
+    redis_port: int
+
+
+LEGACY_IDENTITY = LocalIdentity("paxpivot", 55432, 56379)
+
+
+def local_identity(root: Path) -> LocalIdentity:
+    """Derive a stable identity from the checkout path so worktrees never share a volume."""
+    digest = hashlib.sha256(str(root.resolve()).encode()).hexdigest()
+    # ponytail: hashed ports can collide across checkouts; pick free ports if that ever bites.
+    offset = int(digest[:8], 16) % 4000
+    return LocalIdentity(f"paxpivot-{digest[:10]}", 50000 + offset, 54000 + offset)
+
+
+def _env_lines(identity: LocalIdentity, password: str | None) -> list[str]:
+    lines = [
+        f"COMPOSE_PROJECT_NAME={identity.project}",
+        f"POSTGRES_PORT={identity.postgres_port}",
+        f"REDIS_PORT={identity.redis_port}",
+    ]
+    if password is not None:
+        lines += [
+            f"POSTGRES_PASSWORD={password}",
+            "DATABASE_URL=postgresql+psycopg://paxpivot:"
+            f"{password}@127.0.0.1:{identity.postgres_port}/paxpivot",
+            f"REDIS_URL=redis://127.0.0.1:{identity.redis_port}/0",
+        ]
+    return lines
+
+
+def write_env(root: Path) -> Path:
+    """Create .env for a fresh checkout, or add missing identity keys to an existing one.
+
+    A pre-ADR-002 .env has credentials but no identity; it keeps the legacy project name and
+    ports so its already-initialised volume stays usable. Existing values are never rewritten.
+    """
+    path = root / ".env"
+    if not path.exists():
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as file:
+            file.write("\n".join(_env_lines(local_identity(root), secrets.token_hex(24))) + "\n")
+        return path
+    existing = path.read_text()
+    if "COMPOSE_PROJECT_NAME=" not in existing:
+        with path.open("a") as file:
+            file.write("\n".join(_env_lines(LEGACY_IDENTITY, None)) + "\n")
+    return path
+
+
 def setup_env() -> None:
     if platform.python_version() != (ROOT / ".python-version").read_text().strip():
         raise RuntimeError("Use the Python version in .python-version")
     actual_node = subprocess.check_output(["node", "--version"], text=True).strip().lstrip("v")
     if actual_node != (ROOT / ".node-version").read_text().strip():
         raise RuntimeError("Use the Node version in .node-version")
-    path = ROOT / ".env"
-    if not path.exists():
-        password = secrets.token_hex(24)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as file:
-            file.write(f"POSTGRES_PASSWORD={password}\n")
-            file.write(
-                f"DATABASE_URL=postgresql+psycopg://paxpivot:{password}@127.0.0.1:55432/paxpivot\n"
-            )
-            file.write("REDIS_URL=redis://127.0.0.1:56379/0\n")
+    write_env(ROOT)
     print("Local environment ready; existing values preserved.")
 
 
