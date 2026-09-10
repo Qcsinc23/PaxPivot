@@ -55,3 +55,11 @@ def test_existing_env_is_preserved_and_upgraded_to_legacy_identity(tmp_path: Pat
     assert env["REDIS_PORT"] == str(LEGACY_IDENTITY.redis_port)
     write_env(tmp_path)
     assert path.read_text() == upgraded, "second run must not append again"
+
+
+def test_upgrade_handles_missing_trailing_newline(tmp_path: Path) -> None:
+    path = tmp_path / ".env"
+    path.write_text("POSTGRES_PASSWORD=keep-me")
+    write_env(tmp_path)
+    assert read_env(path)["POSTGRES_PASSWORD"] == "keep-me"
+    assert read_env(path)["COMPOSE_PROJECT_NAME"] == LEGACY_IDENTITY.project

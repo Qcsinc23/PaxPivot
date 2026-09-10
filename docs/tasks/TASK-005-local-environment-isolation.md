@@ -121,7 +121,7 @@ make migrate-test
 
 ```text
 make check (format-check, lint, typecheck, test, build, migrate, migrate-check, compose-check) -> PASS
-  pytest unit 155 passed (4 new in test_local_env.py); integration 3 passed (1 new)
+  pytest unit 156 passed (5 new in test_local_env.py); integration 3 passed (1 new)
 make migrate-test -> PASS
 docker compose config in the existing checkout -> project paxpivot, ports 55432/56379 (legacy kept)
 docker compose config in two generated checkouts -> distinct project names and ports

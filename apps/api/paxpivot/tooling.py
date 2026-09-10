@@ -91,6 +91,8 @@ def write_env(root: Path) -> Path:
     existing = path.read_text()
     if "COMPOSE_PROJECT_NAME=" not in existing:
         with path.open("a") as file:
+            if existing and not existing.endswith("\n"):
+                file.write("\n")
             file.write("\n".join(_env_lines(LEGACY_IDENTITY, None)) + "\n")
     return path
 
