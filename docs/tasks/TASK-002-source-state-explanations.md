@@ -105,18 +105,53 @@ record the exact proposed change here and stop; foundation owns the resolution.
 
 ## Handoff
 
-**Branch:** Pending execution.
+**Branch:** `build/TASK-002-source-state-explanations` from `main` @ `e138634`.
 
-**Commit:** Pending execution.
+**Commit:** Single focused commit in this PR, titled "TASK-002: add deterministic
+source-state explanations". The exact SHA is reported in the PR body, because amending this
+file to embed the SHA would itself change the SHA. The PR contains exactly one commit on top
+of `main` @ `e138634`.
 
-**Files changed:** Pending execution.
+**Files changed:**
+- `apps/api/paxpivot/application/source_explanation.py` (new) — produced interface.
+- `tests/unit/test_source_explanation.py` (new) — 77 focused unit tests.
+- `docs/tasks/TASK-002-source-state-explanations.md` — status/handoff only.
 
-**Interfaces added/changed:** Only the produced interface above is authorized.
+**Interfaces added/changed:** Added
+`paxpivot.application.source_explanation.explain_source(observation: SourceObservation) -> str`
+only. No consumed shared contract changed; `SourceState`/`SourceObservation` are untouched.
 
-**Migrations:** None allowed.
+**Migrations:** None. No dependency, schema, API registration or config change.
 
-**Verification run:** Pending execution; no PASS claim yet.
+**Verification run:** All commands were run after the final production code change
+(`make format` was used once to fix formatting, then every command below was rerun):
 
-**Known limitations / risks:** Synthetic-only helper/test work; does not enable a live source or product release.
+| Command | Result |
+| --- | --- |
+| `make setup` | PASS (exit 0) |
+| `make format-check` | PASS (exit 0) |
+| `make lint` | PASS (exit 0) |
+| `make typecheck` | PASS (exit 0), mypy strict clean |
+| `make test-unit` | PASS (exit 0), 106 passed (77 in this task's file) |
+| `make test-integration` | PASS (exit 0), 2 passed |
+| `make test` | PASS (exit 0) |
+| `make build` | PASS (exit 0) |
+| `make migrate` | PASS (exit 0) |
+| `make migrate-check` | PASS (exit 0), no new upgrade operations |
+| `make compose-check` | PASS (exit 0) |
 
-**Next dependency:** Foundation reviews/merges the task before integrating any future consumer.
+**Implementation notes:** One `MappingProxyType` mapping from every current `SourceState`
+to fixed explanation copy, indexed by `observation.state`. An import-time guard raises if a
+future `SourceState` member lacks approved wording, so the mapping cannot silently drift.
+Tests assert the exact approved wording for all 13 states, an explicit uncertainty clause per
+failure state, source-scoped absence wording, no inferred policy/seat reason, suppressed
+current-availability wording for restricted/review/superseded/withdrawn, deterministic and
+pure behavior, and that no URL/query/observation/provider identifier is echoed.
+
+**Known limitations / risks:** Presentation copy only. It consumes an observation's state and
+nothing else, so it makes no freshness, retrieval or approval judgement of its own — callers
+must still supply valid observations. The approved wording is asserted exactly, so any copy
+edit must update `tests/unit/test_source_explanation.py` in the same change.
+
+**Next dependency:** Foundation review and merge of this PR. TASK-003 and TASK-004 declare no
+dependency on this task, but per the work queue each later task must branch from merged `main`.
