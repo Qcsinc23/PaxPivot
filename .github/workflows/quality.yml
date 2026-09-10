@@ -1,0 +1,41 @@
+name: Quality
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  scaffold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.6.9"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: make setup
+      - run: make check
+      - run: make migrate-test
+      - name: Ensure checks did not rewrite tracked files
+        run: git diff --exit-code
+      - name: Stop task-local services
+        if: always()
+        run: docker compose down --volumes
