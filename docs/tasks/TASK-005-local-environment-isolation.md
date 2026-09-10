@@ -10,7 +10,7 @@
 
 ## Goal
 
-Independent checkouts/worktrees get their own Compose project, database volume and loopback ports so they never fail on a mismatched generated database password.
+Independent checkouts/worktrees get their own Compose project, database volume and loopback ports so they never fail on a mismatched generated database password; and the `main` merge policy is configured and documented.
 
 ## Why this task exists
 
@@ -32,6 +32,8 @@ tests/unit/test_local_env.py
 tests/integration/test_local_env_isolation.py
 docs/decisions/ADR-002-local-environment-isolation.md
 docs/tasks/TASK-005-local-environment-isolation.md
+docs/agent/MERGE_POLICY.md
+docs/agent/WORKFLOW.md (one cross-reference line only)
 ```
 
 ## Read-only context
@@ -66,6 +68,7 @@ apps/api/paxpivot/tooling.py::write_env(root: Path) -> Path
 - [x] Random per-checkout credentials and 0600 mode are unchanged; no deterministic password.
 - [x] An existing `.env` without identity keys is upgraded idempotently to the legacy identity; existing values are never rewritten.
 - [x] Tests prove two generated checkouts resolve to different Compose projects and ports via `docker compose config`.
+- [x] `main` branch protection is applied (required `scaffold` check on the exact head, strict, admins enforced, no force push/deletion) and documented in `docs/agent/MERGE_POLICY.md`.
 - [x] No unrelated files changed.
 
 ## Required tests
