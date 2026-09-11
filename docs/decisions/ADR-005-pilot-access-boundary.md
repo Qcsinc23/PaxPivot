@@ -79,3 +79,11 @@ route handlers without touching pages or the API. Session revocation is by secre
 guard matrix, proxy redirect/allow/refuse, sign-in cookie flags and rejection, secrets-scan);
 live-route tests for `not_configured`; `make build` followed by a grep of `.next/static` for the
 secret names (Handoff).
+
+## Amendments
+
+- **2026-09-11, TASK-030.** The product owner delegated the deployment decisions. The pilot is
+  deployed behind the VPS's existing Traefik (TLS via its `letsencrypt` resolver) at
+  `paxpivot.qcs-cargo.com` with this shared-passphrase boundary accepted for the single-user
+  pilot; daily on-host database backups (30 days). Per-user authentication remains the gate
+  before any multi-user use.

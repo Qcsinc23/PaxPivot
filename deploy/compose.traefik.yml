@@ -1,0 +1,25 @@
+# Override for a host whose ports 80/443 are already owned by a Traefik v2 with a
+# `letsencrypt` certificate resolver on the `dokploy-network` (the pilot VPS). Usage:
+#   docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml up -d --wait --no-build
+# The bundled Caddy proxy stays off (it is behind the `caddy` profile).
+services:
+  web:
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.routers.paxpivot-http.entrypoints: web
+      traefik.http.routers.paxpivot-http.rule: Host(`${PAXPIVOT_DOMAIN}`)
+      traefik.http.routers.paxpivot-http.middlewares: paxpivot-https-redirect
+      traefik.http.middlewares.paxpivot-https-redirect.redirectscheme.scheme: https
+      traefik.http.middlewares.paxpivot-https-redirect.redirectscheme.permanent: "true"
+      traefik.http.routers.paxpivot.entrypoints: websecure
+      traefik.http.routers.paxpivot.rule: Host(`${PAXPIVOT_DOMAIN}`)
+      traefik.http.routers.paxpivot.tls: "true"
+      traefik.http.routers.paxpivot.tls.certresolver: letsencrypt
+      traefik.http.services.paxpivot.loadbalancer.server.port: "3000"
+networks:
+  dokploy-network:
+    external: true

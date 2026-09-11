@@ -1,9 +1,18 @@
 # Deployment runbook (pilot, Docker Compose)
 
-Status: **prepared, not yet deployed.** Deploying requires the product-owner decisions in
-`AUDIT.md` §6 (host/domain, acceptance of the ADR-005 pilot access boundary, backup cadence).
+Status: **deployed to the pilot VPS** (decisions delegated to the foundation agent on
+2026-09-11 and recorded in ADR-005 Amendments):
 
-## Topology (`compose.prod.yml`)
+| Decision | Choice |
+|---|---|
+| Host | the existing Hostinger VPS `srv782537` (Ubuntu 24.04, Docker, Dokploy/Traefik on 80/443) |
+| Domain | `paxpivot.qcs-cargo.com` (A record → the VPS; a dedicated subdomain, so HSTS `includeSubDomains` is safe) |
+| TLS / ingress | the host's existing Traefik v2 (`letsencrypt` resolver) via `deploy/compose.traefik.yml`; Caddy profile off |
+| Access boundary | ADR-005 shared-passphrase pilot sign-in accepted for the single-user pilot |
+| Backups | daily `pg_dump` at 03:15 UTC to `/opt/paxpivot/backups`, 30 days kept on host (off-host copy is a follow-up) |
+| Install path | `/opt/paxpivot` (git clone of `main`, images built on the host and tagged by commit) |
+
+## Topology (`compose.prod.yml`, plus `deploy/compose.traefik.yml` on a Traefik host)
 
 `proxy` (Caddy, automatic TLS for `PAXPIVOT_DOMAIN`) → `web` (Next standalone, port 3000,
 internal) → `api` (FastAPI, port 8000, internal only, migrates to head on start) →
@@ -38,7 +47,8 @@ Generate with `openssl rand -hex 32`. Rotating `PAXPIVOT_SESSION_SECRET` signs e
 
 ```bash
 make build-images PAXPIVOT_TAG=$(git rev-parse --short HEAD)   # then set PAXPIVOT_TAG in .env.production
-docker compose --env-file .env.production -f compose.prod.yml up -d --wait
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml up -d --wait --no-build   # Traefik host
+# (a host without a reverse proxy: add `--profile caddy` and drop the traefik override)
 docker compose --env-file .env.production -f compose.prod.yml exec api python -m paxpivot.tooling seed
 curl -fsS https://$PAXPIVOT_DOMAIN/login >/dev/null   # 200: proxy + web + TLS up
 docker compose --env-file .env.production -f compose.prod.yml exec api python -c \

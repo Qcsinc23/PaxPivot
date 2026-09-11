@@ -3,6 +3,9 @@
 # .env.production is never committed (see docs/DEPLOYMENT.md for the required keys).
 services:
   proxy:
+    # Only when no reverse proxy exists on the host: `--profile caddy`. Behind an existing
+    # Traefik (deploy/compose.traefik.yml) this service is not started.
+    profiles: ["caddy"]
     image: caddy:2.9-alpine
     restart: unless-stopped
     ports:
