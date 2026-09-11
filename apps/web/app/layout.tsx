@@ -4,6 +4,7 @@ import "@fontsource/dm-serif-display";
 import "@/styles/tokens.css";
 import "@/styles/base.css";
 import "@/styles/components.css";
+import "@/styles/screens.css";
 import { AppShell } from "@/components/shell/AppShell";
 
 export const metadata: Metadata = {
