@@ -1,171 +1,116 @@
-# PaxPivot — Production-Readiness Audit (2026-09-11, main @ c286e6e)
+# PaxPivot — Audit: "production ready, fully working" (2026-09-11, main @ 9524eed)
 
 ## 1. Executive Summary
 
-**Health grade: B.** The codebase is small, disciplined and unusually well-tested for its age:
-strict typing on both stacks, 213 unit + 34 integration + 325 web tests all green, database
-invariants enforced by CHECK constraints and an append-only trigger, a read-only snapshot seam,
-a fail-closed pilot access boundary, and CI that runs the same `make` gate as local. What it is
-not, yet, is *deployable*: there is no container image, no production Compose topology, no
-reverse proxy/TLS, no readiness probe, no runbook, and no backup/restore story — every one of
-which PRD §14.7 requires. The product itself is intentionally not "feature complete": every
-live route renders honest data or honest emptiness, and real source retrieval is gated on
-product-owner approvals (TASK-023/025).
-
-Top 3 risks: (1) no deployment artifacts, so "production" today would be hand-assembled;
-(2) single shared pilot passphrase and shared API bearer token (ADR-005, interim by design);
-(3) no backup/restore or log-retention policy for a database whose observations are append-only.
-Top 3 opportunities: (1) a reproducible production topology (images + Compose + Caddy TLS) that
-CI can at least build; (2) an API readiness probe and web error boundaries so failures are
-honest at the edges; (3) hardening headers on the web tier at zero product cost.
+**Health grade: B+ for what exists; the product is roughly 40% of the PRD.** Deployed, TLS,
+signed in, backed up, with real source data flowing (four official AMC terminal pages checked
+every 6 h, immutable observations, honest states). Code quality, tests (234 unit / 36 integration
+/ 329 web, all green), constraints and boundaries are strong. What is *not* working is the
+planner: Plan → Find routes → Trips → Plan loops through honest empty states because no trip
+request, eligibility, parsing, destination, ground or routing logic exists yet. That is PRD
+Milestone C onward, gated by explicit product decisions (parser accuracy, policy versions).
+Top 3 risks: (1) the loop reads as "broken" to the one user; (2) a parser built without the
+labeled corpus the PRD requires would turn page hashes into invented flights; (3) scope: the
+remaining milestones are weeks of bounded work, not a run. Top 3 opportunities: (1) remove the
+loop today; (2) approve parsing for the four registered pages and build the first parser under
+the accuracy gate, which turns "page reachable" into real departures; (3) a trip request +
+eligibility v1 for the pilot's own case, the smallest path to a first real route card.
 
 ## 2. Repo Map
 
-Purpose: Space-A journey planner (private single-user pilot). Stack: Next.js 16 / React 19 /
-TypeScript (apps/web), FastAPI / Pydantic / SQLAlchemy Core / Alembic on PostgreSQL 16 + PostGIS
-(apps/api), Redis reserved, pnpm + uv, one root `Makefile` as the only command surface, GitHub
-Actions `Quality` job. Architecture: UI → presentation adapters → read API → application read
-services → repository ports → SQL; domain contracts are frozen Pydantic models; source processing
-passes one gate (`authorize_processing`) and one pipeline (`record_observation`).
+Unchanged from the previous audit (Next.js 16 web, FastAPI/SQLAlchemy Core/Alembic API,
+PostGIS, Firecrawl provider, one `Makefile`, `Quality` CI). New since: `providers/firecrawl.py`,
+`check-sources`, four approved sources, VPS deployment at `paxpivot.qcs-cargo.com`.
 
-- `apps/api/paxpivot/domain` — contracts (source registry, policy, observations, terminals).
-- `apps/api/paxpivot/application` — gate, pipeline, read services, ports, source checks.
-- `apps/api/paxpivot/infrastructure` — Core tables, SQL repositories, seed, auth, schema probe.
-- `apps/api/paxpivot/api.py` — FastAPI composition root, `/health`, `/api/v1/*` (bearer-gated).
-- `apps/api/migrations` — 0001 PostGIS, 0002 sources/terminals, 0003 supersession integrity.
-- `apps/web/app` — routes; `proxy.ts` pilot access guard; `lib/auth`, `lib/api`, `lib/presentation`.
-- `docs/` — ADR-001…005, task contracts TASK-001…028, workflow/merge policy.
+## 3. Audit Report (what stands between today and "fully working")
 
-Surprises: no Dockerfile anywhere; `compose.yml` is local-only (Postgres + Redis); CI has no
-deploy job; the web tier has no `error.tsx`/`not-found.tsx`.
+- **High · 4×S — Circular navigation on the live app.** `components/screens/plan/PlanScreen.tsx:41`
+  sent the empty Plan to `/trips`; `TripsScreen.tsx:59` sends the empty Trips back to `/`. Fact.
+  Consequence: the user experiences a dead loop instead of an honest "not available" plus a way
+  to something real. Fixed in this run (Plan's empty action now leads to the live Terminals).
+- **Critical (product gap) · 5×XL — No schedule parser.** Observations carry status + hash only
+  (`infrastructure/providers/firecrawl.py`); `may_parse=False` for every source
+  (`infrastructure/bootstrap.py`, `APPROVED_TERMINAL_PAGE_POLICY`). PRD SRC-009 gates automatic
+  opportunities on a labeled corpus at ≥ 99 % exact critical fields and zero false opportunities.
+  Nothing downstream (opportunities, routes) can exist until this lands. Decision required and
+  taken (see §6): parsing is approved for the four registered AMC pages, behind the gate.
+- **Critical (product gap) · 5×L — No trip request, traveler profile or eligibility engine.**
+  `app/page.tsx` renders `emptyPlan`; no API route accepts a trip; `domain/eligibility.py` has
+  contracts but no engine (`application/` has no eligibility module). PRD §8 requires versioned
+  policy data.
+- **High · 4×L — No destination resolver, origin-terminal finder or ground routing** (PRD §5, §12).
+  Terminal cards show travel time as unknown by design (`adapters/terminals.ts`, `NO_TRIP`).
+- **High · 4×M — No commercial fallback handoff** (PRD COM-001); `CommercialBaselineCard` exists
+  as presentation only.
+- **Medium · 3×M — Readiness workflow, alerts and notifications** are presentation-only
+  (`emptyProfile`, `emptyAlerts`); PRD §13 notifications need the change-detection layer.
+- **Medium · 3×S — Cadence is informational**: `run_source_checks` checks every enabled source
+  per invocation (`application/source_checks.py`); cron interval = cadence today.
+- **Low — Key hygiene:** the Firecrawl key was pasted into a chat once; rotation pending (owner).
+- **Healthy:** architecture, tests, CHECK parity, read-only seams, access boundary, deployment,
+  backups, dependency hygiene (no known vulnerabilities).
 
-## 3. Audit Report
+Strengths to preserve: every live route is honest; observations are immutable; the policy gate
+sits in front of every processing step; one command surface; PR-per-task with review records.
 
-Severity · Impact(1–5)×Effort(S/M/L/XL). Facts cite `path:line`; judgments are marked (J).
+## 4. Improvement Strategy (decisions taken by the delegated foundation agent)
 
-### DevEx & operations — the gap that matters
-- **Critical · 5×L — No deployable artifacts.** No `Dockerfile` for api or web; `compose.yml:3-36`
-  defines only postgres/redis; no reverse proxy/TLS; `.github/workflows/quality.yml` has no build
-  or deploy job. PRD §14.7 requires web/api/worker/scheduler/postgres/redis/reverse-proxy with
-  TLS, secrets outside source control, backups, restore tests, health checks. Consequence: a
-  deployment today is hand-assembled and unrepeatable.
-- **High · 4×S — No readiness probe.** `apps/api/paxpivot/api.py:50-54` `/health` is liveness
-  only (documented as such). An orchestrator cannot tell "process up" from "database usable".
-- **High · 4×M — No backup/restore policy or runbook.** Observations are append-only by trigger
-  (`migrations/versions/0002_sources_terminals.py:303-312`); losing the volume loses history.
-  No document states backup cadence, restore test, or retention (pilot §16.4 table exists in
-  paxpivot.md but nothing implements it).
-- **Medium · 3×S — Uvicorn started without proxy-header handling.** `tooling.py:230` runs
-  uvicorn for dev only; no production command sets `--proxy-headers`/`--forwarded-allow-ips`, so
-  behind a reverse proxy client IPs/scheme would be wrong in logs. (J) fine for local, wrong for prod.
-- **Medium · 3×S — No structured request logging.** `infrastructure/audit.py:9-15` logs only
-  three allowlisted events; API requests themselves are not logged (PRD §19 observability).
-
-### Security
-- **High · 4×S — Missing security headers on the web tier.** `apps/web/next.config.ts:2` sets
-  only `poweredByHeader: false`; no `X-Content-Type-Options`, `X-Frame-Options`/frame-ancestors,
-  `Referrer-Policy`, `Strict-Transport-Security`, `Permissions-Policy`.
-- **Medium (accepted, ADR-005) · 3×L — Shared pilot passphrase + shared API bearer.** Documented
-  as pilot-only; per-user auth is a product decision (Open Questions).
-- **Low — Dependencies clean.** `pnpm audit --prod` and `pip-audit` (py3.12): no known
-  vulnerabilities; lockfiles present and frozen in CI (`Makefile:6-7`). Secrets scan: clean;
-  `.env` ignored; secrets never reach the client bundle (test-enforced, `apps/web/tests/auth.test.ts`).
-
-### Architecture & design — healthy
-Boundaries are explicit and tested (read-only snapshot, reader ports, single processing gate,
-adapters that only format). (J) The one soft spot is `api.py` doubling as composition root and
-router; acceptable at three routes.
-
-### Code quality — healthy
-Strict mypy/TS, ruff/eslint at zero warnings in CI. No swallowed exceptions found in
-`apps/api/paxpivot` (grep `except Exception` → only the drift probe in `tooling.py:141`, re-raised).
-
-### Testing — strong
-Behaviour-asserting tests at every layer, mutation-proved guards (TASK-026), CHECK-constraint
-parity probe, cold-start proof. Gap: **Low · 2×S** — web has no test for global error/404
-boundaries because none exist (see DevEx).
-
-### Performance — not a concern at pilot scale
-Read services issue O(sources) queries per request (`read_services.py` calls
-`list_terminal_sources` per terminal); (J) fine for a four-terminal registry, revisit at ~100.
-
-### Dependencies — healthy
-Exact pins on web, bounded ranges on Python, single lockfile each, `pnpm outdated` empty.
-
-### Documentation — good, one hole
-README/ADRs/task contracts are accurate and current. Hole: no deployment/runbook document.
-
-### Strengths to preserve
-Honest empty/error states everywhere; append-only observation history; policy gate before any
-processing; fail-closed access; one command surface; every PR reviewed with recorded verification.
-
-## 4. Improvement Strategy
-
-1. **Make the deployment reproducible before making it real.** Target: `docker build` for api and
-   web, a `compose.prod.yml` with Caddy TLS, Postgres, Redis, api, web, and a runbook with a
-   preflight checklist. Trade-off: no worker/scheduler service yet (nothing to schedule — TASK-025
-   blocked); no managed-DB option. Done signal: `make build-images` succeeds locally and in CI;
-   `docker compose -f compose.prod.yml config` is valid.
-2. **Honest failure at the edges.** Target: `/ready` probe (DB + migration head), web
-   `error.tsx`/`not-found.tsx`. Done: probe returns 503 with the DB down; boundaries tested.
-3. **Zero-cost hardening.** Security headers; uvicorn proxy headers in the production command.
-   Done: headers asserted by test; production command documented.
-4. **Not fixing now (deliberate):** per-user auth, backups automation, request logging pipeline,
-   worker/scheduler — each needs a product decision or a source approval (Open Questions).
+1. **No dead ends.** Every empty state's primary action leads to something live. Done signal:
+   no live route links to a route that links straight back (test-pinned for Plan).
+2. **Parse under the gate, one page first.** Approve `may_parse` for the AMC terminal pages;
+   build one source-specific parser (JB MDL first: it is the pilot user's home terminal) with a
+   labeled corpus captured through the existing provider (Firecrawl `rawHtml` → corpus files
+   under `tests/fixtures/parsers/`, reviewed by a person), an accuracy report, and
+   `parser_review_required` until the corpus passes 99 %. Done: `ScheduleObservation` rows for
+   one terminal with provenance, visible on the terminal detail as published departures with
+   the 72-hour label; never as a reservation.
+3. **Pilot-first planner.** Trip request (origin = home, destination, window, party) persisted
+   and posted from Plan; eligibility engine v1 for the pilot's own traveler class (a versioned
+   policy row, not copy); direct Space-A opportunities from parsed rows; one route card per
+   opportunity with the commercial baseline handoff (Google Flights prefill, COM-001). Trade-off:
+   no multi-hop, no probability, no OCONUS policy breadth. Done: Plan → Find routes shows real
+   direct opportunities for the pilot's home network or an honest absence panel.
+4. **Not now:** temporal graph, historical prediction, notifications backend, per-user auth.
 
 ## 5. Task Plan
 
-| ID | Title | Effort | Impact | Risk | Deps | Execute-now |
-|---|---|---|---|---|---|---|
-| M0-1 | Pin current `/health` + live-route error behaviour with tests (already covered) | S | 3 | none | — | n/a (exists) |
-| M1-1 | Security headers on the web tier | S | 4 | low | — | **yes** (Quick Win) |
-| M1-2 | API `/ready` readiness probe (DB + migration head, 503 otherwise) | S | 4 | low | — | **yes** (Quick Win) |
-| M1-3 | Web `error.tsx` + `not-found.tsx` honest boundaries | S | 4 | low | — | **yes** (Quick Win) |
-| M2-1 | Dockerfiles (api, web standalone) + `compose.prod.yml` (Caddy TLS, api, web, postgres, redis) + `make build-images` | M | 5 | medium | M1-2 | **yes** (prepared; deploy is blocked) |
-| M2-2 | `docs/DEPLOYMENT.md` runbook: secrets, preflight, migrate/seed, backup/restore procedure, rollback | M | 4 | none | M2-1 | **yes** |
-| M2-3 | Production API command with `--proxy-headers` and structured access log | S | 3 | low | M2-1 | **yes** |
-| M3-1 | Backup automation (pg_dump cron + restore test) | M | 4 | medium | product decision | no |
-| M3-2 | Per-user authentication replacing the pilot passphrase | L | 4 | high | product decision | no |
-| M3-3 | Request logging pipeline / observability (PRD §19) | M | 3 | low | hosting decision | no |
-| — | **Deploy to a host** | M | 5 | high | domain, host, secrets, ADR-005 acceptance | **blocked** |
+| ID | Title | Effort | Impact | Deps | Execute-now |
+|---|---|---|---|---|---|
+| QW-1 | Break the Plan → Trips loop; empty Plan leads to live Terminals | S | 4 | — | **done** |
+| M2-P1 (TASK-031) | Approve parsing for the four AMC pages; corpus capture command (`capture-corpus`) storing reviewed `rawHtml` samples under `tests/fixtures/parsers/amc-terminal-page/` | M | 5 | — | prepared (task file) |
+| M2-P2 (TASK-032) | JB MDL terminal-page parser: `extract_schedule_rows` + critical-field validator + accuracy report; `ScheduleObservation` table/migration; `parser_review_required` until ≥ 99 % | L | 5 | TASK-031 | prepared |
+| M2-P3 (TASK-033) | Terminal detail shows parsed departures (72-h label, provenance, never a reservation) | M | 4 | TASK-032 | prepared |
+| M2-C1 (TASK-034) | Trip request: domain + table + `POST/GET /api/v1/trips`; Plan posts it; Trips lists it | M | 5 | — | prepared |
+| M2-C2 (TASK-035) | Eligibility engine v1: versioned policy rows, pilot traveler class, decision with citations | L | 5 | TASK-034 | prepared |
+| M2-C3 (TASK-036) | Direct opportunities + route cards + commercial baseline handoff | L | 5 | TASK-032, 035 | prepared |
+| M3 | Destination resolver, ground routing, readiness, alerts, notifications | XL | 4 | C-series | not started |
 
-Quick Wins: M1-1, M1-2, M1-3.
+Quick Wins: QW-1. Top-3 sketches:
+- **TASK-031:** `python -m paxpivot.tooling capture-corpus <source_id>` fetches via the existing
+  Firecrawl provider path but with `store_raw` explicitly allowed for the corpus command only,
+  writes `rawHtml` to a fixture file named by content hash, and records nothing in the DB. A
+  person labels critical fields (departure date/time, destination, seat state, roll call) in a
+  sibling YAML. Gotcha: the corpus must never be committed without a human label review.
+- **TASK-032:** parser is a pure function `parse_terminal_page(html) -> ParsedRows` with a
+  version string; the validator refuses rows missing a critical field; the accuracy report
+  compares against labels; migration adds `schedule_observations` (append-only, provenance to
+  the source observation). Gotcha: a 72-hour PDF linked from the page is a separate source kind.
+- **TASK-034:** `TripRequest` domain (origin terminal id, destination text, window, party size),
+  table + migration, `POST /api/v1/trips` behind the bearer + session, Plan form (server action)
+  → redirect to `/trips/{id}` which renders the honest "no routes yet" until TASK-036.
 
-Top-3 sketches:
-- **M2-1:** multi-stage `apps/api/Dockerfile` (uv sync --frozen --no-dev, run `alembic upgrade`
-  at start then uvicorn with `--proxy-headers`); `apps/web/Dockerfile` using Next `output:
-  "standalone"`; `compose.prod.yml` with Caddy (`caddy reverse_proxy web:3000`), api on the
-  internal network only, env from `.env.production` (never committed). Gotcha: Next standalone
-  needs `output: "standalone"` in `next.config.ts` and copies of `.next/static` + `public`.
-- **M1-2:** `/ready` opens `read_snapshot`, runs `SELECT 1` and compares Alembic head; returns
-  `{"status":"ready"}` or 503 `{"status":"unavailable"}` — no error text. Gotcha: do not import
-  Alembic at request time in the hot path; cache the script head once.
-- **M1-1:** `headers()` in `next.config.ts` for `/(.*)`; HSTS is ignored over plain HTTP so it
-  is safe to always send.
+## 6. Open Questions → decided here (delegated by the product owner)
 
-## 6. Open Questions (human decisions)
+1. Parsing approval for the four AMC terminal pages: **approved**, behind the SRC-009 gate.
+2. Home terminal for the pilot: **Joint Base MDL** (first parser target).
+3. Key rotation: owner will rotate the Firecrawl key later (acknowledged).
+Still open: destination resolver data source (geocoding provider) and the ground-routing provider
+— both need an account/credential the agent cannot create.
 
-1. **Where does the pilot deploy?** PRD §14.7 says "existing VPS" via Compose; needs host,
-   domain, DNS and who holds the secrets. Deployment is blocked until decided.
-2. **Is the ADR-005 shared-passphrase boundary accepted for the pilot's first deployment**, or
-   must per-user auth (M3-2) land first?
-3. **Backup cadence and retention** for the append-only observation history (pilot §16.4).
-4. **TASK-023/025 inputs** (official terminal URLs, source approval, Firecrawl policy/budget)
-   remain outstanding and are unrelated to deployability.
+## 7. Post-Execution Status
 
-## 7. Post-Execution Status (branch `audit/improvements-2026-09-11`, PR #32)
-
-| Task | Status | Evidence |
-|---|---|---|
-| M1-1 Security headers | Done | `apps/web/tests/edges.test.tsx`; image smoke: headers present on `/login` |
-| M1-2 `/ready` probe | Done | unit 503 on unreachable DB; integration 200 at head / 503 at wrong head; api image: `/ready` 200 |
-| M1-3 Error boundaries | Done | `edges.test.tsx` incl. axe |
-| M2-1 Images + topology | Prepared (built, smoke-tested, not deployed) | `make build-images`; web image: 200/307/303/200/404; api image: health, ready, 401/200 |
-| M2-2 Runbook | Done | `docs/DEPLOYMENT.md` |
-| M2-3 Proxy-aware API start | Done | `deploy/api-entrypoint.sh` (`--proxy-headers`) |
-| Deploy to host | Blocked | product decisions §6 (host/domain, ADR-005 acceptance, backup cadence) |
-| M3-1/2/3 | Not started | need product/hosting decisions |
-
-Two defects were found only by running the built images (relative proxy redirect crashing the
-Next runtime; flattened migrations directory in the api image) and fixed on this branch — the
-image smoke test is now part of the preflight in `docs/DEPLOYMENT.md`.
+| Task | Status |
+|---|---|
+| QW-1 loop fix | Done (this branch; deployed after merge) |
+| TASK-031…036 | Prepared: task contracts written; no code (each is a bounded build/foundation task) |
+| M3 | Not started |
