@@ -44,14 +44,18 @@ pytestmark = pytest.mark.integration
 TOKEN = "synthetic-token-with-at-least-32-characters"
 
 
-def _observation_count(engine: Engine) -> int:
+def _count(engine: Engine, table: str) -> int:
     with engine.connect() as connection:
-        return connection.execute(text("SELECT count(*) FROM source_observations")).scalar_one()
+        value = connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+    return int(value)
+
+
+def _observation_count(engine: Engine) -> int:
+    return _count(engine, "source_observations")
 
 
 def _fact_count(engine: Engine) -> int:
-    with engine.connect() as connection:
-        return connection.execute(text("SELECT count(*) FROM terminal_facts")).scalar_one()
+    return _count(engine, "terminal_facts")
 
 
 @pytest.fixture(scope="module")

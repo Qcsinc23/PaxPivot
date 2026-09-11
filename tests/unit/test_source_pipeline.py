@@ -39,6 +39,10 @@ class ScriptedProvider:
     A real adapter's own identity is the same value it stamps into ``provenance.provider_id``,
     so the scripted double reads it from the observation it was handed rather than taking a
     second, independently wrong default. ``provider_id`` is overridable to exercise mismatches.
+
+    ``provider_id`` is a read-only property, which is how both this class and the frozen-dataclass
+    fakes in the conformance suite satisfy the port: an adapter's identity is fixed, never
+    reassigned.
     """
 
     def __init__(
@@ -46,7 +50,11 @@ class ScriptedProvider:
     ) -> None:
         self.result = result
         self.calls = 0
-        self.provider_id = provider_id if provider_id is not None else _declared(result)
+        self._provider_id = provider_id if provider_id is not None else _declared(result)
+
+    @property
+    def provider_id(self) -> str:
+        return self._provider_id
 
     async def observe(self, source: SourceIdentity) -> Result[SourceObservation]:
         self.calls += 1
