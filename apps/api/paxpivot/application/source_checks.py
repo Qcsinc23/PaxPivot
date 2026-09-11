@@ -161,3 +161,11 @@ async def run_source_checks(
     for source in sources.list_sources():
         outcomes.append(await check_source(source, provider, observations, switches))
     return SourceCheckRun(started_at=started_at, outcomes=tuple(outcomes))
+
+
+def exit_code(run: SourceCheckRun | None) -> Literal[0, 2, 3]:
+    """What a scheduler should see: 2 = no provider configured (nothing retrieved),
+    3 = the provider failed for at least one source (nothing recorded for it), 0 otherwise."""
+    if run is None:
+        return 2
+    return 3 if run.provider_failures else 0

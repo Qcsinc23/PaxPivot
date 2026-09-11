@@ -455,3 +455,30 @@ def test_started_at_must_be_timezone_aware() -> None:
                 now=datetime(2026, 9, 11, 12, 0),
             )
         )
+
+
+def test_exit_code_contract_for_schedulers() -> None:
+    """TASK-025: cron acts on these codes; pin them independently of the tooling wiring."""
+    from datetime import UTC
+
+    from paxpivot.application.source_checks import SourceCheckOutcome, SourceCheckRun, exit_code
+
+    when = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)
+    ok = SourceCheckRun(
+        started_at=when,
+        outcomes=(
+            SourceCheckOutcome(source_id=uuid4(), outcome="recorded", state=SourceState.FRESH),
+        ),
+    )
+    failed = SourceCheckRun(
+        started_at=when,
+        outcomes=(
+            SourceCheckOutcome(source_id=uuid4(), outcome="recorded", state=SourceState.FRESH),
+            SourceCheckOutcome(
+                source_id=uuid4(), outcome="provider_failure", message_key="source_provider.x"
+            ),
+        ),
+    )
+    assert exit_code(None) == 2
+    assert exit_code(ok) == 0
+    assert exit_code(failed) == 3

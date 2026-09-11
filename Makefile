@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 PY := uv run --frozen
-.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed cold-start-check build-images dev check
+.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed check-sources cold-start-check build-images dev check
 setup:
 	pnpm install --frozen-lockfile
 	uv sync --frozen
@@ -38,6 +38,8 @@ migrate-test: services
 	$(PY) python -m paxpivot.tooling migrate-test
 seed: migrate
 	$(PY) python -m paxpivot.tooling seed
+check-sources: migrate
+	$(PY) python -m paxpivot.tooling check-sources
 PAXPIVOT_TAG ?= local
 build-images:
 	docker build -f apps/api/Dockerfile -t paxpivot-api:$(PAXPIVOT_TAG) .

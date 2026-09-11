@@ -209,6 +209,52 @@ def cold_start_check(cycles: int) -> None:
     print(f"Cold start check: {cycles}/{cycles} cycles connected immediately after --wait")
 
 
+def check_sources() -> int:
+    """One pass over the registered sources through the observation pipeline (TASK-024/025).
+
+    Firecrawl is the only provider today. Exit codes a scheduler can act on: 2 when
+    ``FIRECRAWL_API_KEY`` is unset (nothing retrieved), 3 when the provider itself failed for
+    any source (key rejected, credits, outage: nothing recorded for those sources), 0 otherwise.
+    The run is one write transaction: all appended observations commit together.
+    """
+    import asyncio
+
+    from paxpivot.application.source_checks import exit_code, run_source_checks
+    from paxpivot.infrastructure import database as db
+    from paxpivot.infrastructure.providers.firecrawl import FirecrawlSourceProvider
+    from paxpivot.infrastructure.repositories import (
+        SqlKillSwitchRepository,
+        SqlSourceObservationRepository,
+        SqlSourceRepository,
+    )
+
+    configure()
+    engine = create_engine(os.environ["DATABASE_URL"])
+    with db.transaction(engine) as connection:
+        sources = SqlSourceRepository(connection)
+        registry = {s.identity.source_id: s for s in sources.list_sources()}
+        provider = FirecrawlSourceProvider.from_env(registry)
+        if provider is None:
+            print("FIRECRAWL_API_KEY is not set; no source was retrieved.")
+            return exit_code(None)
+        run = asyncio.run(
+            run_source_checks(
+                sources,
+                SqlSourceObservationRepository(connection),
+                SqlKillSwitchRepository(connection),
+                provider,
+            )
+        )
+    engine.dispose()
+    for outcome in run.outcomes:
+        print(f"{outcome.source_id} {outcome.outcome} {outcome.message_key or outcome.state or ''}")
+    print(
+        f"Source checks: recorded={len(run.recorded)} skipped={len(run.skipped)} "
+        f"rejected={len(run.rejected)} provider_failures={len(run.provider_failures)}"
+    )
+    return exit_code(run)
+
+
 def seed() -> None:
     from paxpivot.infrastructure.bootstrap import seed_reference_data
 
@@ -268,6 +314,8 @@ if __name__ == "__main__":
         empty_database_check()
     elif action == "seed":
         seed()
+    elif action == "check-sources":
+        raise SystemExit(check_sources())
     elif action == "cold-start-check":
         cold_start_check(int(sys.argv[2]) if len(sys.argv) > 2 else 20)
     elif action == "dev":

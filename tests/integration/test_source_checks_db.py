@@ -647,3 +647,63 @@ def test_the_network_guard_is_actually_armed() -> None:
         socket.getaddrinfo("example.invalid", 443)
     with pytest.raises(NetworkAccessAttemptedError):
         socket.create_connection(("example.invalid", 443))
+
+
+def test_firecrawl_provider_records_fresh_metadata_through_the_runner(engine: Engine) -> None:
+    """TASK-025: an approved page becomes a `fresh` metadata observation in source health."""
+    import asyncio
+
+    import httpx
+    from paxpivot.application.read_services import list_source_health
+    from paxpivot.application.source_checks import run_source_checks
+    from paxpivot.domain.source import SourceState
+    from paxpivot.infrastructure import database as db
+    from paxpivot.infrastructure.providers.firecrawl import FirecrawlSourceProvider
+    from paxpivot.infrastructure.repositories import (
+        SqlKillSwitchRepository,
+        SqlSourceObservationRepository,
+        SqlSourceRepository,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {"rawHtml": "<p>BODY-MARKER-9f3a</p>", "metadata": {"statusCode": 200}},
+            },
+        )
+
+    with db.transaction(engine) as connection:
+        sources = SqlSourceRepository(connection)
+        registry = {s.identity.source_id: s for s in sources.list_sources()}
+        approved = [s for s in registry.values() if s.adapter_id == "firecrawl" and s.enabled]
+        assert len(approved) == 4  # TASK-023: the four official terminal pages
+        provider = FirecrawlSourceProvider(
+            "k-synthetic", registry, transport=httpx.MockTransport(handler)
+        )
+        run = asyncio.run(
+            run_source_checks(
+                sources,
+                SqlSourceObservationRepository(connection),
+                SqlKillSwitchRepository(connection),
+                provider,
+            )
+        )
+    recorded = {o.source_id for o in run.recorded}
+    assert recorded == {s.identity.source_id for s in approved}
+    with db.read_snapshot(engine) as connection:
+        health = list_source_health(
+            SqlSourceRepository(connection),
+            SqlSourceObservationRepository(connection),
+            SqlKillSwitchRepository(connection),
+        )
+    rows = {r.source_id: r for r in health.rows}
+    for s in approved:
+        latest = rows[s.identity.source_id].latest
+        assert latest is not None and latest.state == SourceState.FRESH
+        assert latest.source_time is None and latest.parser_version is None
+    assert "BODY-MARKER-9f3a" not in health.model_dump_json()
+    with engine.connect() as connection:
+        stored = connection.execute(text("SELECT * FROM source_observations")).mappings().all()
+    assert "BODY-MARKER-9f3a" not in repr([dict(r) for r in stored])

@@ -2,7 +2,7 @@
 name = "paxpivot"
 version = "0.1.0"
 requires-python = "==3.12.*"
-dependencies = ["fastapi>=0.135,<0.136", "pydantic>=2.12,<3", "uvicorn>=0.41,<0.42", "sqlalchemy>=2.0,<2.1", "alembic>=1.18,<1.19", "psycopg[binary]>=3.3,<3.4", "python-dotenv>=1.2,<2", "rq>=2.6,<3"]
+dependencies = ["fastapi>=0.135,<0.136", "pydantic>=2.12,<3", "uvicorn>=0.41,<0.42", "sqlalchemy>=2.0,<2.1", "alembic>=1.18,<1.19", "psycopg[binary]>=3.3,<3.4", "python-dotenv>=1.2,<2", "rq>=2.6,<3", "httpx>=0.28,<0.29"]
 
 [build-system]
 requires = ["hatchling==1.29.0"]
