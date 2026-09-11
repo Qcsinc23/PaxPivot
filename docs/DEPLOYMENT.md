@@ -29,6 +29,7 @@ No worker/scheduler runs: nothing is scheduled until a source is approved (TASK-
 | `PAXPIVOT_API_TOKEN` | random, ≥ 32 chars; shared by `web` and `api` only |
 | `PAXPIVOT_SESSION_SECRET` | random, ≥ 32 chars |
 | `PAXPIVOT_PILOT_PASSPHRASE` | ≥ 20 chars; the single pilot user's sign-in |
+| `FIRECRAWL_API_KEY` | the product owner's Firecrawl key (server-side only). Without it `check-sources` retrieves nothing and exits 2 |
 
 Generate with `openssl rand -hex 32`. Rotating `PAXPIVOT_SESSION_SECRET` signs everyone out.
 
@@ -57,6 +58,13 @@ docker compose --env-file .env.production -f compose.prod.yml exec api python -c
 
 `api` runs `alembic upgrade head` on every start; `web` fails closed (503) unless both
 sign-in secrets are set (ADR-005).
+
+## Source checks (TASK-025)
+
+`/etc/cron.d/paxpivot-checks` runs every 6 hours:
+`docker compose … exec -T api python -m paxpivot.tooling check-sources` — one metadata-only
+retrieval per approved source through Firecrawl (4 credits per run), appended as immutable
+observations; `/advanced` and `/terminals` show the resulting states. Nothing is parsed.
 
 ## Backup and restore (manual until M3-1)
 

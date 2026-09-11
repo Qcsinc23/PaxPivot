@@ -43,6 +43,7 @@ services:
       DATABASE_URL: postgresql+psycopg://paxpivot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/paxpivot
       REDIS_URL: redis://redis:6379/0
       PAXPIVOT_API_TOKEN: ${PAXPIVOT_API_TOKEN:?set PAXPIVOT_API_TOKEN}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

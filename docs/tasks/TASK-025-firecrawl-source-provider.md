@@ -2,9 +2,11 @@
 
 ## Status
 
-`blocked` — needs (1) TASK-024 merged, (2) at least one source set to `approved` with
-`may_retrieve=True` by the product owner (TASK-023 data + review), (3) a Firecrawl credential
-policy (server-side secret name, budget/cadence per pilot SRC-001) recorded by the product owner.
+`review` — unblocked 2026-09-11 by the product owner's delegated decision: TASK-023 approved the
+four official terminal pages for metadata-only retrieval; Firecrawl is the retriever (the pilot
+host's own egress is refused by the site's edge, verified; Firecrawl reaches the page, verified);
+cadence 360 min (4 credits per run, ~16 credits/day); the API key is a server-side secret
+(`FIRECRAWL_API_KEY` in `/opt/paxpivot/.env.production`, supplied by the product owner).
 
 ## Assigned role
 
@@ -29,10 +31,12 @@ failure is preserved, never "no departures". ADR-004 fixes where it attaches.
 ## Owned paths
 
 ```text
-apps/api/paxpivot/infrastructure/providers/firecrawl.py
-tests/unit/test_firecrawl_provider.py          (recorded/synthetic responses only; no network)
-tests/fixtures/firecrawl/README.md
-docs/tasks/TASK-025-firecrawl-source-provider.md
+apps/api/paxpivot/infrastructure/providers/{__init__,firecrawl}.py
+apps/api/paxpivot/tooling.py (check-sources), Makefile (check-sources), compose.prod.yml (FIRECRAWL_API_KEY passthrough)
+pyproject.toml, uv.lock (httpx runtime dependency)
+tests/unit/test_firecrawl_provider.py          (httpx.MockTransport; network refused)
+tests/integration/test_source_checks_db.py     (runner + provider on a temporary database)
+docs/DEPLOYMENT.md, docs/tasks/TASK-025-firecrawl-source-provider.md
 ```
 
 ## Interfaces consumed
@@ -46,19 +50,22 @@ application/source_pipeline.py::record_observation (the only way results are sto
 ## Interfaces produced
 
 ```text
-infrastructure/providers/firecrawl.py::FirecrawlSourceProvider(client, *, provider_id="firecrawl", policy_version_id: str)
+infrastructure/providers/firecrawl.py::FirecrawlSourceProvider(api_key, sources: Mapping[UUID, Source], *, transport=None, clock=...)
+  .from_env(sources, env) -> provider | None; provider_id == "firecrawl"
+tooling: `python -m paxpivot.tooling check-sources` (exit 2 without FIRECRAWL_API_KEY); `make check-sources`
 ```
 
 ## Acceptance criteria
 
-- [ ] Maps HTTP/Firecrawl outcomes to `source_unreachable` / `source_missing` / `fresh`
-      (metadata) / `restricted_user_open_only` (auth-walled) with `extraction=not_attempted`;
+- [x] Maps HTTP/Firecrawl outcomes to `source_unreachable` / `source_missing` / `fresh`
+      (metadata) with `extraction=not_attempted`; 401/403 are `source_unreachable` (`http_forbidden`), never
+      `restricted_user_open_only` (an edge refusal is not evidence of a user-open-only source);
       never emits `no_departures_published`, never sets `parser_version`.
-- [ ] Never returns page content; `content_hash` only when the source policy is not `denied`;
+- [x] Never returns page content; `content_hash` only when the source policy is not `denied`;
       `payload_ref` only when `snapshot` is allowed (and no snapshot store exists yet → never).
-- [ ] Never follows login flows, never bypasses access controls, never sends credentials to the source.
-- [ ] Configuration/auth errors → `Failure` with static keys; no exception text or URL query strings in keys/logs.
-- [ ] Passes the TASK-004 conformance suite and the TASK-024 runner with recorded responses; the
+- [x] Never follows login flows, never bypasses access controls, never sends credentials to the source.
+- [x] Configuration/auth errors → `Failure` with static keys; no exception text or URL query strings in keys/logs.
+- [x] Passes the TASK-004 conformance suite and the TASK-024 runner with recorded responses; the
       `no_network` guard is armed in tests.
 
 ## Required tests
@@ -93,7 +100,7 @@ make compose-check
 
 ## Blocked / contract change needed
 
-See Status. The provider contract itself is fixed; only inputs are missing.
+`None`. Runtime prerequisite: `FIRECRAWL_API_KEY` set on the API host (product owner's account).
 
 ## Handoff
 
