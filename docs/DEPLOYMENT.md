@@ -100,5 +100,6 @@ directory and copy the files out for labeling. Bodies stay out of git and out of
 ```bash
 docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
   exec -T -e PAXPIVOT_CORPUS_DIR=/tmp/corpus api python -m paxpivot.tooling capture-corpus <source_id>
-docker cp paxpivot-api-1:/tmp/corpus/. /opt/paxpivot/private-fixtures/parsers/amc-terminal-page/
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
+  cp api:/tmp/corpus/. /opt/paxpivot/private-fixtures/parsers/amc-terminal-page/
 ```
