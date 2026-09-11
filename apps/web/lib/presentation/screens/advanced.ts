@@ -10,12 +10,18 @@ import { known, unknown, type Fact } from "@/lib/presentation/fact";
 import type { SourceEvidenceView } from "@/lib/presentation/types";
 
 /** Whether the source-processing policy allows this source to be read at all. */
-export type SourceApproval = "approved" | "review" | "paused" | "unknown";
+export type SourceApproval =
+  | "approved"
+  | "review"
+  | "paused"
+  | "restricted"
+  | "unknown";
 
 export type SourceHealthRowView = {
   id: string;
   name: string;
-  evidence: SourceEvidenceView;
+  /** Omitted when PaxPivot has never read this source ("Not checked yet"). */
+  evidence?: SourceEvidenceView;
   /** What the page itself claimed, as text. Unknown when it showed no timestamp. */
   pageTime: Fact<string>;
   /** When PaxPivot last read it. */
@@ -23,6 +29,8 @@ export type SourceHealthRowView = {
   cadence: Fact<string>;
   reader: Fact<string>;
   approval: SourceApproval;
+  /** An operator stopped processing this source, its adapter or a mode; history is untouched. */
+  killSwitched?: boolean;
   openHref: string;
 };
 

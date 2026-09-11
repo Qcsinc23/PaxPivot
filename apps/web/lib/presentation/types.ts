@@ -154,7 +154,8 @@ export type TerminalCardView = {
   name: string;
   installation?: string;
   accessText: Fact<string>;
-  evidence: SourceEvidenceView;
+  /** Omitted when no source for this terminal has been observed yet ("Not checked yet"). */
+  evidence?: SourceEvidenceView;
   entrance: { status: "verified" | "unverified"; label: Fact<string> };
   href: Href;
 };

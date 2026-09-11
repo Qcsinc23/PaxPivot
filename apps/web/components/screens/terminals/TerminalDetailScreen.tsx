@@ -119,7 +119,13 @@ export function TerminalDetailScreen({ model, initialTab }: Props) {
   const evidence = (
     <>
       <Card>
-        <EvidenceAge age={model.evidence.age} />
+        {model.evidence.age ? (
+          <EvidenceAge age={model.evidence.age} />
+        ) : (
+          <p className="pp-sub">
+            PaxPivot has not read a source for this terminal yet.
+          </p>
+        )}
         <EvidenceRows rows={model.evidence.rows} />
       </Card>
       <Disclosure summary="Why included or excluded?">
@@ -142,24 +148,39 @@ export function TerminalDetailScreen({ model, initialTab }: Props) {
       </p>
 
       <Card as="div">
-        <div className="pp-card__hd">
-          <Button
-            href={model.actions.directionsHref}
-            variant="secondary"
-            size="sm"
-            icon={<Navigation className="pp-i" aria-hidden="true" />}
-          >
-            Directions
-          </Button>
-          <HandoffLabel />
-        </div>
+        {model.actions.directionsHref ? (
+          <div className="pp-card__hd">
+            <Button
+              href={model.actions.directionsHref}
+              variant="secondary"
+              size="sm"
+              icon={<Navigation className="pp-i" aria-hidden="true" />}
+            >
+              Directions
+            </Button>
+            <HandoffLabel />
+          </div>
+        ) : (
+          <p className="pp-sub">
+            Directions need a verified passenger entrance, which is not on
+            record yet.
+          </p>
+        )}
         <CardActions>
-          <Button href={model.actions.watchHref} variant="secondary" size="sm">
-            Watch
-          </Button>
-          <Button href={model.actions.officialHref} variant="ghost" size="sm">
-            Official page
-          </Button>
+          {model.actions.watchHref ? (
+            <Button
+              href={model.actions.watchHref}
+              variant="secondary"
+              size="sm"
+            >
+              Watch
+            </Button>
+          ) : null}
+          {model.actions.officialHref ? (
+            <Button href={model.actions.officialHref} variant="ghost" size="sm">
+              Official page
+            </Button>
+          ) : null}
         </CardActions>
       </Card>
 
@@ -176,9 +197,11 @@ export function TerminalDetailScreen({ model, initialTab }: Props) {
         ]}
       />
 
-      <Rows aria-label="Nearby">
-        <Row title="Compare nearby terminals" href={model.compareHref} />
-      </Rows>
+      {model.compareHref ? (
+        <Rows aria-label="Nearby">
+          <Row title="Compare nearby terminals" href={model.compareHref} />
+        </Rows>
+      ) : null}
     </>
   );
 }

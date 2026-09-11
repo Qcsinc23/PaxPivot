@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR; becomes `done` once merged (see Handoff).
+`done` — merged to `main` in 0601c28; post-merge Quality verified in TASK-020's PR; Handoff recorded below.
 
 ## Assigned role
 
@@ -112,7 +112,7 @@ make compose-check
 
 **Branch:** `foundation/TASK-019-ask-answer-view` from `main` @ `6c84a63` (TASK-018 merge).
 
-**Commit:** reported in the PR.
+**Commit:** de8ad72 (PR #20, merged as 0601c28).
 
 **Files changed:** the owned paths above.
 
@@ -121,7 +121,7 @@ unchanged; its row/option types now live in `types.ts` and are re-exported.
 
 **Migrations:** none.
 
-**Verification run:** recorded in the PR after the final change.
+**Verification run:** on de8ad72 — make format-check/lint/typecheck/test-unit (pytest 156; Vitest 259)/test-integration (3)/test/build/migrate/migrate-check/compose-check/migrate-test all PASS; CI Quality PASS on the head and on the merge commit.
 
 **Known limitations / risks:** the answer builder (application → `AskAnswerView`) does not
 exist yet; the live `/ask` route stays an honest empty state. The verdict pill tones (`best`,

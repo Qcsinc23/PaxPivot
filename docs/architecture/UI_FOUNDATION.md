@@ -96,6 +96,20 @@ count) and `followUps`. The presentation:
 No AI provider, LLM call or tool invocation exists in the web app; eligibility and routing are
 never decided by an LLM.
 
+## Presentation adapters (live data)
+
+`lib/api/contracts.ts` mirrors the Python read models (`/api/v1`); `lib/api/examples/*.json`
+are generated from them and asserted by both suites. `lib/api/client.ts::readApi` is the
+server-only read client (token from `PAXPIVOT_API_URL`/`PAXPIVOT_API_TOKEN`; four explicit
+failure reasons, none of which a page may render as absence). `lib/presentation/adapters/*`
+turn payloads into the existing screen models — `toTerminalNetworkScreenModel`,
+`toTerminalDetailScreenModel`, `toSourceHealthScreenModel` — and are the only place the wire
+shape is known. Adapters format (ages, timestamps, cadence, entrance labels) and never decide:
+no eligibility, ranking, `SourceState` reinterpretation, zero-for-unknown, inferred absence or
+inferred coordinates. A source PaxPivot has never read has no `evidence` and renders
+"Not checked yet"; an action the application cannot honour is omitted, not dead. Live pages
+call `readApi` in a server component, adapt, and render; `/showcase/*` keeps using fixtures.
+
 ## Progressive disclosure
 
 Surfaces show two-or-three-word state pills. The deterministic explanation from TASK-002

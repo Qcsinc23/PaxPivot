@@ -8,6 +8,8 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -107,20 +109,38 @@ def setup_env() -> None:
     print("Local environment ready; existing values preserved.")
 
 
-def empty_database_check() -> None:
-    """Create a unique database, migrate it, check drift, always remove only that DB."""
+@contextmanager
+def temporary_database() -> Iterator[str]:
+    """A unique local database, migrated to head, dropped afterwards. Yields its URL.
+
+    DATABASE_URL is pointed at it for the duration so Alembic and the API composition root
+    see the same database.
+    """
     config = configure()
     url = make_url(os.environ["DATABASE_URL"])
     if url.host not in {"127.0.0.1", "localhost"}:
-        raise RuntimeError("Migration test is restricted to local databases")
+        raise RuntimeError("Temporary databases are restricted to local servers")
     name = "paxpivot_test_" + uuid4().hex
     admin = create_engine(url, isolation_level="AUTOCOMMIT")
     original = os.environ["DATABASE_URL"]
     with admin.connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{name}" TEMPLATE template0'))
     try:
-        os.environ["DATABASE_URL"] = url.set(database=name).render_as_string(hide_password=False)
+        temp_url = url.set(database=name).render_as_string(hide_password=False)
+        os.environ["DATABASE_URL"] = temp_url
         command.upgrade(config, "head")
+        yield temp_url
+    finally:
+        os.environ["DATABASE_URL"] = original
+        with admin.connect() as connection:
+            connection.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
+        admin.dispose()
+
+
+def empty_database_check() -> None:
+    """Migrate a fresh database, check drift, seed twice, roundtrip; remove only that DB."""
+    config = configure()
+    with temporary_database():
         migration_check()
         command.upgrade(config, "head")  # Idempotent migration invocation.
         # Prove drift detection actually fails for unexpected application tables.
@@ -138,23 +158,34 @@ def empty_database_check() -> None:
             raise RuntimeError("Migration drift was not detected")
         with engine.begin() as connection:
             connection.execute(text("DROP TABLE unexpected_drift"))
-        engine.dispose()
         migration_check()
+        # Reference data is idempotent: the second run inserts nothing and changes nothing.
+        from paxpivot.infrastructure.bootstrap import seed_reference_data
+
+        first = seed_reference_data(engine)
+        second = seed_reference_data(engine)
+        if not any(first.values()) or any(second.values()):
+            raise RuntimeError(f"Seed is not idempotent: {first} then {second}")
+        engine.dispose()
         command.downgrade(config, "base")
         command.upgrade(config, "head")
         migration_check()
-        print("Empty database baseline, repeat upgrade, drift detection and roundtrip: PASS")
-    finally:
-        os.environ["DATABASE_URL"] = original
-        with admin.connect() as connection:
-            connection.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
-        admin.dispose()
+        print("Empty database baseline, drift detection, idempotent seed and roundtrip: PASS")
+
+
+def seed() -> None:
+    from paxpivot.infrastructure.bootstrap import seed_reference_data
+
+    configure()
+    inserted = seed_reference_data(create_engine(os.environ["DATABASE_URL"]))
+    print(f"Reference data: inserted {inserted}; existing rows preserved.")
 
 
 def dev() -> None:
     configure()
     subprocess.run(["docker", "compose", "up", "-d", "--wait"], cwd=ROOT, check=True)
     command.upgrade(configure(), "head")
+    seed()
     children = [
         subprocess.Popen(
             [
@@ -199,6 +230,8 @@ if __name__ == "__main__":
         migration_check()
     elif action == "migrate-test":
         empty_database_check()
+    elif action == "seed":
+        seed()
     elif action == "dev":
         dev()
     else:

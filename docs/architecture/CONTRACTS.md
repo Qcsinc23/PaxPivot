@@ -17,8 +17,20 @@ unknown values and timezone-aware timestamps. They are not database ORM models.
 | application/ports/auth.py | Principal(user_id), Authenticator.authenticate(credential: str or None) -> Result[Principal], async |
 | infrastructure/auth.py | DenyAllAuthenticator: every credential produces unauthorized Failure |
 | infrastructure/audit.py | audit_event(logger,event,correlation_id): static event/correlation metadata only |
-| infrastructure/database.py | metadata: SQLAlchemy naming conventions, no product tables yet |
+| infrastructure/database.py | metadata + Core tables terminals, sources, source_observations, terminal_facts, processing_switches (ADR-004); engine_from_env |
 | api.py | HealthResponse and GET /health -> {"status":"ok"}, liveness only |
+| domain/source.py (ADR-004) | Source (registry row, no secrets), SourceKind, SourceProcessingPolicy.allows(mode), PolicyReviewState, RawPayloadPolicy, ProcessingMode, KillSwitch/KillSwitchScope; SourceObservation.payload_ref and supersedes_observation_id (optional) |
+| domain/terminal.py (ADR-004) | Terminal.installation (optional); TerminalOperationalFact, TerminalFactKind, FactText |
+| application/source_gate.py | authorize_processing(source, mode, switches) -> Result[ProcessingAuthorization]; engaged_switch |
+| application/source_pipeline.py | record_observation(source, provider, observations, switches) -> Result[SourceObservation], async; the provider attach point |
+| application/ports/repositories.py | SourceRepository, SourceObservationRepository (append-only), TerminalRepository, KillSwitchRepository — sync protocols |
+| application/read_models.py | SourceEvidenceRead, TerminalSummaryRead, TerminalDetailRead, TerminalNetworkRead, SourceHealthRead (+rows/counts): the /api/v1 wire contracts; no payload refs or hashes |
+| application/read_services.py | list_terminal_network, get_terminal_detail -> Result, list_source_health |
+| infrastructure/repositories.py | Sql* implementations over one Connection; row <-> domain mappers |
+| infrastructure/bootstrap.py | seed_reference_data(engine) idempotent; REFERENCE_TERMINALS, DIRECTORY_SOURCE (needs_review, disabled) |
+| infrastructure/auth.py | BearerTokenAuthenticator (PAXPIVOT_API_TOKEN, interim), authenticator_from_env, LOCAL_PRINCIPAL_ID |
+| api.py (ADR-004) | GET /api/v1/terminals, /api/v1/terminals/{id}, /api/v1/sources/health; every route behind require_principal; get_repositories/get_engine/get_authenticator are the overridable seams |
+| migrations/versions/0002_sources_terminals.py | tables above, CHECK constraints for every enum, append-only trigger on observations and facts |
 
 A SourceObservation is not a ScheduleObservation or an opportunity. Its `fresh` state may
 refer to source metadata only; no automatic movement claim follows. Successful retrieval
@@ -40,8 +52,13 @@ The versioned eligibility engine will determine what supported traveler_class va
 this task implements no eligibility rules or broad-category support. Party size is derived
 from travelers. No independently mutable seat count can diverge from party size.
 
-The initial downstream tasks add functions with signatures fixed in their task contracts,
-not new shared ports/schema. No web domain copy, API registration or migration is authorized.
+Downstream tasks add functions with signatures fixed in their task contracts, not new shared
+ports/schema. Only foundation tasks add migrations or `/api/v1` routes.
+
+Source processing (ADR-004): a source is processed only through `authorize_processing`; the
+default review state allows metadata retrieval at most; raw bodies never enter the database;
+observations and terminal facts are append-only at the database level; a never-observed
+source is `latest = None`, not a state; read models never expose payload references or hashes.
 
 Web presentation contracts (view models, source-state lexicon, navigation) are documented in
 `docs/architecture/UI_FOUNDATION.md` and decided in ADR-003; they are foundation-owned too.

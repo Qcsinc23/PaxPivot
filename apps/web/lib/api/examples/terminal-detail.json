@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-09-10T12:00:00Z",
+  "summary": {
+    "terminal_id": "7596e1ec-3777-58c6-9987-659488f52d56",
+    "name": "Example Terminal a",
+    "installation": "Example Installation a",
+    "timezone": "UTC",
+    "operational_state": "verified",
+    "entrance": {
+      "latitude": 0.5,
+      "longitude": 0.5
+    },
+    "entrance_kind": "passenger_terminal",
+    "official_url": "https://example.invalid/terminal-a",
+    "latest": {
+      "observation_id": "b58e03c4-987a-5ffc-bed0-e30862138af4",
+      "state": "fresh",
+      "observed_at": "2026-09-10T11:30:00Z",
+      "source_time": "2026-09-10T11:00:00Z",
+      "retrieval": "succeeded",
+      "extraction": "exact_text",
+      "parser_version": "synthetic-parser-v1",
+      "explanation": "A fresh source observation exists for this source; it is metadata, not a confirmed flight and not confirmed seat availability, and it still requires official verification."
+    }
+  },
+  "entrance_instructions": "Synthetic instructions: use the passenger terminal entrance.",
+  "facts": [
+    {
+      "fact_id": "3026ac8d-1fad-5d6e-86d1-5d3300004a1f",
+      "kind": "counter_hours",
+      "value": "Synthetic hours: 06:00\u201322:00",
+      "observed_at": "2026-09-10T09:00:00Z",
+      "source_time": null,
+      "source_url": "https://example.invalid/terminal-a",
+      "effective_from": null,
+      "effective_to": null
+    },
+    {
+      "fact_id": "1c0aa1bc-7a20-5a79-a763-faec3142cabc",
+      "kind": "phone",
+      "value": "+1 000 000 0000 (synthetic)",
+      "observed_at": "2026-09-10T09:00:00Z",
+      "source_time": null,
+      "source_url": "https://example.invalid/terminal-a",
+      "effective_from": null,
+      "effective_to": null
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "e602dcb0-cebd-5b6a-b747-0f11ec39502c",
+      "name": "Example terminal-a",
+      "url": "https://example.invalid/terminal-a",
+      "kind": "terminal_page",
+      "enabled": true,
+      "review_state": "approved",
+      "latest": {
+        "observation_id": "b58e03c4-987a-5ffc-bed0-e30862138af4",
+        "state": "fresh",
+        "observed_at": "2026-09-10T11:30:00Z",
+        "source_time": "2026-09-10T11:00:00Z",
+        "retrieval": "succeeded",
+        "extraction": "exact_text",
+        "parser_version": "synthetic-parser-v1",
+        "explanation": "A fresh source observation exists for this source; it is metadata, not a confirmed flight and not confirmed seat availability, and it still requires official verification."
+      }
+    }
+  ]
+}
