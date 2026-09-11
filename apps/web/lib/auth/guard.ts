@@ -35,8 +35,15 @@ export function redirectTo(path: string, status: 303 | 307 = 303): Response {
  */
 export function safeNextPath(candidate: unknown): string {
   if (typeof candidate !== "string" || !candidate.startsWith("/")) return "/";
-  const url = new URL(candidate, "http://local.invalid");
-  if (url.origin !== "http://local.invalid") return "/";
+  let url: URL;
+  try {
+    url = new URL(candidate, "http://local.invalid");
+  } catch {
+    return "/";
+  }
+  // Dot-segment collapse (`/..//evil`) can leave a protocol-relative path; refuse it too.
+  if (url.origin !== "http://local.invalid" || url.pathname.startsWith("//"))
+    return "/";
   return url.pathname + url.search;
 }
 

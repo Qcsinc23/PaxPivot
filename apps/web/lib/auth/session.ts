@@ -22,12 +22,13 @@ async function hmac(secret: string, message: string): Promise<string> {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Constant-time string equality (same length required). */
+/** Constant-time string equality; a length mismatch is folded into the result, not short-cut. */
 export function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1)
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  const length = Math.max(a.length, b.length);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < length; i += 1) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
   return diff === 0;
 }
 

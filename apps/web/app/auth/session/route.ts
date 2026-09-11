@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   const passphrase = String(form.get("passphrase") ?? "");
   const next = safeNextPath(form.get("next"));
   if (!timingSafeEqual(passphrase, config.passphrase)) {
-    // A fixed delay caps guesses per connection and equalises timing across failure kinds.
+    // A fixed per-request delay slows sequential guessing and equalises timing across failure kinds.
     await new Promise((resolve) => setTimeout(resolve, FAILURE_DELAY_MS));
     return redirectTo(`/login?error=1&next=${encodeURIComponent(next)}`);
   }
