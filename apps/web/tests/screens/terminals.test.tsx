@@ -218,7 +218,15 @@ describe("TerminalDetailScreen", () => {
     expect(within(handoffs).getAllByRole("listitem")).toHaveLength(
       fixtureTerminalDetail.travel.handoffs.length,
     );
-    expect(within(panel()).getByText(/Live handoff/)).toBeTruthy();
+    // Each provider row states what that provider leaves unconfirmed; nothing is inferred.
+    const labels = within(handoffs)
+      .getAllByText(/Live handoff/)
+      .map((label) => label.textContent);
+    expect(labels).toEqual([
+      "Live handoff · availability unknown",
+      "Live handoff · schedule unknown",
+    ]);
+    expect(labels.join(" ")).not.toContain("fare");
   });
 
   test("evidence keeps the page time apart from the read time and explains inclusion", () => {

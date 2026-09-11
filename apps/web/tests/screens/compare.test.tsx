@@ -1,4 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import ComparePage from "@/app/trips/[tripId]/compare/page";
 import { CompareScreen } from "@/components/screens/compare/CompareScreen";
@@ -82,16 +84,23 @@ describe("CompareScreen", () => {
     const tie = cell("Handoffs", 0);
     const none = cell("Known cost", 1);
 
-    expect(better.style.fontWeight).toBe("700");
-    expect(tie.style.fontWeight).toBe("");
+    expect(better.getAttribute("data-emphasis")).toBe("better");
+    expect(tie.getAttribute("data-emphasis")).toBe("tie");
+    expect(none.getAttribute("data-emphasis")).toBeNull();
 
-    // Dimmed by colour, never by transparency: the text stays readable.
-    expect(tie.style.color).toBe("var(--color-neutral-700)");
-    expect(tie.style.opacity === "" || Number(tie.style.opacity) >= 0.6).toBe(
-      true,
+    // The foundation stylesheet renders those marks: bold for better, dimmed by colour (never
+    // by transparency) for a tie.
+    const css = readFileSync(
+      join(process.cwd(), "styles", "components.css"),
+      "utf8",
     );
-    expect(none.style.fontWeight).toBe("");
-    expect(none.style.color).toBe("");
+    expect(css).toMatch(
+      /\.pp-table \[data-emphasis="better"\] \{\s*font-weight: 700;/,
+    );
+    expect(css).toMatch(
+      /\.pp-table \[data-emphasis="tie"\] \{\s*color: var\(--color-neutral-700\);/,
+    );
+    expect(css.slice(css.indexOf(".pp-table"))).not.toMatch(/opacity/);
   });
 
   test("an unknown cell is never promoted or demoted by the screen", () => {
@@ -116,10 +125,9 @@ describe("CompareScreen", () => {
     const unknownCell = cell("Known cost", 0);
     expect(unknownCell.textContent).toContain("Unknown");
     // The model said "none", so no emphasis is applied — the screen decided nothing.
-    expect(unknownCell.style.fontWeight).toBe("");
-    expect(unknownCell.style.color).toBe("");
+    expect(unknownCell.getAttribute("data-emphasis")).toBeNull();
     // And it is not styled as the winner.
-    expect(cell("Known cost", 1).style.fontWeight).toBe("");
+    expect(cell("Known cost", 1).getAttribute("data-emphasis")).toBeNull();
   });
 
   test("shows source evidence for cells that carry it, and none otherwise", () => {
@@ -155,7 +163,18 @@ describe("CompareScreen", () => {
     const { container } = render(<CompareScreen model={fixtureCompare} />);
     const scroller =
       container.querySelector<HTMLElement>("table")?.parentElement;
-    expect(scroller?.style.overflowX).toBe("auto");
+    expect(scroller?.classList.contains("pp-table-wrap")).toBe(true);
+    expect(
+      container.querySelector("table")?.classList.contains("pp-table"),
+    ).toBe(true);
+    // The foundation class contains the overflow inside the box and out of the page's width.
+    const css = readFileSync(
+      join(process.cwd(), "styles", "components.css"),
+      "utf8",
+    );
+    expect(css).toMatch(
+      /\.pp-table-wrap \{\s*overflow-x: auto;\s*contain: paint;/,
+    );
   });
 
   test("offers Watch both and Open as sticky actions", () => {

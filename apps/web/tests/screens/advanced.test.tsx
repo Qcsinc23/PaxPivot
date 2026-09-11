@@ -162,8 +162,18 @@ describe("SourceHealthScreen", () => {
     );
     const scroller =
       container.querySelector<HTMLElement>("table")?.parentElement;
-    expect(scroller?.style.overflowX).toBe("auto");
-    expect(scroller?.style.contain).toBe("paint");
+    expect(scroller?.classList.contains("pp-table-wrap")).toBe(true);
+    expect(
+      container.querySelector("table")?.classList.contains("pp-table"),
+    ).toBe(true);
+    // The foundation class contains the overflow inside the box and out of the page's width.
+    const css = readFileSync(
+      join(process.cwd(), "styles", "components.css"),
+      "utf8",
+    );
+    expect(css).toMatch(
+      /\.pp-table-wrap \{\s*overflow-x: auto;\s*contain: paint;/,
+    );
   });
 });
 
@@ -199,28 +209,38 @@ describe("SplitLayout", () => {
 });
 
 describe("desktop composition showcase", () => {
-  test("puts the results list beside the map with the top bar above them", () => {
+  test("renders Results with the map first in the document and beside the list from 60rem", () => {
     const { container } = render(<ShowcaseDesktopCompositionPage />);
 
     const split = container.querySelector(".pp-split");
     expect(split).toBeTruthy();
+    expect(split?.classList.contains("pp-split--aside-first")).toBe(true);
+    const map = within(split as HTMLElement).getByRole("list", {
+      name: "Locations on the map",
+    });
+    const routes = within(split as HTMLElement).getByRole("list", {
+      name: "Space-A routes",
+    });
+    // Document order is the phone order: map, then the list column.
     expect(
-      within(split as HTMLElement).getByRole("list", {
-        name: "Space-A routes",
-      }),
+      map.compareDocumentPosition(routes) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(
-      within(split as HTMLElement).getByRole("list", {
-        name: "Locations on the map",
-      }),
-    ).toBeTruthy();
-
-    expect(container.querySelector(".pp-topbar")).toBeTruthy();
     expect(screen.getByRole("group", { name: "Sort routes" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Ask/ })).toBeTruthy();
     for (const route of fixtureResults.routes) {
       expect(screen.getByText(route.title)).toBeTruthy();
     }
+  });
+
+  test("the aside-first modifier moves the map to the right column only at 60rem", () => {
+    const css = readFileSync(
+      join(process.cwd(), "styles", "screens.css"),
+      "utf8",
+    );
+    const wide = css.slice(css.indexOf("@media (min-width: 60rem)"));
+    expect(wide).toMatch(
+      /\.pp-split--aside-first > :first-child \{\s*order: 1;/,
+    );
+    expect(css.slice(0, css.indexOf("@media"))).not.toContain("order:");
   });
 
   test("has no axe violations", async () => {

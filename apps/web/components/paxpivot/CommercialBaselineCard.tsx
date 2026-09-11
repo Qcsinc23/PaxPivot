@@ -40,7 +40,7 @@ export function CommercialBaselineCard({ baseline, headingLevel = 3 }: Props) {
       ) : null}
       <FactStrip facts={baseline.facts} />
       <p className="pp-sub">{baseline.rankingReason}</p>
-      <HandoffLabel />
+      <HandoffLabel kind={baseline.unknown} />
       <CardActions>
         {baseline.actions.watchHref ? (
           <Button

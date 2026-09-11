@@ -1,90 +1,24 @@
 "use client";
 
 import { Settings } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { SourceStateBadge } from "@/components/paxpivot/SourceStateBadge";
 import { TripCard } from "@/components/paxpivot/TripCard";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Card, CardHeader, Row, Rows } from "@/components/ui/Card";
 import { FactValue } from "@/components/ui/Facts";
-import { StatusPill, type PillTone } from "@/components/ui/Pill";
-import {
-  SegmentedControl,
-  type SegmentOption,
-} from "@/components/ui/SegmentedControl";
+import { StatusPill } from "@/components/ui/Pill";
+import { ScreenSection } from "@/components/ui/ScreenSection";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
-import type { PlanScreenModel } from "@/lib/presentation/screens/plan";
 import {
-  SORT_MODE_LABELS,
-  type EligibilitySummaryView,
-  type RankingSortMode,
-} from "@/lib/presentation/types";
+  ELIGIBILITY_WORDING,
+  eligibilitySummaryText,
+} from "@/lib/presentation/eligibility";
+import type { PlanScreenModel } from "@/lib/presentation/screens/plan";
+import { SORT_OPTIONS, type RankingSortMode } from "@/lib/presentation/types";
 import { TripSettingsSheet } from "./TripSettingsSheet";
-
-/** Sort options come from the foundation's labels; the screen never invents its own wording. */
-const SORT_OPTIONS: readonly SegmentOption<RankingSortMode>[] = (
-  Object.keys(SORT_MODE_LABELS) as RankingSortMode[]
-).map((value) => ({ value, label: SORT_MODE_LABELS[value] }));
-
-/** Traveler-facing wording for the application's eligibility state (never a category code). */
-const ELIGIBILITY: Readonly<
-  Record<
-    EligibilitySummaryView["state"],
-    { text: string; tone: PillTone; srText: string }
-  >
-> = {
-  eligible: {
-    text: "Eligible",
-    tone: "verified",
-    srText:
-      "your party can request Space-A travel; a seat is still not guaranteed",
-  },
-  ineligible: {
-    text: "Not eligible",
-    tone: "caution",
-    srText: "this request does not qualify under the current policy",
-  },
-  unknown: {
-    text: "Eligibility unknown",
-    tone: "unknown",
-    srText: "not enough information to decide yet",
-  },
-  outside_supported_scope: {
-    text: "Outside supported scope",
-    tone: "unknown",
-    srText: "this case is not covered yet",
-  },
-};
-
-function eligibilityLabel(eligibility: EligibilitySummaryView): string {
-  const travelers = `${eligibility.travelerCount} ${
-    eligibility.travelerCount === 1 ? "traveler" : "travelers"
-  }`;
-  return `${ELIGIBILITY[eligibility.state].text} · ${travelers}`;
-}
-
-/** Vertical rhythm between a section heading and its list, using foundation tokens only. */
-function ScreenSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  const id = useId();
-  return (
-    <section
-      aria-labelledby={id}
-      style={{ display: "grid", gap: "var(--space-3)" }}
-    >
-      <h2 id={id} className="pp-title">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 type Props = { model: PlanScreenModel };
 
@@ -144,7 +78,9 @@ export function PlanScreen({ model }: Props) {
   }
 
   const { eligibility } = model;
-  const lexeme = eligibility ? ELIGIBILITY[eligibility.state] : undefined;
+  const lexeme = eligibility
+    ? ELIGIBILITY_WORDING[eligibility.state]
+    : undefined;
 
   return (
     <>
@@ -163,7 +99,7 @@ export function PlanScreen({ model }: Props) {
         <CardHeader>
           {eligibility && lexeme ? (
             <StatusPill tone={lexeme.tone} srText={lexeme.srText}>
-              {eligibilityLabel(eligibility)}
+              {eligibilitySummaryText(eligibility)}
             </StatusPill>
           ) : null}
         </CardHeader>
@@ -218,10 +154,7 @@ export function PlanScreen({ model }: Props) {
 
       {model.watching.length > 0 ? (
         <ScreenSection title="Watching">
-          <ul
-            aria-label="Watched trips"
-            style={{ display: "grid", gap: "var(--space-3)" }}
-          >
+          <ul aria-label="Watched trips" className="pp-stack">
             {model.watching.map((trip) => (
               <li key={trip.id}>
                 <TripCard trip={trip} />

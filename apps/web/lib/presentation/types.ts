@@ -52,6 +52,26 @@ export const SORT_MODE_LABELS: Readonly<Record<RankingSortMode, string>> = {
   fewest_handoffs: "Fewest handoffs",
 };
 
+/** The sort choices as a segmented control expects them; one canonical value for every screen. */
+export const SORT_OPTIONS: readonly {
+  value: RankingSortMode;
+  label: string;
+}[] = (Object.keys(SORT_MODE_LABELS) as RankingSortMode[]).map((value) => ({
+  value,
+  label: SORT_MODE_LABELS[value],
+}));
+
+/**
+ * What a provider handoff leaves unconfirmed (pilot GND-003). The application states which
+ * facts it could not confirm; the label never infers them. Default is both availability and fare.
+ */
+export type HandoffUnknownKind =
+  | "availability_and_fare"
+  | "availability"
+  | "fare"
+  | "schedule"
+  | "provider_details";
+
 export type FactView = { label: string; value: Fact<string> };
 
 /** Why a Space-A route card sits where it does. Position is 1-based within Space-A results. */
@@ -85,6 +105,8 @@ export type CommercialBaselineView = {
   quoteEvidence?: SourceEvidenceView;
   facts: readonly FactView[];
   rankingReason: string;
+  /** Which facts the provider handoff leaves unconfirmed; omitted means availability and fare. */
+  unknown?: HandoffUnknownKind;
   actions: { openHref: Href; watchHref?: Href };
 };
 

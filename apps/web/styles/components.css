@@ -752,6 +752,68 @@ body[data-sticky-bar] .pp-fab {
   max-width: 32ch;
 }
 
+/* ── screen section / vertical stack ───────────────────────────────── */
+.pp-section,
+.pp-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* ── data table ────────────────────────────────────────────────────── */
+/* A semantic table that scrolls inside its own box on narrow screens. `contain: paint` keeps
+   the overflow out of the document's scroll width, so the page itself never slides sideways. */
+.pp-table-wrap {
+  overflow-x: auto;
+  contain: paint;
+}
+
+.pp-table {
+  width: 100%;
+  min-width: 32rem;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.pp-table--wide {
+  min-width: 46rem;
+}
+
+.pp-table caption {
+  padding-bottom: var(--space-2);
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--color-neutral-700);
+}
+
+.pp-table th,
+.pp-table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+  text-align: left;
+  vertical-align: top;
+}
+
+.pp-table th {
+  font-weight: 600;
+}
+
+/* A second line inside a header cell (an option title under its pill). */
+.pp-table__title {
+  display: block;
+  margin-top: var(--space-1);
+  font-weight: 600;
+}
+
+/* Emphasis is application truth rendered as style: bold for better, muted (never transparent)
+   for a tie, nothing for none. */
+.pp-table [data-emphasis="better"] {
+  font-weight: 700;
+}
+
+.pp-table [data-emphasis="tie"] {
+  color: var(--color-neutral-700);
+}
+
 /* ── sticky action bar ─────────────────────────────────────────────── */
 .pp-sticky {
   position: sticky;
