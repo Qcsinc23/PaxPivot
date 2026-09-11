@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import HttpUrl
-from sqlalchemy import Engine
+from sqlalchemy import Engine, update
 from sqlalchemy.dialects.postgresql import insert
 
 from paxpivot.domain.source import (
@@ -72,11 +72,13 @@ DIRECTORY_SOURCE = Source(
 # AMC Travel Site directory. Parsing stays forbidden (SRC-009 accuracy gate); only page
 # reachability, content hash and page time may be recorded and displayed. hash_only: no body
 # is ever stored.
+# v2 (TASK-031): parsing approved by the product owner's delegated decision. Parsed rows still
+# stay `parser_review_required` until the labeled corpus passes the SRC-009 accuracy gate.
 APPROVED_TERMINAL_PAGE_POLICY = SourceProcessingPolicy(
-    policy_version_id="terminal-page-metadata-v1",
+    policy_version_id="terminal-page-parse-v2",
     review_state=PolicyReviewState.APPROVED,
     may_retrieve=True,
-    may_parse=False,
+    may_parse=True,
     may_summarize=False,
     may_display=True,
     may_aggregate_history=False,
@@ -170,10 +172,31 @@ TERMINAL_PAGE_SOURCES: tuple[Source, ...] = tuple(
 
 REFERENCE_SOURCES: tuple[Source, ...] = (DIRECTORY_SOURCE, *TERMINAL_PAGE_SOURCES)
 
+# Policy versions this seed is allowed to replace. Any other version on a reference row was set
+# by a person (an incident pause, a restriction) and is left alone.
+UPGRADABLE_POLICY_VERSIONS = frozenset({"terminal-page-metadata-v1"})
+
+POLICY_COLUMNS = frozenset(
+    {
+        "policy_version_id",
+        "review_state",
+        "may_retrieve",
+        "may_parse",
+        "may_summarize",
+        "may_display",
+        "may_aggregate_history",
+        "raw_payload",
+        "snapshot_retention_days",
+        "reviewer",
+        "reviewed_at",
+        "updated_at",
+    }
+)
+
 
 def seed_reference_data(engine: Engine) -> dict[str, int]:
-    """Insert the reference rows that are missing; existing rows are never rewritten."""
-    inserted = {"sources": 0, "terminals": 0}
+    """Insert missing reference rows; upgrade only known prior policy versions of reference rows."""
+    inserted = {"sources": 0, "terminals": 0, "policies_upgraded": 0}
     with engine.begin() as connection:
         # RETURNING yields one row per inserted row and none on conflict (rowcount is
         # unreliable for ON CONFLICT DO NOTHING under psycopg). Order: the directory source
@@ -204,4 +227,25 @@ def seed_reference_data(engine: Engine) -> dict[str, int]:
             )
         for source in TERMINAL_PAGE_SOURCES:
             insert_source(source)
+        # Registry rows are mutable (observations are not): bring a known older policy version
+        # of a reference source up to the current one so new observations carry it. Rows on an
+        # unrecognised version, or paused/restricted by a person, are never touched; URLs and
+        # names are never rewritten. Each upgrade is printed so the register change is visible.
+        for source in REFERENCE_SOURCES:
+            upgraded = connection.execute(
+                update(db.sources)
+                .where(
+                    db.sources.c.source_id == source.identity.source_id,
+                    db.sources.c.policy_version_id != source.policy.policy_version_id,
+                    db.sources.c.policy_version_id.in_(UPGRADABLE_POLICY_VERSIONS),
+                    db.sources.c.review_state.notin_(
+                        [PolicyReviewState.PAUSED.value, PolicyReviewState.RESTRICTED.value]
+                    ),
+                )
+                .values(**{k: v for k, v in source_row(source).items() if k in POLICY_COLUMNS})
+                .returning(db.sources.c.source_id)
+            ).all()
+            for (source_id,) in upgraded:
+                print(f"Policy upgraded: {source_id} -> {source.policy.policy_version_id}")
+            inserted["policies_upgraded"] += len(upgraded)
     return inserted

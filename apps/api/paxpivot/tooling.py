@@ -255,6 +255,43 @@ def check_sources() -> int:
     return exit_code(run)
 
 
+def capture_corpus_command(source_id: str) -> int:
+    """Capture one official page into the parser corpus fixtures (TASK-031). Records nothing."""
+    import asyncio
+    from uuid import UUID
+
+    from paxpivot.application.corpus import capture_corpus
+    from paxpivot.infrastructure import database as db
+    from paxpivot.infrastructure.providers.firecrawl import FirecrawlSourceProvider
+    from paxpivot.infrastructure.repositories import SqlKillSwitchRepository, SqlSourceRepository
+
+    configure()
+    engine = create_engine(os.environ["DATABASE_URL"])
+    with db.read_snapshot(engine) as connection:
+        sources = SqlSourceRepository(connection)
+        registry = {s.identity.source_id: s for s in sources.list_sources()}
+        switches = SqlKillSwitchRepository(connection).list_engaged()
+    engine.dispose()
+    source = registry.get(UUID(source_id))
+    if source is None:
+        print("Unknown source id.")
+        return 2
+    provider = FirecrawlSourceProvider.from_env(registry)
+    if provider is None:
+        print("FIRECRAWL_API_KEY is not set; nothing captured.")
+        return 2
+    directory = ROOT / "private-fixtures/parsers/amc-terminal-page"  # gitignored; never committed
+    result = asyncio.run(capture_corpus(source, provider, switches, directory))
+    if not result.ok:
+        print(f"Refused: {result.error.message_key}")
+        return 3
+    print(
+        f"Captured {result.value.sha256} (page status {result.value.page_status}); "
+        f"label it in {result.value.labels_path}"
+    )
+    return 0
+
+
 def seed() -> None:
     from paxpivot.infrastructure.bootstrap import seed_reference_data
 
@@ -316,6 +353,8 @@ if __name__ == "__main__":
         seed()
     elif action == "check-sources":
         raise SystemExit(check_sources())
+    elif action == "capture-corpus":
+        raise SystemExit(capture_corpus_command(sys.argv[2]))
     elif action == "cold-start-check":
         cold_start_check(int(sys.argv[2]) if len(sys.argv) > 2 else 20)
     elif action == "dev":

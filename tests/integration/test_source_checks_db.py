@@ -98,7 +98,7 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
 def engine() -> Iterator[Engine]:
     with temporary_database() as url:
         engine = create_engine(url)
-        assert seed_reference_data(engine) == {"sources": 5, "terminals": 4}
+        assert seed_reference_data(engine) == {"sources": 5, "terminals": 4, "policies_upgraded": 0}
         yield engine
         engine.dispose()
 

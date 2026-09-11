@@ -63,8 +63,8 @@ def _fact_count(engine: Engine) -> int:
 def engine() -> Iterator[Engine]:
     with temporary_database() as url:
         engine = create_engine(url)
-        assert seed_reference_data(engine) == {"sources": 5, "terminals": 4}
-        assert seed_reference_data(engine) == {"sources": 0, "terminals": 0}
+        assert seed_reference_data(engine) == {"sources": 5, "terminals": 4, "policies_upgraded": 0}
+        assert seed_reference_data(engine) == {"sources": 0, "terminals": 0, "policies_upgraded": 0}
         yield engine
         engine.dispose()
 
@@ -425,3 +425,64 @@ def test_ready_reports_the_migrated_database(engine: Engine) -> None:
         assert client.get("/ready").json() == {"status": "ready"}
     finally:
         app.dependency_overrides.clear()
+
+
+def test_seed_upgrades_an_older_reference_policy_version_without_touching_history(
+    engine: Engine,
+) -> None:
+    """TASK-031: registry rows carry the current policy version; observations keep theirs."""
+    from paxpivot.infrastructure.bootstrap import TERMINAL_PAGE_SOURCES
+
+    target = TERMINAL_PAGE_SOURCES[0]
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE sources SET policy_version_id = 'terminal-page-metadata-v1', "
+                "may_parse = false WHERE source_id = :id"
+            ),
+            {"id": target.identity.source_id},
+        )
+    assert seed_reference_data(engine)["policies_upgraded"] == 1
+    assert seed_reference_data(engine)["policies_upgraded"] == 0
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT policy_version_id, may_parse, url FROM sources WHERE source_id = :id"),
+            {"id": target.identity.source_id},
+        ).one()
+    assert row[0] == target.policy.policy_version_id and row[1] is True
+    assert row[2] == str(target.identity.url)
+
+
+def test_seed_leaves_paused_and_unknown_policy_versions_alone(engine: Engine) -> None:
+    """TASK-031 review: a person's pause or an unrecognised version is never rewritten by seed."""
+    from paxpivot.infrastructure.bootstrap import TERMINAL_PAGE_SOURCES
+
+    paused, unknown = TERMINAL_PAGE_SOURCES[0], TERMINAL_PAGE_SOURCES[1]
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE sources SET policy_version_id = 'terminal-page-metadata-v1', "
+                "review_state = 'paused', may_parse = false WHERE source_id = :id"
+            ),
+            {"id": paused.identity.source_id},
+        )
+        connection.execute(
+            text(
+                "UPDATE sources SET policy_version_id = 'incident-2026-10', may_parse = false "
+                "WHERE source_id = :id"
+            ),
+            {"id": unknown.identity.source_id},
+        )
+    assert seed_reference_data(engine)["policies_upgraded"] == 0
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT policy_version_id, review_state, may_parse FROM sources "
+                "WHERE source_id IN (:a, :b) ORDER BY policy_version_id"
+            ),
+            {"a": paused.identity.source_id, "b": unknown.identity.source_id},
+        ).all()
+    assert [tuple(r) for r in rows] == [
+        ("incident-2026-10", "approved", False),
+        ("terminal-page-metadata-v1", "paused", False),
+    ]

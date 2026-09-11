@@ -78,11 +78,40 @@ class FirecrawlSourceProvider:
         key = env.get("FIRECRAWL_API_KEY")
         return cls(key, sources) if key else None
 
+    async def fetch_document(self, source: SourceIdentity) -> Result[tuple[int, str | None]]:
+        """Page status and raw document for the labeled-corpus capture (TASK-031) only.
+
+        Not used by ``observe``; the corpus command writes the document to a reviewed fixture
+        file in the repository, never to the database.
+        """
+        registered = self._sources.get(source.source_id)
+        if registered is None or registered.identity != source:
+            return _failure("invalid_input", "source_provider.unknown_source", False)
+        fetched = await self._fetch(source)
+        if not fetched.ok:
+            return fetched
+        page_status, document = fetched.value
+        return Success(value=(page_status, document if isinstance(document, str) else None))
+
     async def observe(self, source: SourceIdentity) -> Result[SourceObservation]:
         registered = self._sources.get(source.source_id)
         if registered is None or registered.identity != source:
             return _failure("invalid_input", "source_provider.unknown_source", False)
         observed_at = self._clock()
+        fetched = await self._fetch(source)
+        if not fetched.ok:
+            return fetched
+        page_status, document = fetched.value
+        digest = None
+        hash_wanted = registered.policy.raw_payload != RawPayloadPolicy.DENIED
+        if hash_wanted and isinstance(document, str):
+            # surrogatepass: a stray surrogate in the page must not abort the run.
+            digest = hashlib.sha256(document.encode("utf-8", "surrogatepass")).hexdigest()
+        # The body is only ever hashed above; nothing below reads document.
+        extra = "content_hash_unavailable" if hash_wanted and digest is None else None
+        return Success(value=self._observation(registered, observed_at, page_status, digest, extra))
+
+    async def _fetch(self, source: SourceIdentity) -> Result[tuple[int, Any]]:
         try:
             async with httpx.AsyncClient(
                 transport=self._transport, timeout=REQUEST_TIMEOUT_SECONDS
@@ -115,14 +144,7 @@ class FirecrawlSourceProvider:
             document = data.get("rawHtml")
         except (ValueError, KeyError, TypeError):
             return _failure("unavailable", "source_provider.firecrawl_malformed", True)
-        digest = None
-        hash_wanted = registered.policy.raw_payload != RawPayloadPolicy.DENIED
-        if hash_wanted and isinstance(document, str):
-            # surrogatepass: a stray surrogate in the page must not abort the run.
-            digest = hashlib.sha256(document.encode("utf-8", "surrogatepass")).hexdigest()
-        # The body is only ever hashed above; nothing below reads payload/data/document.
-        extra = "content_hash_unavailable" if hash_wanted and digest is None else None
-        return Success(value=self._observation(registered, observed_at, page_status, digest, extra))
+        return Success(value=(page_status, document))
 
     @staticmethod
     def _observation(
