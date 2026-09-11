@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented 2026-09-11 on branch `foundation/TASK-034-trip-request`; awaiting fresh review and post-merge CI.
+`done` — merged in PR #41 (merge commit 4b96308, post-merge CI green); deployed to the VPS at tag 4b96308 on 2026-09-11 (alembic head `0004_trip_requests`), live API verified: create 201, list, get 200, invalid body 422.
 
 ## Assigned role
 
@@ -90,3 +90,11 @@ No eligibility, no routes.
   reaches a log line (test asserts the log is clean).
 - Trip page requires a full UUID and treats an API `invalid` as not found; window inputs are
   labelled UTC; error lookup uses own properties only; impossible calendar dates are rejected.
+
+## Handoff
+
+- **Merged:** PR #41 → 4b96308; post-merge `Quality` green. Deployed `paxpivot-{api,web}:4b96308`; migration 0004 applied at API start; smoke from inside the stack: POST 201, list shows the trip first with the origin name, GET 200, party_size 0 → 422.
+- **Adversarial review (fresh, 0 Critical / 1 Important → fixed):** engine `hide_parameters=True` and FK race → 422 so request text never reaches logs; strict UUID on the trip page; UTC labels on the window inputs; own-property error lookup; impossible dates rejected.
+- **Known limits (pilot):** windows are UTC; trips are not user-scoped (per-user auth before multi-user); no idempotency on double submit; Trips list has no LIMIT and one terminal lookup per trip (fine at pilot scale, join before multi-user).
+- **Next:** TASK-036 route search consumes `trip_requests`; TASK-032 parser after ≥10 labeled corpus files.
+- **Not done here:** no eligibility, routing, ranking or "no flights" claims; the trip page states that no route has been searched.
