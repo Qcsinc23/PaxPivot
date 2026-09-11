@@ -2,10 +2,9 @@
 
 ## Status
 
-`review` — recovered, remediated and completed; five residual Important items were resolved in the
-completion pass with the product owner's explicit authorisation (see "Recovery + review record"
-and "Residual items" below). Merged by the completing agent; the next agent touching
-`docs/tasks/` normalises this to `done` with the merge SHA.
+`done` — merged to `main` in f430acb (PR #21); post-merge Quality red on the first
+attempt and green on a straight rerun of the same commit — a Docker postgres container
+restart, not a code defect; see "Known limitations". Handoff recorded below.
 
 ## Assigned role
 
@@ -201,6 +200,17 @@ An independent fresh-database probe (24 checks) also passes: seed inserts-then-i
 append-only triggers reject UPDATE and DELETE **on rows that exist**, unknown `source_time`
 stays NULL, latest is the newest by `observed_at`, no raw-body/credential column, no read model
 exposes `payload_ref`/`content_hash`, and every `/api/v1` route carries `require_principal`.
+
+**CI flake observed (pre-existing, not introduced here).** The post-merge `Quality` run on
+`f430acb` failed in `tests/integration/test_scaffold.py::test_baseline_on_empty_database` with
+`server closed the connection unexpectedly` on port 52694, ~0.7s after Compose reported the
+postgres container healthy. Rerunning the identical job on the identical commit passed, and the
+PR's own `scaffold` check had already passed on the same tree, so this is environmental. The
+likely cause is the `pg_isready` healthcheck in `compose.yml` reporting ready during the
+`postgis/postgis` entrypoint's internal server restart; `--wait` then returns before the server
+is durably up. Left unfixed deliberately: `compose.yml` is outside this task's owned paths and the
+change needs a foundation decision (a stronger healthcheck, or a connect-retry in
+`temporary_database`). Worth a small foundation task if it recurs.
 
 **Known limitations / risks:** shared-token auth is interim; seeded terminal names/installations
 and the directory URL are `needs_review` until confirmed; a terminal's headline evidence is
