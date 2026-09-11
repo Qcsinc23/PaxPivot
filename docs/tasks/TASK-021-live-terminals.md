@@ -2,7 +2,8 @@
 
 ## Status
 
-`review` — TASK-020 is merged (`f430acb`); implemented and verified. Read
+`done` — merged to `main` in c12ba3c (PR #24); post-merge Quality green; Handoff recorded
+below. TASK-020 is merged (`f430acb`). Read
 `docs/tasks/SCREEN_TASK_RULES.md` and `docs/architecture/UI_FOUNDATION.md` ("Presentation
 adapters") first.
 
