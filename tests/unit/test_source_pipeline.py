@@ -20,6 +20,8 @@ from paxpivot.domain.source import (
     SourceState,
 )
 from support_sources import (
+    ADAPTER_ID,
+    DIRECTORY,
     NEEDS_REVIEW,
     NOW,
     SOURCE_A,
@@ -32,15 +34,27 @@ from support_sources import (
 
 
 class ScriptedProvider:
-    """Returns exactly what it was given; records that it was called."""
+    """Returns exactly what it was given; records that it was called.
 
-    def __init__(self, result: Result[SourceObservation]) -> None:
+    A real adapter's own identity is the same value it stamps into ``provenance.provider_id``,
+    so the scripted double reads it from the observation it was handed rather than taking a
+    second, independently wrong default. ``provider_id`` is overridable to exercise mismatches.
+    """
+
+    def __init__(
+        self, result: Result[SourceObservation], *, provider_id: str | None = None
+    ) -> None:
         self.result = result
         self.calls = 0
+        self.provider_id = provider_id if provider_id is not None else _declared(result)
 
     async def observe(self, source: SourceIdentity) -> Result[SourceObservation]:
         self.calls += 1
         return self.result
+
+
+def _declared(result: Result[SourceObservation]) -> str:
+    return result.value.provenance.provider_id if result.ok else ADAPTER_ID
 
 
 def run(
@@ -83,6 +97,67 @@ def test_kill_switch_prevents_the_provider_call_entirely() -> None:
     result = run(SOURCE_A, provider, repo, [switch])
     assert not result.ok and result.error.message_key == "source.kill_switch_engaged"
     assert provider.calls == 0 and repo.items == []
+
+
+def test_provider_that_is_not_the_registered_adapter_is_never_invoked() -> None:
+    """An adapter may not answer for a source registered against a different one.
+
+    Called *before* retrieval, so the wrong adapter costs no network call and cannot be
+    used to sidestep an ADAPTER-scope kill switch that keys on the configured adapter_id.
+    """
+    repo = FakeObservations([])
+    provider = ScriptedProvider(
+        Success(value=observation(SOURCE_A, "x", state=SourceState.FRESH, observed_at=NOW)),
+        provider_id="some-other-adapter",
+    )
+    result = run(SOURCE_A, provider, repo, [])
+    assert not result.ok and result.error.message_key == "source_provider.identity_mismatch"
+    assert provider.calls == 0 and repo.items == []
+
+
+def test_source_with_no_configured_adapter_is_never_observed() -> None:
+    # DIRECTORY is seeded with adapter=None: nothing is wired to it, so nothing may observe it.
+    repo = FakeObservations([])
+    provider = ScriptedProvider(
+        Success(value=observation(DIRECTORY, "d", state=SourceState.FRESH, observed_at=NOW))
+    )
+    result = run(DIRECTORY, provider, repo, [])
+    assert not result.ok and result.error.message_key == "source_provider.identity_mismatch"
+    assert provider.calls == 0 and repo.items == []
+
+
+def test_observation_may_not_be_attributed_to_another_adapter() -> None:
+    """A provider must not run under one identity and stamp results with another."""
+    repo = FakeObservations([])
+    stamped_by_registered = observation(
+        SOURCE_A, "forged", state=SourceState.FRESH, observed_at=NOW
+    ).model_copy(
+        update={"provenance": provenance_with_url(SOURCE_A, "https://example.invalid/terminal-a")}
+    )
+    # provenance_with_url stamps ADAPTER_ID; declare a different identity on the provider.
+    provider = ScriptedProvider(Success(value=stamped_by_registered), provider_id="other-adapter")
+    result = run(SOURCE_A, provider, repo, [])
+    assert not result.ok and result.error.message_key == "source_provider.identity_mismatch"
+    assert provider.calls == 0 and repo.items == []
+
+
+def test_identity_is_checked_against_the_registry_before_attribution() -> None:
+    # The registered adapter runs (its identity matches the registry) but hands back an
+    # observation stamped with someone else's identity: refused on attribution.
+    honest = observation(SOURCE_A, "misattributed", state=SourceState.FRESH, observed_at=NOW)
+    forged = honest.model_copy(
+        update={
+            "provenance": honest.provenance.model_copy(
+                update={"provider_id": "impersonated-adapter"}
+            )
+        }
+    )
+    repo = FakeObservations([])
+    provider = ScriptedProvider(Success(value=forged), provider_id=ADAPTER_ID)
+    result = run(SOURCE_A, provider, repo, [])
+    assert not result.ok
+    assert result.error.message_key == "source.observation_provider_mismatch"
+    assert provider.calls == 1 and repo.items == []
 
 
 def test_provider_configuration_failure_passes_through_without_storing() -> None:

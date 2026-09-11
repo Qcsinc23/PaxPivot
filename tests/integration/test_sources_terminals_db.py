@@ -23,6 +23,7 @@ from paxpivot.domain.source import (
     SourceState,
 )
 from paxpivot.domain.terminal import TerminalFactKind, TerminalOperationalFact
+from paxpivot.infrastructure import database as db
 from paxpivot.infrastructure.auth import BearerTokenAuthenticator
 from paxpivot.infrastructure.bootstrap import (
     DIRECTORY_SOURCE,
@@ -41,6 +42,16 @@ from sqlalchemy.exc import DBAPIError
 
 pytestmark = pytest.mark.integration
 TOKEN = "synthetic-token-with-at-least-32-characters"
+
+
+def _observation_count(engine: Engine) -> int:
+    with engine.connect() as connection:
+        return connection.execute(text("SELECT count(*) FROM source_observations")).scalar_one()
+
+
+def _fact_count(engine: Engine) -> int:
+    with engine.connect() as connection:
+        return connection.execute(text("SELECT count(*) FROM terminal_facts")).scalar_one()
 
 
 @pytest.fixture(scope="module")
@@ -240,3 +251,151 @@ def test_api_over_the_real_composition_root(engine: Engine) -> None:
         assert "content_hash" not in health.text and "payload_ref" not in health.text
     finally:
         app.dependency_overrides.clear()
+
+
+def test_superseded_observation_is_not_current(engine: Engine) -> None:
+    """Supersession precedence (ADR-004): a retraction retires the claim it names.
+
+    ``stale`` is a claim; ``withdrawal`` is recorded after it and names it in
+    ``supersedes_observation_id``; ``original`` arrives later still. The current row is the
+    newest claim, and the retracted one is never it — the retirement is recorded at or after the
+    claim it names, so it already outranks that claim in the order ``latest_per_source`` uses.
+    An out-of-order withdrawal (one carrying an older ``observed_at`` than the claim it names) is
+    deliberately inert: a source cannot retract a claim it had not yet made. Every row stays
+    stored, because supersession is history, not mutation.
+    """
+    source_id = DIRECTORY_SOURCE.identity.source_id
+    stale = observation(SourceState.FRESH, datetime(2026, 9, 11, 12, 0, tzinfo=UTC))
+    # Recorded before the newer claim that follows, and older than it.
+    withdrawal = observation(
+        SourceState.WITHDRAWN, datetime(2026, 9, 11, 12, 30, tzinfo=UTC)
+    ).model_copy(update={"supersedes_observation_id": stale.observation_id})
+    original = observation(SourceState.FRESH, datetime(2026, 9, 11, 12, 50, tzinfo=UTC))
+
+    with engine.begin() as connection:
+        repo = SqlSourceObservationRepository(connection)
+        for item in (stale, withdrawal, original):
+            repo.append(item)
+
+    with engine.connect() as connection:
+        repo = SqlSourceObservationRepository(connection)
+        history = repo.list_for_source(source_id, limit=10)
+        assert {o.observation_id for o in history} >= {
+            stale.observation_id,
+            withdrawal.observation_id,
+            original.observation_id,
+        }
+
+        latest = repo.latest_per_source()[source_id]
+        # Not the retracted claim; the surviving claim is the one that is current.
+        assert latest.observation_id != stale.observation_id
+        assert latest.observation_id == original.observation_id
+
+        health = list_source_health(
+            SqlSourceRepository(connection), repo, SqlKillSwitchRepository(connection)
+        )
+        assert health.rows[0].latest is not None
+        assert health.rows[0].latest.state == SourceState.FRESH
+
+
+def test_a_withdrawal_retires_only_the_claim_it_names(engine: Engine) -> None:
+    """Supersession is per-claim: an unnamed claim keeps its place in the ordering."""
+    source_id = DIRECTORY_SOURCE.identity.source_id
+    retired = observation(SourceState.FRESH, datetime(2026, 9, 11, 14, 0, tzinfo=UTC))
+    unnamed = observation(SourceState.FRESH, datetime(2026, 9, 11, 14, 30, tzinfo=UTC))
+    withdrawal = observation(
+        SourceState.WITHDRAWN, datetime(2026, 9, 11, 14, 10, tzinfo=UTC)
+    ).model_copy(update={"supersedes_observation_id": retired.observation_id})
+
+    with engine.begin() as connection:
+        repo = SqlSourceObservationRepository(connection)
+        for item in (retired, unnamed, withdrawal):
+            repo.append(item)
+
+    with engine.connect() as connection:
+        repo = SqlSourceObservationRepository(connection)
+        rows = repo.list_for_source(source_id, limit=10)
+        by_id = {o.observation_id: o for o in rows}
+        # The named claim is retired; the claim the withdrawal does not name keeps its standing.
+        assert by_id[retired.observation_id].state == SourceState.FRESH
+        assert by_id[unnamed.observation_id].state == SourceState.FRESH
+        latest = repo.latest_per_source()[source_id]
+        assert latest.observation_id == unnamed.observation_id
+
+
+def test_write_transaction_commits_only_when_the_unit_of_work_succeeds(engine: Engine) -> None:
+    """The write seam (ADR-004): commit on success, roll back on failure, no partial row."""
+    before = _observation_count(engine)
+    committed = observation(SourceState.FRESH, datetime(2026, 9, 11, 14, 0, tzinfo=UTC))
+    with db.transaction(engine) as connection:
+        SqlSourceObservationRepository(connection).append(committed)
+    assert _observation_count(engine) == before + 1
+    with engine.connect() as connection:
+        repo = SqlSourceObservationRepository(connection)
+        assert committed.observation_id in {
+            o.observation_id
+            for o in repo.list_for_source(DIRECTORY_SOURCE.identity.source_id, limit=50)
+        }
+
+
+def test_write_transaction_rolls_back_the_whole_unit_of_work(engine: Engine) -> None:
+    """A failure partway through leaves nothing behind: no partial observation or fact."""
+    before_observations = _observation_count(engine)
+    before_facts = _fact_count(engine)
+    rolled_back = observation(SourceState.FRESH, datetime(2026, 9, 11, 15, 0, tzinfo=UTC))
+    with pytest.raises(RuntimeError, match="synthetic write failure"):
+        with db.transaction(engine) as connection:
+            SqlSourceObservationRepository(connection).append(rolled_back)
+            SqlTerminalRepository(connection).append_fact(
+                TerminalOperationalFact(
+                    fact_id=uuid4(),
+                    terminal_id=REFERENCE_TERMINALS[0].terminal_id,
+                    kind=TerminalFactKind.COUNTER_HOURS,
+                    value="Synthetic hours",
+                    provenance=Provenance(
+                        source=DIRECTORY_SOURCE.identity,
+                        observed_at=datetime(2026, 9, 11, 15, 0, tzinfo=UTC),
+                        source_time=None,
+                        provider_id="synthetic-provider",
+                        policy_version_id=DIRECTORY_SOURCE.policy.policy_version_id,
+                    ),
+                    effective_from=None,
+                    effective_to=None,
+                    recorded_at=datetime(2026, 9, 11, 15, 0, tzinfo=UTC),
+                )
+            )
+            raise RuntimeError("synthetic write failure")
+    # Both writes in the failed unit of work are gone; nothing partial survived.
+    assert _observation_count(engine) == before_observations
+    assert _fact_count(engine) == before_facts
+    with engine.connect() as connection:
+        repo = SqlSourceObservationRepository(connection)
+        stored = repo.list_for_source(DIRECTORY_SOURCE.identity.source_id, limit=50)
+        assert rolled_back.observation_id not in {o.observation_id for o in stored}
+
+
+def test_append_only_triggers_still_reject_update_and_delete(engine: Engine) -> None:
+    """The rollback above is Python-side; the database still refuses history rewrites."""
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO source_observations (observation_id, source_id, source_url, "
+                "source_authority, observed_at, provider_id, policy_version_id, state, "
+                "retrieval, extraction, confidence_reasons) VALUES "
+                "(:oid, :sid, 'https://example.invalid/x', 'synthetic', now(), "
+                "'synthetic-provider', :pv, 'fresh', 'succeeded', 'not_attempted', "
+                "ARRAY['synthetic'])"
+            ),
+            {
+                "oid": uuid4(),
+                "sid": DIRECTORY_SOURCE.identity.source_id,
+                "pv": DIRECTORY_SOURCE.policy.policy_version_id,
+            },
+        )
+    for statement in (
+        "UPDATE source_observations SET state = 'withdrawn'",
+        "DELETE FROM source_observations",
+    ):
+        with pytest.raises(DBAPIError, match="append-only"):
+            with engine.begin() as connection:
+                connection.execute(text(statement))

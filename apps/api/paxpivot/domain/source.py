@@ -127,6 +127,19 @@ class SourceProcessingPolicy(Contract):
     Public accessibility is not permission (pilot §16.2). Until a source-specific review
     approves processing, only retrieval of page/link/timestamp/hash/health metadata is
     allowed, and only when `may_retrieve` is set. `paused` and `restricted` allow nothing.
+
+    Every flag here is the *authority* for its mode, but not every mode yet has a consumer.
+    `may_retrieve`, `may_parse`, `may_display` and the `raw_payload` policy each gate a real
+    code path today (retrieval in `source_pipeline`, parsing and raw storage in
+    `validate_against_policy`, display in `read_services.displayable_facts`). `may_summarize`
+    and `may_aggregate_history` are declared and consulted by `allows`, but **no code path
+    consumes them in this slice**: nothing summarizes a source, and the source-health `counts` /
+    `never_observed` numbers are current-state operational telemetry over the registry, not
+    history aggregation over observations. The distinction matters because those numbers stay
+    correct and source-independent even when history aggregation is forbidden; they are counts
+    of what the registry holds, not derived claims about movements. `test_source_policy` pins
+    this by proving those two flags change no read model, so giving them a consumer without
+    deciding the gate is a test failure rather than a silent policy bypass.
     """
 
     policy_version_id: Identifier

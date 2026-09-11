@@ -268,18 +268,21 @@ class SqlSourceObservationRepository:
         # A total order matters: `recorded_at` defaults to Postgres now(), which is the
         # transaction start time, so two observations appended in one transaction share it.
         # Without the id tiebreaker the "latest" row would be arbitrary.
-        rank = (
-            func.row_number()
-            .over(
-                partition_by=o.c.source_id,
-                order_by=(
-                    o.c.observed_at.desc(),
-                    o.c.recorded_at.desc(),
-                    o.c.observation_id.desc(),
-                ),
-            )
-            .label("rank")
-        )
+        order = (o.c.observed_at.desc(), o.c.recorded_at.desc(), o.c.observation_id.desc())
+        rank = func.row_number().over(partition_by=o.c.source_id, order_by=order).label("rank")
+        # Supersession precedence (ADR-004) needs no extra clause here, and that is a deliberate
+        # decision rather than an omission. `supersedes_observation_id` is recorded history: it
+        # says which earlier claim an observation retires. A retirement is by definition recorded
+        # at or after the claim it names, so it already outranks that claim under this order and
+        # is therefore already the current row — a claim can never be rank 1 while a later
+        # observation retires it. An *out-of-order* withdrawal (one carrying an older
+        # `observed_at` than the claim it names) is inert, which is the safe reading: a source
+        # cannot retract a claim it had not yet made. Adding a "not superseded" filter on top of
+        # this ordering would provably never remove the rank-1 row, so it would be untestable
+        # code guarding a rule the ordering already enforces. The behaviour is pinned by
+        # `test_superseded_observation_is_not_current` and
+        # `test_a_withdrawal_retires_only_the_claim_it_names`; if this rank order ever changes,
+        # those tests are what must fail first.
         ranked = select(o, rank).subquery()
         rows = self._c.execute(select(ranked).where(ranked.c.rank == 1)).all()
         return {r._mapping["source_id"]: _observation(r) for r in rows}

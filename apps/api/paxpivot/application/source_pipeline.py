@@ -1,6 +1,7 @@
 """Where a retrieval provider attaches to the persistence pipeline (ADR-004).
 
     SourceProcessingPolicy + kill switches  →  authorize_processing(RETRIEVE)
+                                            →  provider identity vs registry adapter_id
                                             →  SourceProvider.observe (Firecrawl or another adapter)
                                             →  validation against the registry, policy and switches
                                             →  SourceObservationRepository.append (immutable)
@@ -102,9 +103,19 @@ async def record_observation(
     authorization = authorize_processing(source, ProcessingMode.RETRIEVE, switches)
     if not authorization.ok:
         return authorization
+    # Identity before invocation: a provider that is not the adapter this source is registered
+    # against must never be asked to observe it. Checking here (rather than only validating the
+    # returned observation) means a mismatch costs no retrieval at all, and an ADAPTER-scope
+    # kill switch cannot be sidestepped by handing the source to a differently named adapter.
+    if source.adapter_id is None or provider.provider_id != source.adapter_id:
+        return _reject("invalid_input", "source_provider.identity_mismatch")
     result = await provider.observe(source.identity)
     if not result.ok:
         return result
+    # The adapter's identity must also be the one the observation claims: a provider may not
+    # attribute its result to a different adapter than the one that actually ran.
+    if result.value.provenance.provider_id != provider.provider_id:
+        return _reject("invalid_input", "source.observation_provider_mismatch")
     rejection = validate_against_policy(source, result.value, switches)
     if rejection is not None:
         return rejection

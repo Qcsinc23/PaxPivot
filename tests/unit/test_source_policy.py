@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from paxpivot.application.read_services import list_source_health, list_terminal_network
 from paxpivot.application.source_gate import authorize_processing, engaged_switch
 from paxpivot.domain.source import (
     KillSwitch,
@@ -23,6 +24,10 @@ from support_sources import (
     RESTRICTED,
     SOURCE_A,
     T0,
+    FakeObservations,
+    FakeSources,
+    FakeSwitches,
+    FakeTerminals,
     observation,
     source,
 )
@@ -186,3 +191,48 @@ def test_a_kill_switch_key_must_match_its_scope() -> None:
     assert kill(KillSwitchScope.SOURCE, str(SOURCE_A.identity.source_id)).engaged
     # Adapter keys stay free-form identifiers (a provider/adapter class name).
     assert kill(KillSwitchScope.ADAPTER, "synthetic-adapter").engaged
+
+
+def test_summarize_and_history_flags_reach_no_read_model() -> None:
+    """The decision recorded for `may_summarize` / `may_aggregate_history` (ADR-004).
+
+    Neither flag has a consumer in this slice, so they must not change anything a client
+    receives. Turning both on and re-reading the same registry therefore has to produce
+    identical results. This is not vacuous: it fails the moment a read path starts branching on
+    either flag, which is exactly the unguarded policy bypass the finding warned about.
+    """
+    permitted = APPROVED.model_copy(update={"may_summarize": True, "may_aggregate_history": True})
+    assert permitted.allows(ProcessingMode.SUMMARIZE)
+    assert permitted.allows(ProcessingMode.AGGREGATE_HISTORY)
+
+    def reads(policy: SourceProcessingPolicy) -> str:
+        items = [source(label, policy=policy) for label in ("a", "b", "c")]
+        sources = FakeSources(items)
+        observations = FakeObservations(
+            [observation(items[0], "o-1", state=SourceState.FRESH, observed_at=T0)]
+        )
+        switches = FakeSwitches(())
+        # A fixed clock: `generated_at` would otherwise differ between the two calls and make
+        # the comparison fail for a reason that has nothing to do with the flags.
+        return (
+            list_source_health(sources, observations, switches, now=NOW).model_dump_json()
+            + list_terminal_network(
+                FakeTerminals(), sources, observations, now=NOW
+            ).model_dump_json()
+        )
+
+    assert reads(permitted) == reads(APPROVED)
+
+
+def test_operational_telemetry_counts_current_state_not_history() -> None:
+    """`counts` / `never_observed` describe what is current, so they need no history gate.
+
+    They are derived from the same latest-per-source view every other read uses — one entry per
+    source — hence current-state operational telemetry, not the aggregation over observation
+    history that `may_aggregate_history` governs.
+    """
+    sources = FakeSources()
+    health = list_source_health(sources, FakeObservations([]), FakeSwitches(()))
+    assert health.never_observed == len(sources.list_sources())
+    assert health.counts == ()
+    assert all(row.latest is None for row in health.rows)

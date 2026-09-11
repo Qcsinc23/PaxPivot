@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted — foundation-agent decision under TASK-020; 2026-09-10.
+Accepted — foundation-agent decision under TASK-020; 2026-09-10. Extended 2026-09-11 with the
+provider-identity contract, the write/read transaction boundaries, and the two resolved policy
+questions (below); those additions change no table, migration or wire contract.
 
 ## Context
 
@@ -86,11 +88,55 @@ examples under `apps/web/lib/api/examples/` are generated from the Python read m
 asserted by both test suites, so contract drift fails CI.
 
 **Provider attach point.** `application/source_pipeline.record_observation(source, provider,
-observations, switches)`: `authorize_processing(RETRIEVE)` → `SourceProvider.observe` →
-validation (registered identity, current policy version, no payload reference unless
+observations, switches)`: `authorize_processing(RETRIEVE)` → provider identity vs the registry's
+`adapter_id` → `SourceProvider.observe` → validation (registered identity, current policy version,
+the observation's own `provider_id` matching the adapter that ran, no payload reference unless
 `store_raw` is allowed, no interpreted extraction unless `parse` is allowed) → `append`. A
 Firecrawl-backed or any other `SourceProvider` plugs in here and nowhere else; Firecrawl is
 retrieval infrastructure, not product truth. Retrieval failure is stored as its failure state.
+
+**Provider identity.** `SourceProvider` declares `provider_id`, and it must equal the source's
+registered `adapter_id` before the adapter is invoked at all; an observation whose provenance
+names a different adapter is refused after retrieval. Identity is checked before invocation so a
+mismatch costs no retrieval and cannot be used to sidestep an ADAPTER-scope kill switch, which
+keys on the configured `adapter_id`. A source with `adapter_id IS NULL` is inert: nothing is wired
+to it, so nothing may observe it.
+
+## Write and read transaction boundaries
+
+`infrastructure/database.transaction(engine)` is the explicit write seam: it opens a transaction,
+commits on success and rolls back on failure, so a unit of work that raises partway through leaves
+no partial observation or fact. `repositories(engine)` is the read seam over the same boundary.
+
+**Isolation.** Both default to `REPEATABLE READ`, so every unit of work sees one snapshot. The
+read use cases compose several statements per request (terminals, then their sources, then the
+newest observations); under `READ COMMITTED` a concurrent append landing between them is visible
+to the later statement but not the earlier one, which is how a source with an observation can read
+as "never observed". `SERIALIZABLE` was rejected as disproportionate: it would require retry
+handling on read paths that never write, and the failure mode it adds (serialization aborts) is
+worse for a read-only view than the anomaly it removes.
+
+## Two resolved policy questions
+
+**`may_summarize` / `may_aggregate_history`.** Both are declared and consulted by
+`SourceProcessingPolicy.allows`, and both are **inert in this slice**: nothing summarizes a source,
+and `counts` / `never_observed` in the source-health read model are current-state operational
+telemetry derived from the same latest-per-source view as every other row — one entry per source —
+not aggregation over observation history. Stating this explicitly is the decision; the alternative
+(gating the counts behind `may_aggregate_history`) would be wrong, because the counts stay correct
+and source-independent even when history aggregation is forbidden. `test_source_policy` pins it by
+proving both flags change no read model.
+
+**Supersession precedence.** `supersedes_observation_id` is recorded history naming the earlier
+claim an observation retires. Precedence is the recording order, not the source's own clock: a
+withdrawal is recorded at or after the claim it names, so it already outranks that claim under the
+`(observed_at, recorded_at, observation_id)` order `latest_per_source` ranks by, and a retracted
+claim can never be the current row. An out-of-order withdrawal (older `observed_at` than the claim
+it names) is deliberately inert — a source cannot retract a claim it had not yet made. No
+"not superseded" filter is added to the current-state query because such a filter provably could
+not remove the rank-1 row under this ordering; it would be untestable code guarding a rule the
+ordering already enforces. The behaviour is pinned by two integration tests instead, which are
+what must fail first if the rank order ever changes.
 
 **Reference data.** `infrastructure/bootstrap.seed_reference_data` inserts four public AMC
 passenger terminals (names, installations, `America/New_York`; `operational_state = unknown`;
@@ -130,6 +176,13 @@ See `docs/architecture/CONTRACTS.md` (rows marked ADR-004) and `docs/architectur
 `apps/web/lib/presentation/adapters/*`; optional `evidence` on `TerminalCardView`,
 `SourceHealthRowView`, `NearbyTerminalView`; optional terminal-detail actions.
 
+Additive in the completion pass: `SourceProvider.provider_id` (required attribute on the existing
+port — an implementation must now declare which adapter it is); message keys
+`source_provider.identity_mismatch` and `source.observation_provider_mismatch`;
+`infrastructure/database.transaction(engine)` and `repositories(engine)`. No table, column,
+migration or wire-contract change: `/api/v1` responses are byte-identical, and the
+`supersedes_observation_id` field keeps the shape it already had.
+
 ## Migration / rollout
 
 `make migrate` applies 0002; `make seed` inserts reference data idempotently; `make migrate-test`
@@ -141,5 +194,6 @@ re-upgrade. Existing checkouts need only `make migrate`.
 `tests/unit/test_source_policy.py`, `test_read_services.py`, `test_api_v1.py`,
 `test_source_pipeline.py`; `tests/integration/test_sources_terminals_db.py` (seed idempotence,
 append-only trigger, unknown source time, failed retrieval, latest-per-source, current facts,
-kill switch, API over the real composition root); `apps/web/tests/adapters.test.tsx`,
-`api-client.test.ts`; `make check` and `make migrate-test` in CI.
+kill switch, supersession precedence, write-transaction commit/rollback, API over the real
+composition root); `apps/web/tests/adapters.test.tsx`, `api-client.test.ts`; `make check` and
+`make migrate-test` in CI.

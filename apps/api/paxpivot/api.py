@@ -34,7 +34,7 @@ from paxpivot.application.read_services import (
 from paxpivot.domain.base import Contract
 from paxpivot.infrastructure.audit import audit_event
 from paxpivot.infrastructure.auth import authenticator_from_env
-from paxpivot.infrastructure.database import engine_from_env
+from paxpivot.infrastructure.database import engine_from_env, repositories
 from paxpivot.infrastructure.repositories import (
     SqlKillSwitchRepository,
     SqlSourceObservationRepository,
@@ -68,7 +68,12 @@ def get_engine() -> Engine:
 
 
 def get_connection(engine: Annotated[Engine, Depends(get_engine)]) -> Iterator[Connection]:
-    with engine.connect() as connection:
+    """One read unit of work per request, over a single snapshot (ADR-004 "Read isolation").
+
+    The read use cases compose several statements; handing them one REPEATABLE READ snapshot
+    keeps a concurrent write from being half-visible. Reads never commit through this seam.
+    """
+    with repositories(engine) as connection:
         yield connection
 
 

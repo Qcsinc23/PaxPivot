@@ -35,6 +35,11 @@ from pydantic import HttpUrl
 NOW = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
 T0 = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
 
+# The adapter the fixture sources are registered against (``Source.adapter_id``) and the
+# identity the fixture observations are stamped with (``Provenance.provider_id``). One constant
+# because the pipeline requires them to agree before a provider may observe a source.
+ADAPTER_ID = "synthetic-adapter"
+
 
 def uid(label: str) -> UUID:
     return uuid5(NAMESPACE_URL, f"paxpivot:test:{label}")
@@ -84,7 +89,7 @@ def source(
     terminal: str | None = None,
     policy: SourceProcessingPolicy = APPROVED,
     enabled: bool = True,
-    adapter: str | None = "synthetic-adapter",
+    adapter: str | None = ADAPTER_ID,
     cadence: int | None = 30,
 ) -> Source:
     return Source(
@@ -111,7 +116,7 @@ def provenance(src: Source, observed_at: datetime, source_time: datetime | None)
         source=src.identity,
         observed_at=observed_at,
         source_time=source_time,
-        provider_id="synthetic-provider",
+        provider_id=ADAPTER_ID,
         policy_version_id=src.policy.policy_version_id,
     )
 
@@ -320,6 +325,6 @@ def provenance_with_url(src: Source, url: str, observed_at: datetime | None = No
         ),
         observed_at=observed_at or T0,
         source_time=None,
-        provider_id="synthetic-provider",
+        provider_id=ADAPTER_ID,
         policy_version_id=src.policy.policy_version_id,
     )

@@ -8,6 +8,8 @@ that time) alongside the source foreign key.
 """
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from enum import StrEnum
 from functools import cache
 
@@ -15,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Connection,
     DateTime,
     Double,
     Engine,
@@ -265,6 +268,42 @@ processing_switches = Table(
 
 # Tables whose rows may never be updated or deleted (enforced by trigger in migration 0002).
 APPEND_ONLY_TABLES = ("source_observations", "terminal_facts")
+
+
+@contextmanager
+def transaction(
+    engine: Engine, *, isolation_level: str = "REPEATABLE READ"
+) -> Iterator[Connection]:
+    """The explicit write boundary for a unit of work: commit on success, roll back on failure.
+
+    A ``Connection`` on its own never commits, so a caller that appends and returns leaves the
+    row invisible to every other session — and, if it raises, leaves an open transaction behind.
+    Writes therefore go through here. Either every statement in the block is persisted or none
+    is; a partial observation cannot survive a failure partway through.
+
+    REPEATABLE READ is the deliberate default. The read use cases issue more than one statement
+    per request (terminals, then their sources, then the newest observations), and under READ
+    COMMITTED a concurrent write landing between them is visible to the later statement but not
+    the earlier one — a source can read as "never observed" while it has an observation. One
+    snapshot per unit of work removes that interleaving, for reads and writes alike.
+    """
+    with engine.connect() as connection:
+        connection = connection.execution_options(isolation_level=isolation_level)
+        try:
+            with connection.begin():
+                yield connection
+        except Exception:
+            # ``begin()`` has already rolled back; reset explicitly so a caller that catches and
+            # continues cannot observe state left behind by the failed unit of work.
+            connection.rollback()
+            raise
+
+
+@contextmanager
+def repositories(engine: Engine) -> Iterator[Connection]:
+    """A read unit of work: one snapshot, no commit (nothing may have been written)."""
+    with transaction(engine) as connection:
+        yield connection
 
 
 @cache

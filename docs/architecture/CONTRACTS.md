@@ -13,11 +13,11 @@ unknown values and timezone-aware timestamps. They are not database ORM models.
 | domain/eligibility.py | TravelerFacts: pseudonymous ID, sponsor/dependent role, normalized traveler_class and category attestation, age band, sponsor reference and accompaniment; PartyFacts validates unique IDs and dependent sponsor references |
 | domain/eligibility.py | EligibilityDecision: eligible/ineligible/unknown/outside_supported_scope, mandatory controlling policy ID/version/citations/reasons and unresolved conditions |
 | application/result.py | Success[T](ok=True,value), Failure(ok=False,error), Result[T] discriminated by ok; ApplicationError with static message_key, code and retryability |
-| application/ports/source_provider.py | SourceProvider.observe(source: SourceIdentity) -> Result[SourceObservation], async; metadata only, no raw source payload |
+| application/ports/source_provider.py | SourceProvider.provider_id: str — the adapter's own identity, which must equal the source's registered adapter_id before the provider is invoked at all; SourceProvider.observe(source: SourceIdentity) -> Result[SourceObservation], async; metadata only, no raw source payload |
 | application/ports/auth.py | Principal(user_id), Authenticator.authenticate(credential: str or None) -> Result[Principal], async |
 | infrastructure/auth.py | DenyAllAuthenticator: every credential produces unauthorized Failure |
 | infrastructure/audit.py | audit_event(logger,event,correlation_id): static event/correlation metadata only |
-| infrastructure/database.py | metadata + Core tables terminals, sources, source_observations, terminal_facts, processing_switches (ADR-004); engine_from_env |
+| infrastructure/database.py | metadata + Core tables terminals, sources, source_observations, terminal_facts, processing_switches (ADR-004); engine_from_env; transaction(engine)/repositories(engine): the explicit commit-on-success, rollback-on-failure unit of work at REPEATABLE READ, so one request reads one snapshot |
 | api.py | HealthResponse and GET /health -> {"status":"ok"}, liveness only |
 | domain/source.py (ADR-004) | Source (registry row, no secrets), SourceKind, SourceProcessingPolicy.allows(mode), PolicyReviewState, RawPayloadPolicy, ProcessingMode, KillSwitch/KillSwitchScope; SourceObservation.payload_ref and supersedes_observation_id (optional) |
 | domain/terminal.py (ADR-004) | Terminal.installation (optional); TerminalOperationalFact, TerminalFactKind, FactText |

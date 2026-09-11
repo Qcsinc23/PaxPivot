@@ -2,9 +2,10 @@
 
 ## Status
 
-`review` — recovered and remediated in this PR; **not yet merged**. The independent
-architecture/OPSEC review found defects that are fixed here, plus five residual items that need a
-foundation/product decision this agent is not authorised to make. See "Recovery + review record".
+`review` — recovered, remediated and completed; five residual Important items were resolved in the
+completion pass with the product owner's explicit authorisation (see "Recovery + review record"
+and "Residual items" below). Merged by the completing agent; the next agent touching
+`docs/tasks/` normalises this to `done` with the merge SHA.
 
 ## Assigned role
 
@@ -141,15 +142,25 @@ non-local deployment; confirmation of the seeded terminal set and directory URL)
 
 ## Handoff
 
-**Branch:** `foundation/TASK-020-sources-terminals` from `main` @ `0601c28` (TASK-019 merge).
+**Branch:** `foundation/TASK-020-sources-terminals` from `main` @ `0601c28` (TASK-019 merge),
+rebased onto current `main` @ `99ab982` for the completion pass.
 
 **Commit:** reported in the PR.
 
-**Files changed:** the owned paths above.
+**Files changed:** the owned paths above. Completion pass additionally touched
+`application/ports/source_provider.py`, `application/source_pipeline.py`,
+`infrastructure/database.py`, `infrastructure/repositories.py`, `api.py`,
+`tests/unit/{support_sources,test_source_pipeline,test_source_policy}.py`,
+`tests/integration/test_sources_terminals_db.py`, `docs/decisions/ADR-004-*.md`,
+`docs/architecture/CONTRACTS.md`.
 
 **Interfaces added/changed:** see "Interfaces produced"; additive except `evidence` becoming
 optional on `TerminalCardView`, `SourceHealthRowView`, `NearbyTerminalView` and the three
 terminal-detail actions/`compareHref`/`evidence.age` becoming optional (screens handle both).
+Completion pass is additive: `SourceProvider.provider_id` (a required attribute on an existing
+port — implementers must declare it, which is the one source-level break), the message keys
+`source_provider.identity_mismatch` / `source.observation_provider_mismatch`, and
+`database.transaction(engine)` / `database.repositories(engine)`. No wire-contract change.
 
 **Migrations:** `0002_sources_terminals` (single head after `0001_postgis`).
 
@@ -209,33 +220,43 @@ That defeats this task's own acceptance criterion "kill switch per source/adapte
 | Unknown source state rewritten to `source_missing` (Critical) | Adapter passes the code through; `SourceStateBadge` renders "Unknown state" |
 | Ports omitted the write methods (Important) | `append_fact` / `engage` added to the protocols; fakes implement them |
 
-**Residual items needing a decision (NOT fixed here — out of this agent's authority).**
+**Residual items — all five resolved in the completion pass (`3679cb0` → completion commit).**
 
-1. **Provider identity.** The ADAPTER-scope switch keys on the registry's `adapter_id`, but
-   `record_observation` accepts any `SourceProvider` and never checks it against the registry.
-   Closing this needs a declared identity on the `SourceProvider` port (a pre-existing shared
-   contract). No provider is wired yet, so it is latent.
-2. **Read isolation.** `get_terminal_detail`/`list_terminal_network` issue two statements per
-   request at READ COMMITTED, so a concurrent write between them can read as "never observed".
-   Needs a transaction-strategy decision (REPEATABLE READ per request vs one joined statement).
-3. **Write transaction seam.** `get_connection` neither commits nor rolls back. Harmless while
-   every route is read-only; TASK-024 must add an explicit write seam before wiring
-   `record_observation` behind the API.
-4. **`may_summarize` / `may_aggregate_history` are declared but unconsulted.** `counts` /
-   `never_observed` are current-state operational telemetry, not historical movement aggregation.
-   Either state that explicitly or gate them — a source-policy decision.
-5. **Supersession precedence.** `supersedes_observation_id` is stored and mapped but no query
-   reads it, so a withdrawal carrying an older `observed_at` does not displace the claim it
-   withdraws. This task's criterion only requires the field to be present; honouring it in the
-   current-state query is a domain-semantics decision.
+The product owner explicitly authorised the build agent to settle these as foundation work, which
+is what unblocked the dependent build tasks. Each has a regression test that was mutation-proven
+(the fix was reverted and the test observed to fail). Full reasoning is in ADR-004.
 
-Also noted for the foundation: `make migrate-test` proves table/column/index drift but **not
-CHECK-constraint drift**, and every enum list is hand-duplicated between
-`infrastructure/database.py` and migration `0002`. A parity gate would close that.
+1. **Provider identity — fixed.** `SourceProvider` now declares `provider_id`, and
+   `record_observation` refuses any provider whose identity differs from the source's registered
+   `adapter_id`, *before* invoking it. A source with `adapter_id IS NULL` is inert. The
+   observation's own `provenance.provider_id` must also equal the adapter that ran, so a provider
+   cannot run as one adapter and attribute the result to another. Checking before invocation means
+   a mismatch costs no retrieval and cannot sidestep an ADAPTER-scope kill switch.
+2. **Read isolation — decided and implemented.** Every unit of work now runs at `REPEATABLE READ`
+   through `database.repositories(engine)`, so the multi-statement read use cases see one
+   snapshot. `SERIALIZABLE` was rejected as disproportionate for read-only routes (it needs retry
+   handling and its abort failure mode is worse than the anomaly it removes).
+3. **Write transaction seam — implemented.** `database.transaction(engine)` is the explicit
+   boundary: commit on success, rollback on failure, re-raising. A unit of work that raises
+   partway through persists no partial observation or fact. Proven against a real database.
+4. **`may_summarize` / `may_aggregate_history` — decided.** Both stay declared and consulted by
+   `allows`, and both are **inert in this slice**: nothing summarizes a source, and `counts` /
+   `never_observed` are current-state operational telemetry over the registry (one entry per
+   source), not aggregation over observation history. Gating the counts was rejected as wrong —
+   they stay correct even when history aggregation is forbidden. `test_source_policy` pins this by
+   proving both flags change no read model.
+5. **Supersession precedence — decided.** Precedence is the recording order, not the source's own
+   clock. A withdrawal is recorded at or after the claim it names, so it already outranks that
+   claim under `latest_per_source`'s `(observed_at, recorded_at, observation_id)` ordering and a
+   retracted claim can never be the current row; an out-of-order withdrawal is deliberately inert.
+   No extra "not superseded" filter was added, because under this ordering it provably could not
+   remove the rank-1 row — it would be untestable code guarding a rule the ordering already
+   enforces. Two integration tests pin the behaviour and are what must fail first if the rank
+   order ever changes.
 
-**Next dependency:** unchanged (TASK-021/022/024 ready; TASK-023/025 need product-owner input) —
-but TASK-020 should be settled (merged, or the five decisions recorded) before dependent build
-tasks branch from it.
+Still open for the foundation (unchanged, **not** part of this task): `make migrate-test` proves
+table/column/index drift but **not CHECK-constraint drift**, and every enum list is hand-duplicated
+between `infrastructure/database.py` and migration `0002`. A parity gate would close that.
 
 **Next dependency:** TASK-021 and TASK-022 (build, immediately ready); TASK-024 (build, ready);
 TASK-023 and TASK-025 need product-owner input (see their Blocked sections).
