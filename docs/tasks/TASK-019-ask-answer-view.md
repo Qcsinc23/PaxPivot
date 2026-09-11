@@ -110,7 +110,7 @@ make compose-check
 
 ## Handoff
 
-**Branch:** `foundation/TASK-019-ask-answer-view` from `main` @ TASK-018's merge commit.
+**Branch:** `foundation/TASK-019-ask-answer-view` from `main` @ `6c84a63` (TASK-018 merge).
 
 **Commit:** reported in the PR.
 

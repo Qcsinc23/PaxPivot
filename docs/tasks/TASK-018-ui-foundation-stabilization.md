@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR; becomes `done` once merged (see Handoff).
+`done` — merged to `main` in 6c84a63; post-merge Quality verified in TASK-019's PR; Handoff recorded below.
 
 ## Assigned role
 
@@ -154,7 +154,7 @@ See `docs/tasks/SCREEN_TASK_RULES.md`; the mobile Results UX is preserved exactl
 
 **Branch:** `foundation/TASK-018-ui-stabilization` from `main` @ `3fda6c0`.
 
-**Commit:** reported in the PR.
+**Commit:** 18b242a (PR #19, merged as 6c84a63).
 
 **Files changed:** the owned paths above.
 
@@ -164,7 +164,7 @@ See `docs/tasks/SCREEN_TASK_RULES.md`; the mobile Results UX is preserved exactl
 
 **Migrations:** none.
 
-**Verification run:** recorded in the PR after the final change.
+**Verification run:** on 18b242a — make format-check/lint/typecheck/test-unit (pytest 156; Vitest 255)/test-integration (3)/test/build/migrate/migrate-check/compose-check/migrate-test all PASS; git diff --exit-code clean; CI Quality PASS on the head and on the merge commit.
 
 **Live responsive probe** (Next dev, in-app Chromium via `localhost`; `127.0.0.1` is blocked
 for dev chunks by Next's cross-origin guard, which prevents hydration):
