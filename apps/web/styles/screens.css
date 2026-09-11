@@ -1,0 +1,35 @@
+/* Wide-viewport compositions (TASK-016). Layout only: no new visual values, no new tokens.
+   Everything here is expressed with the foundation's own custom properties. */
+
+/* Results list beside its map at ≥ 60rem, stacked below that. Both tracks are minmax(0, 1fr)
+   so neither column can be pushed wider than its share by long content. */
+.pp-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+@media (min-width: 60rem) {
+  .pp-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Desktop top bar: the search affordance, the sort chips and the Ask action on one line. */
+.pp-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.pp-topbar > :last-child {
+  margin-left: auto;
+}
+
+@media (min-width: 60rem) {
+  .pp-topbar {
+    flex-wrap: nowrap;
+  }
+}
