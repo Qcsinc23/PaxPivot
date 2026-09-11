@@ -717,7 +717,8 @@ def test_firecrawl_provider_records_fresh_metadata_through_the_runner(engine: En
     for s in approved:
         latest = rows[s.identity.source_id].latest
         assert latest is not None and latest.state == SourceState.FRESH
-        assert latest.source_time is None and latest.parser_version is None
+        # No stamp in the synthetic body: extraction failed, time stays unknown (TASK-038).
+        assert latest.source_time is None and latest.parser_version == "amc-page-time-v1"
     assert "BODY-MARKER-9f3a" not in health.model_dump_json()
     assert "12 SEP" not in health.model_dump_json()  # the artifact text is hashed, never kept
     with engine.connect() as connection:

@@ -226,6 +226,7 @@ def check_sources() -> int:
         SqlKillSwitchRepository,
         SqlSourceObservationRepository,
         SqlSourceRepository,
+        SqlTerminalRepository,
     )
 
     configure()
@@ -234,7 +235,12 @@ def check_sources() -> int:
         sources = SqlSourceRepository(connection)
         registry = {s.identity.source_id: s for s in sources.list_sources()}
         provider = FirecrawlSourceProvider.from_env(
-            registry, switches=SqlKillSwitchRepository(connection).list_engaged()
+            registry,
+            switches=SqlKillSwitchRepository(connection).list_engaged(),
+            terminal_timezones={
+                t.terminal_id: t.timezone
+                for t in SqlTerminalRepository(connection).list_terminals()
+            },
         )
         if provider is None:
             print("FIRECRAWL_API_KEY is not set; no source was retrieved.")

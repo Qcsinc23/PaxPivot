@@ -28,9 +28,11 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import unquote, urljoin
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
+from paxpivot.application.parsers.amc_page_time import PARSER_VERSION, parse_page_time
 from paxpivot.application.result import ApplicationError, Failure, Result, Success
 from paxpivot.application.source_gate import authorize_processing
 from paxpivot.domain.source import (
@@ -94,6 +96,7 @@ class FirecrawlSourceProvider:
         transport: httpx.AsyncBaseTransport | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         switches: Sequence[KillSwitch] = (),
+        terminal_timezones: Mapping[UUID, str] | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("Firecrawl API key must not be empty")
@@ -104,6 +107,8 @@ class FirecrawlSourceProvider:
         # Engaged kill switches: an artifact's parent page is fetched only under the same
         # authorization the page itself would need (review state and switches).
         self._switches = tuple(switches)
+        # TASK-038: a terminal page's own "current as of" stamp is in the terminal's clock.
+        self._timezones = dict(terminal_timezones or {})
         # One provider instance per run: a terminal page discovered from is fetched once.
         self._page_cache: dict[str, Result[tuple[int, Any]]] = {}
 
@@ -114,9 +119,12 @@ class FirecrawlSourceProvider:
         env: Mapping[str, str] = os.environ,
         *,
         switches: Sequence[KillSwitch] = (),
+        terminal_timezones: Mapping[UUID, str] | None = None,
     ) -> "FirecrawlSourceProvider | None":
         key = env.get("FIRECRAWL_API_KEY")
-        return cls(key, sources, switches=switches) if key else None
+        if not key:
+            return None
+        return cls(key, sources, switches=switches, terminal_timezones=terminal_timezones)
 
     async def fetch_document(self, source: SourceIdentity) -> Result[tuple[int, str | None]]:
         """Page status and raw document for the labeled-corpus capture (TASK-031) only.
@@ -147,9 +155,69 @@ class FirecrawlSourceProvider:
         if hash_wanted and isinstance(document, str):
             # surrogatepass: a stray surrogate in the page must not abort the run.
             digest = hashlib.sha256(document.encode("utf-8", "surrogatepass")).hexdigest()
-        # The body is only ever hashed above; nothing below reads document.
         extra = "content_hash_unavailable" if hash_wanted and digest is None else None
-        return Success(value=self._observation(registered, observed_at, page_status, digest, extra))
+        observation = self._observation(registered, observed_at, page_status, digest, extra)
+        if (
+            registered.kind == SourceKind.TERMINAL_PAGE
+            and authorize_processing(registered, ProcessingMode.PARSE, self._switches).ok
+            and observation.retrieval == RetrievalState.SUCCEEDED
+            and isinstance(document, str)
+        ):
+            observation = self._with_page_time(registered, observation, document)
+        # Nothing below reads document: it is hashed and, for the stamp, pattern-matched only.
+        return Success(value=observation)
+
+    def _with_page_time(
+        self, source: Source, observation: SourceObservation, document: str
+    ) -> SourceObservation:
+        """TASK-038: read the page's own update stamp into ``source_time``; nothing else."""
+        stamp = parse_page_time(document)
+        if stamp is None:  # still metadata only: the page showed no readable stamp
+            return observation.model_copy(
+                update={
+                    "extraction": ExtractionState.FAILED,
+                    "parser_version": PARSER_VERSION,
+                    "confidence_reasons": (*observation.confidence_reasons, "page_time_not_found"),
+                }
+            )
+        reasons = tuple(r for r in observation.confidence_reasons if r != "metadata_only")
+        zone_name = self._timezones.get(source.terminal_id) if source.terminal_id else None
+        try:
+            zone = ZoneInfo(zone_name) if zone_name else None
+        except ZoneInfoNotFoundError:
+            zone = None
+        if zone is None:
+            return observation.model_copy(
+                update={
+                    "extraction": ExtractionState.FAILED,
+                    "parser_version": PARSER_VERSION,
+                    "confidence_reasons": (
+                        *observation.confidence_reasons,
+                        "page_time_zone_unknown",
+                    ),
+                }
+            )
+        if not stamp.has_time:
+            # A bare date is not an instant; the UI would show a clock the page never printed.
+            return observation.model_copy(
+                update={
+                    "extraction": ExtractionState.FAILED,
+                    "parser_version": PARSER_VERSION,
+                    "confidence_reasons": (*observation.confidence_reasons, "page_time_date_only"),
+                }
+            )
+        # The page's zone token (e.g. "EST") is ignored: "L" means the terminal's local clock,
+        # read in its IANA zone, so DST is honoured even when the template says EST.
+        return observation.model_copy(
+            update={
+                "provenance": observation.provenance.model_copy(
+                    update={"source_time": stamp.local.replace(tzinfo=zone)}
+                ),
+                "extraction": ExtractionState.EXACT,
+                "parser_version": PARSER_VERSION,
+                "confidence_reasons": (*reasons, "page_time_parsed", "page_time_local_clock"),
+            }
+        )
 
     async def _fetch_registered(self, source: Source) -> Result[tuple[int, Any]]:
         """A terminal page is fetched as HTML; a schedule artifact is discovered on its terminal
