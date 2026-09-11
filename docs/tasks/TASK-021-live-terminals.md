@@ -2,8 +2,9 @@
 
 ## Status
 
-`ready` — dispatch after TASK-020 is merged to `main`. Read `docs/tasks/SCREEN_TASK_RULES.md` and
-`docs/architecture/UI_FOUNDATION.md` ("Presentation adapters") first.
+`review` — TASK-020 is merged (`f430acb`); implemented and verified. Read
+`docs/tasks/SCREEN_TASK_RULES.md` and `docs/architecture/UI_FOUNDATION.md` ("Presentation
+adapters") first.
 
 ## Assigned role
 
@@ -115,4 +116,78 @@ add a client-side loader.
 
 ## Handoff
 
-(fill in per template)
+**Branch:** `build/TASK-021-live-terminals` from `main` @ `59706b0`.
+
+**Files changed:** both owned page paths, the owned test file, and one line of live-route
+assertions removed from `apps/web/tests/screens/terminals.test.tsx` (see "Deviation" below).
+
+**Interfaces added/changed:** none. No screen model, adapter, contract or component changed.
+
+**Migrations:** none.
+
+**Outcome mapping implemented**
+
+| `readApi` result | model | what the user sees |
+| --- | --- | --- |
+| `ok` | adapter output | the registry; zero terminals is a factual empty state |
+| `not_configured` | `status: "empty"` | "No terminals yet" / "No terminal to show yet" |
+| `unauthorized` | `status: "error"` | "a failure on our side" |
+| `unavailable` | `status: "error"` | "a failure on our side" |
+| detail `not_found` | Next `notFound()` | 404; nothing rendered |
+
+A never-observed terminal renders **"Not checked yet"** and no source state, asserted on the
+rendered pill labels rather than raw text (the screen-reader disclaimers legitimately contain
+phrases such as "not evidence of no departures", so matching full `textContent` would have been
+both a false positive and a weaker test).
+
+**Verification run:** after the final edit, on this branch rebased onto `main` @ `59706b0`:
+
+```text
+make format-check     -> PASS   make build         -> PASS
+make lint             -> PASS   make migrate       -> PASS
+make typecheck        -> PASS   make migrate-check -> PASS
+make test-unit        -> PASS   make compose-check -> PASS
+make test-integration -> PASS   make test           -> PASS
+```
+
+Counts: pytest 190 unit + 13 integration; Vitest 20 files / 309 tests (was 19/295 — the new
+`tests/screens/terminals-live.test.tsx` adds 15, and the removed stale block took 1).
+
+**Live probe against the seeded database** (`make dev` with `PAXPIVOT_API_TOKEN` set on both
+processes, `make seed` applied):
+
+```text
+GET /api/v1/terminals  no auth        -> 401
+GET /api/v1/terminals  with auth      -> 200, 4 seeded terminals, latest=null, entrance=null
+GET /api/v1/terminals/{id}            -> 200
+/terminals                            -> 200; all four seeded terminals listed;
+                                         "Not checked yet" rendered; no fixture strings
+/terminals/{id}                       -> 200; name shown; "Not checked yet"; no entrance claim
+/terminals/{unknown-uuid}             -> 404
+```
+
+Token OPSEC: `grep -rl PAXPIVOT_API_TOKEN apps/web/.next/static` is **empty** after `make build`;
+the only hits under `.next/` are server-side SSR chunks, which is where it belongs.
+
+**Deviation from the task file (recorded, not silently taken).** `tests/screens/terminals.test.tsx`
+is outside this task's owned paths, but it imported both live pages and asserted they render the
+empty state. Those pages now require an API, so that block would have asserted the
+`not_configured` branch by accident — a test that passes for the wrong reason. The block and its
+two now-unused imports were removed; both routes are covered end to end, with the client mocked,
+in the owned `terminals-live.test.tsx`. Net coverage of the live routes increased.
+
+**Ambiguity in the task file (recorded).** Acceptance criterion 1 maps `not_configured` to the
+*empty* model, but the criterion-4 probe expects the *error* state when the token is unset. The
+implemented behaviour follows criterion 1, the explicit mapping: with the token unset the page
+renders "No terminals yet" and never an empty list with fixture data, so the underlying intent of
+criterion 4 holds. If the intent was a visibly distinct "not configured" error, that needs a
+foundation decision, because `emptyTerminalNetwork` is the only existing model the task authorises
+this task to use.
+
+**Known limitations / risks:** the `not_configured` empty state and a genuinely empty registry
+render the same model, so a deployment missing its token looks like "no terminals" rather than
+"not configured"; the wording ("Terminal travel times are not available yet, so there is no network
+to show") is honest but is not a configuration warning. Flagged above for a foundation decision.
+
+**Next dependency:** TASK-022 (build, ready; independent — no shared paths); TASK-024 (build,
+ready).

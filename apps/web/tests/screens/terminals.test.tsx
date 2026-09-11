@@ -1,8 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test } from "vitest";
-import TerminalDetailLivePage from "@/app/terminals/[terminalId]/page";
-import TerminalsPage from "@/app/terminals/page";
 import { TerminalDetailScreen } from "@/components/screens/terminals/TerminalDetailScreen";
 import { TerminalNetworkScreen } from "@/components/screens/terminals/TerminalNetworkScreen";
 import { unknown } from "@/lib/presentation/fact";
@@ -336,24 +334,6 @@ describe("terminal states", () => {
     );
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByText(/failure on our side/)).toBeTruthy();
-  });
-});
-
-describe("live terminal routes", () => {
-  test("render the empty states and no fixture data", () => {
-    const { unmount } = render(<TerminalsPage />);
-    expect(
-      screen.getByRole("heading", { name: "No terminals yet" }),
-    ).toBeTruthy();
-    expect(screen.queryByText(/Example/)).toBeNull();
-    unmount();
-
-    render(<TerminalDetailLivePage />);
-    expect(
-      screen.getByRole("heading", { name: "No terminal to show yet" }),
-    ).toBeTruthy();
-    expect(screen.queryByText(/Example/)).toBeNull();
-    expect(screen.queryByText("Entrance verified")).toBeNull();
   });
 });
 
