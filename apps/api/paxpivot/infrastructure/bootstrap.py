@@ -1,11 +1,13 @@
-"""Development/integration reference data (ADR-004 "initial data strategy").
+"""Development/integration reference data (ADR-004 "initial data strategy"; TASK-023).
 
 Everything here is public registry *metadata*: terminal names, their host installation and
-IANA time zone, and one official directory page. There are no coordinates (nothing is
-geocoded), no entrance (nothing is verified), no operating facts, and no observations — so no
-seeded fact is ever presented as fresh. Every entry is ``needs_review`` and disabled until a
-person confirms it against the official page. Seeding is idempotent: rows are keyed by stable
-UUID5 identifiers and re-running is a no-op. This is not a scraper and must never become one.
+IANA time zone, one official directory page, and one official terminal page per terminal
+(URLs confirmed against that directory). There are no coordinates (nothing is geocoded), no
+entrance (nothing is verified), no operating facts, and no observations, so no seeded fact
+is ever presented as fresh. The directory page stays ``needs_review``/disabled; the terminal
+pages carry the product owner's metadata-only approval (retrieve, hash, display; never
+parse). Seeding is idempotent: rows are keyed by stable UUID5 identifiers and re-running is
+a no-op. This is not a scraper and must never become one.
 """
 
 from datetime import UTC, datetime
@@ -65,6 +67,25 @@ DIRECTORY_SOURCE = Source(
     updated_at=SEED_RECORDED_AT,
 )
 
+# Approved for metadata-only retrieval by the product owner (decision delegated to the
+# foundation agent, 2026-09-11, TASK-023): official AMC terminal pages, confirmed against the
+# AMC Travel Site directory. Parsing stays forbidden (SRC-009 accuracy gate); only page
+# reachability, content hash and page time may be recorded and displayed. hash_only: no body
+# is ever stored.
+APPROVED_TERMINAL_PAGE_POLICY = SourceProcessingPolicy(
+    policy_version_id="terminal-page-metadata-v1",
+    review_state=PolicyReviewState.APPROVED,
+    may_retrieve=True,
+    may_parse=False,
+    may_summarize=False,
+    may_display=True,
+    may_aggregate_history=False,
+    raw_payload=RawPayloadPolicy.HASH_ONLY,
+    snapshot_retention_days=None,
+    reviewer="product-owner-delegated-2026-09-11",
+    reviewed_at=datetime(2026, 9, 11, 16, 0, tzinfo=UTC),
+)
+
 REGISTRY_PROVENANCE = Provenance(
     source=DIRECTORY_SOURCE.identity,
     observed_at=SEED_RECORDED_AT,
@@ -104,20 +125,70 @@ REFERENCE_TERMINALS: tuple[Terminal, ...] = tuple(
 )
 
 
+# Official terminal pages, one per seeded terminal (URLs from the AMC Travel Site directory).
+TERMINAL_PAGE_SOURCES: tuple[Source, ...] = tuple(
+    Source(
+        identity=SourceIdentity(
+            source_id=uuid5(NAMESPACE_URL, f"paxpivot:source:{slug}-terminal-page"),
+            url=HttpUrl(url),
+            authority="Air Mobility Command",
+        ),
+        name=name,
+        kind=SourceKind.TERMINAL_PAGE,
+        terminal_id=uuid5(NAMESPACE_URL, f"paxpivot:terminal:{slug}"),
+        enabled=True,
+        cadence_minutes=360,  # SRC-001 baseline cadence; budget: four pages, four credits per run.
+        adapter_id="firecrawl",
+        adapter_version="v1",
+        policy=APPROVED_TERMINAL_PAGE_POLICY,
+        created_at=SEED_RECORDED_AT,
+        updated_at=SEED_RECORDED_AT,
+    )
+    for slug, name, url in (
+        (
+            "jb-mcguire-dix-lakehurst",
+            "Joint Base MDL Passenger Terminal (AMC page)",
+            "https://www.amc.af.mil/AMC-Travel-Site/Terminals/CONUS-Terminals/Joint-Base-MDL-Passenger-Terminal/",
+        ),
+        (
+            "dover-afb",
+            "Dover AFB Passenger Terminal (AMC page)",
+            "https://www.amc.af.mil/AMC-Travel-Site/Terminals/CONUS-Terminals/Dover-AFB-Passenger-Terminal/",
+        ),
+        (
+            "bwi-amc",
+            "BWI Airport Passenger Terminal (AMC page)",
+            "https://www.amc.af.mil/AMC-Travel-Site/Terminals/CONUS-Terminals/Baltimore-Washington-International-Airport-Passenger-Terminal/",
+        ),
+        (
+            "jb-andrews",
+            "Joint Base Andrews Passenger Terminal (AMC page)",
+            "https://www.amc.af.mil/AMC-Travel-Site/Terminals/CONUS-Terminals/Joint-Base-Andrews-Passenger-Terminal/",
+        ),
+    )
+)
+
+REFERENCE_SOURCES: tuple[Source, ...] = (DIRECTORY_SOURCE, *TERMINAL_PAGE_SOURCES)
+
+
 def seed_reference_data(engine: Engine) -> dict[str, int]:
     """Insert the reference rows that are missing; existing rows are never rewritten."""
     inserted = {"sources": 0, "terminals": 0}
     with engine.begin() as connection:
         # RETURNING yields one row per inserted row and none on conflict (rowcount is
-        # unreliable for ON CONFLICT DO NOTHING under psycopg).
-        inserted["sources"] += len(
-            connection.execute(
-                insert(db.sources)
-                .values(source_row(DIRECTORY_SOURCE))
-                .on_conflict_do_nothing(index_elements=[db.sources.c.source_id])
-                .returning(db.sources.c.source_id)
-            ).all()
-        )
+        # unreliable for ON CONFLICT DO NOTHING under psycopg). Order: the directory source
+        # (terminal provenance points at it), the terminals, then the per-terminal pages.
+        def insert_source(source: Source) -> None:
+            inserted["sources"] += len(
+                connection.execute(
+                    insert(db.sources)
+                    .values(source_row(source))
+                    .on_conflict_do_nothing(index_elements=[db.sources.c.source_id])
+                    .returning(db.sources.c.source_id)
+                ).all()
+            )
+
+        insert_source(DIRECTORY_SOURCE)
         for terminal in REFERENCE_TERMINALS:
             inserted["terminals"] += len(
                 connection.execute(
@@ -131,4 +202,6 @@ def seed_reference_data(engine: Engine) -> dict[str, int]:
                     .returning(db.terminals.c.terminal_id)
                 ).all()
             )
+        for source in TERMINAL_PAGE_SOURCES:
+            insert_source(source)
     return inserted
