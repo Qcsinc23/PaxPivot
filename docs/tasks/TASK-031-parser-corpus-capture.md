@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready` — decisions delegated by the product owner (2026-09-11); see AUDIT.md §4/§6.
+`review` — this PR; decisions delegated by the product owner (2026-09-11); see AUDIT.md §4/§6.
 
 ## Assigned role
 
@@ -25,18 +25,18 @@ TASK-025
 
 ```text
 apps/api/paxpivot/infrastructure/bootstrap.py (policy version bump: may_parse=True, policy_version_id terminal-page-parse-v2)
-apps/api/paxpivot/tooling.py (capture-corpus)
+apps/api/paxpivot/tooling.py (capture-corpus), apps/api/paxpivot/application/corpus.py, infrastructure/providers/firecrawl.py (fetch_document)
 tests/fixtures/parsers/amc-terminal-page/README.md, tests/unit/test_corpus_capture.py
 docs/tasks/TASK-031-parser-corpus-capture.md
 ```
 
 ## Acceptance criteria
 
-- [ ] Policy version v2 keeps `hash_only`, adds `may_parse=True`; existing v1 observations stay valid history; the pipeline's policy-version check means new observations carry v2.
-- [ ] `capture-corpus` writes the file and template, prints the hash, records nothing (assert no new `source_observations` row); refuses a source whose policy forbids parsing.
-- [ ] README states: every corpus file needs a human-completed label file before it may be used by TASK-032; no movement rows are committed without review.
-- [ ] Unit test with `httpx.MockTransport`.
-- [ ] Tests prove the behaviour; no unrelated files changed.
+- [x] Policy version v2 keeps `hash_only`, adds `may_parse=True`; existing v1 observations stay valid history; the pipeline's policy-version check means new observations carry v2.
+- [x] `capture-corpus` writes the file and template, prints the hash, records nothing (assert no new `source_observations` row); refuses a source whose policy forbids parsing.
+- [x] README states: every corpus file needs a human-completed label file before it may be used by TASK-032; no movement rows are committed without review.
+- [x] Unit test with `httpx.MockTransport`.
+- [x] Tests prove the behaviour; no unrelated files changed.
 
 ## Verification commands
 

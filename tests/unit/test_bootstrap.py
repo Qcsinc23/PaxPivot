@@ -22,11 +22,11 @@ def test_every_reference_source_is_an_official_https_page_without_credentials() 
         assert not url.query and not url.fragment
         assert source.policy.raw_payload in {RawPayloadPolicy.DENIED, RawPayloadPolicy.HASH_ONLY}
         assert source.policy.snapshot_retention_days is None
-        assert not source.policy.may_parse and not source.policy.may_summarize
+        assert not source.policy.may_summarize  # parsing: see the terminal-page test
         assert not source.policy.may_aggregate_history
 
 
-def test_terminal_pages_are_approved_for_metadata_only_and_linked_to_their_terminal() -> None:
+def test_terminal_pages_are_approved_to_parse_and_linked_to_their_terminal() -> None:
     terminal_ids = {t.terminal_id for t in REFERENCE_TERMINALS}
     assert {s.terminal_id for s in TERMINAL_PAGE_SOURCES} == terminal_ids
     for source in TERMINAL_PAGE_SOURCES:
@@ -38,7 +38,8 @@ def test_terminal_pages_are_approved_for_metadata_only_and_linked_to_their_termi
         assert policy.reviewer and policy.reviewed_at is not None
         assert policy.allows(ProcessingMode.RETRIEVE)
         assert policy.allows(ProcessingMode.DISPLAY)
-        assert not policy.allows(ProcessingMode.PARSE)
+        # TASK-031: parsing approved behind the SRC-009 gate; raw bodies still never stored.
+        assert policy.allows(ProcessingMode.PARSE)
         assert not policy.allows(ProcessingMode.STORE_RAW)
         assert "amc.af.mil/AMC-Travel-Site/Terminals/" in str(source.identity.url)
     # The directory page itself stays unreviewed and disabled.
