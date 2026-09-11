@@ -11,6 +11,7 @@ from uuid import UUID
 
 from paxpivot.domain.source import KillSwitch, Source, SourceObservation
 from paxpivot.domain.terminal import Terminal, TerminalOperationalFact
+from paxpivot.domain.trip import TripRequest
 
 # Reader ports: what a read use case (and a GET route) is handed. They carry no mutation
 # method, so a read path cannot even name a write; the database read-only snapshot enforces the
@@ -76,4 +77,18 @@ class TerminalRepository(TerminalReader, Protocol):
 class KillSwitchRepository(KillSwitchReader, Protocol):
     def engage(self, switch: KillSwitch) -> None:
         """Record an engaged switch. Engaging never deletes history."""
+        ...
+
+
+class TripReader(Protocol):
+    def list_trips(self) -> Sequence[TripRequest]:
+        """Newest first."""
+        ...
+
+    def get_trip(self, trip_id: UUID) -> TripRequest | None: ...
+
+
+class TripRepository(TripReader, Protocol):
+    def add(self, trip: TripRequest) -> None:
+        """Insert a new request. Requests are never edited; a change is a new request."""
         ...

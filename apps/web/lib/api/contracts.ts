@@ -112,3 +112,27 @@ export type SourceHealthRead = {
   counts: SourceStateCountRead[];
   never_observed: number;
 };
+
+/* ── trip requests (TASK-034) ─────────────────────────────────────── */
+
+/** What the traveler asked for. No eligibility, route or probability: none exists yet. */
+export type TripRead = {
+  trip_id: string;
+  origin_terminal_id: string;
+  origin_terminal_name: string;
+  destination_text: string;
+  window_start: string;
+  window_end: string;
+  party_size: number;
+  created_at: string;
+};
+
+export type TripListRead = { trips: TripRead[] };
+
+export type NewTripRequestWire = {
+  origin_terminal_id: string;
+  destination_text: string;
+  window_start: string;
+  window_end: string;
+  party_size: number;
+};

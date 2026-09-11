@@ -1,7 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import ResultsPage from "@/app/trips/[tripId]/page";
+import { readApi } from "@/lib/api/client";
 import { ResultsScreen } from "@/components/screens/results/ResultsScreen";
 import { unknown } from "@/lib/presentation/fact";
 import {
@@ -10,6 +11,14 @@ import {
   fixtureResultsRefreshing,
 } from "@/lib/presentation/screens/results";
 import { expectNoAxeViolations } from "../a11y";
+
+vi.mock("@/lib/api/client", () => ({ readApi: vi.fn() }));
+
+const readApiMock = vi.mocked(readApi);
+
+beforeEach(() => {
+  readApiMock.mockReset();
+});
 
 const BASELINE_TITLE = fixtureResults.baseline?.title ?? "";
 const FIRST_ROUTE = fixtureResults.routes[0]?.title ?? "";
@@ -270,13 +279,32 @@ describe("Why this order", () => {
 });
 
 describe("live /trips/[tripId] route", () => {
-  test("renders the honest not-available state and no synthetic results", () => {
-    render(<ResultsPage />);
-
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Results",
+  test("renders the saved request and states that no route was searched", async () => {
+    readApiMock.mockResolvedValue({
+      ok: true,
+      value: {
+        trip_id: "6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7",
+        origin_terminal_id: "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a",
+        origin_terminal_name: "Registered Terminal",
+        destination_text: "Somewhere",
+        window_start: "2026-10-01T06:00:00Z",
+        window_end: "2026-10-04T06:00:00Z",
+        party_size: 2,
+        created_at: "2026-09-11T12:00:00Z",
+      },
+    });
+    render(
+      await ResultsPage({
+        params: Promise.resolve({
+          tripId: "6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7",
+        }),
+      }),
     );
-    expect(screen.getByText("Not available yet")).toBeTruthy();
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
+      "Registered Terminal → Somewhere",
+    );
+    expect(screen.getByText("No routes searched yet")).toBeTruthy();
     expect(screen.queryByText(/Example /)).toBeNull();
     expect(screen.queryByText("Best Space-A")).toBeNull();
     expect(screen.queryByText("Safest overall")).toBeNull();

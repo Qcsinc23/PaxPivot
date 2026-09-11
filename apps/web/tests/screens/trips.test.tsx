@@ -1,10 +1,13 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { readApi } from "@/lib/api/client";
 import TripsLivePage from "@/app/trips/page";
 import { TripsScreen } from "@/components/screens/trips/TripsScreen";
 import { emptyTrips, fixtureTrips } from "@/lib/presentation/screens/trips";
 import { expectNoAxeViolations } from "../a11y";
+
+vi.mock("@/lib/api/client", () => ({ readApi: vi.fn() }));
 
 describe("TripsScreen", () => {
   test("lists the watched trips in the supplied order", () => {
@@ -158,11 +161,19 @@ describe("TripsScreen states", () => {
 });
 
 describe("live /trips route", () => {
-  test("renders the empty state and no synthetic trips", () => {
-    render(<TripsLivePage />);
+  test("renders the empty state and no synthetic trips", async () => {
+    vi.mocked(readApi).mockResolvedValue({ ok: true, value: { trips: [] } });
+    render(await TripsLivePage());
     expect(screen.getByRole("heading", { name: "No trips yet" })).toBeTruthy();
     expect(screen.queryByText(/Example /)).toBeNull();
     expect(screen.queryByText("Order changed")).toBeNull();
+  });
+
+  test("an API failure is an error, never an empty shelf", async () => {
+    vi.mocked(readApi).mockResolvedValue({ ok: false, reason: "unavailable" });
+    render(await TripsLivePage());
+    expect(screen.getByText("We could not load your trips")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "No trips yet" })).toBeNull();
   });
 });
 

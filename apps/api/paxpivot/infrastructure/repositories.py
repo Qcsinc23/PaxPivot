@@ -25,6 +25,7 @@ from paxpivot.domain.terminal import (
     TerminalOperationalFact,
     VerifiedEntrance,
 )
+from paxpivot.domain.trip import TripRequest
 from paxpivot.infrastructure import database as db
 
 
@@ -357,3 +358,35 @@ class SqlKillSwitchRepository:
             )
         )
         del s
+
+
+def _trip(row: Row[Any]) -> TripRequest:
+    m = row._mapping
+    return TripRequest(
+        trip_id=m["trip_id"],
+        origin_terminal_id=m["origin_terminal_id"],
+        destination_text=m["destination_text"],
+        window_start=m["window_start"],
+        window_end=m["window_end"],
+        party_size=m["party_size"],
+        created_at=m["created_at"],
+    )
+
+
+class SqlTripRepository:
+    def __init__(self, connection: Connection) -> None:
+        self._c = connection
+
+    def list_trips(self) -> Sequence[TripRequest]:
+        t = db.trip_requests
+        rows = self._c.execute(select(t).order_by(t.c.created_at.desc(), t.c.trip_id)).all()
+        return [_trip(r) for r in rows]
+
+    def get_trip(self, trip_id: UUID) -> TripRequest | None:
+        row = self._c.execute(
+            select(db.trip_requests).where(db.trip_requests.c.trip_id == trip_id)
+        ).first()
+        return _trip(row) if row else None
+
+    def add(self, trip: TripRequest) -> None:
+        self._c.execute(insert(db.trip_requests).values(trip.model_dump()))

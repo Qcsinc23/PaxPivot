@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready` — decisions delegated by the product owner (2026-09-11); see AUDIT.md §4/§6.
+`review` — implemented 2026-09-11 on branch `foundation/TASK-034-trip-request`; awaiting fresh review and post-merge CI.
 
 ## Assigned role
 
@@ -31,10 +31,10 @@ tests (unit, integration, web), docs/tasks/TASK-034-trip-request.md
 
 ## Acceptance criteria
 
-- [ ] A trip can be created from Plan and appears on Trips; its Results page is honest until routes exist.
-- [ ] Input validated at the boundary (window sane, party 1–9, destination non-empty); no free text reaches logs.
-- [ ] Single-user pilot: trips are not user-scoped yet (documented; per-user auth is the later gate).
-- [ ] Tests prove the behaviour; no unrelated files changed.
+- [x] A trip can be created from Plan and appears on Trips; its Results page is honest until routes exist.
+- [x] Input validated at the boundary (window sane, party 1–9, destination non-empty); no free text reaches logs.
+- [x] Single-user pilot: trips are not user-scoped yet (documented; per-user auth is the later gate).
+- [x] Tests prove the behaviour; no unrelated files changed.
 
 ## Verification commands
 
@@ -67,3 +67,18 @@ No eligibility, no routes.
 ## Handoff
 
 (fill in per template)
+
+## Implementation notes (2026-09-11)
+
+- Domain `NewTripRequest`/`TripRequest` (aware datetimes, end > start, span ≤ 30 days, party 1–9,
+  destination 1–200 chars); migration `0004_trip_requests` with matching CHECK constraints,
+  verified by the schema parity probe (23 rules).
+- API: `POST /api/v1/trips` (201; 422 `trip.unknown_origin_terminal` for an unregistered origin),
+  `GET /api/v1/trips`, `GET /api/v1/trips/{id}` (404), all behind the principal gate. Writes use
+  one `transaction` per request; reads stay on the read snapshot.
+- Web: Plan renders a plain HTML form posted to `/trips/new` (server route, token never in the
+  browser) → 303 to `/trips/{id}`. Trips lists requests newest first with no source evidence; the
+  trip page shows the request and states that no route has been searched.
+- `datetime-local` values are treated as UTC for the pilot (single user, documented here);
+  terminal-local windows are a later task.
+- Trips are not user-scoped; per-user auth is the gate before multi-user (ADV-005 boundary).

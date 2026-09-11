@@ -28,6 +28,7 @@ from support_sources import (
     FakeSources,
     FakeSwitches,
     FakeTerminals,
+    FakeTrips,
 )
 
 TOKEN = "synthetic-token-with-at-least-32-characters"
@@ -42,6 +43,7 @@ def client() -> Iterator[TestClient]:
         sources=FakeSources(),
         observations=FakeObservations(),
         kill_switches=FakeSwitches(),
+        trips=FakeTrips(),
     )
     try:
         yield TestClient(app)
@@ -152,7 +154,7 @@ def test_every_api_v1_route_is_behind_the_principal_gate() -> None:
         names = {d.call.__name__ for d in (dependant.dependencies if dependant else [])}
         assert "require_principal" in names, f"{path} is not behind require_principal"
         guarded.append(path)
-    assert len(guarded) == 3, guarded
+    assert len(guarded) == 6, guarded
 
 
 @pytest.mark.anyio
