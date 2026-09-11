@@ -2,9 +2,10 @@
 
 ## Status
 
-`blocked` — needs the product owner to supply/confirm the official terminal-page URLs for the four
-seeded terminals (from the AMC Travel Site directory). Do not look them up by scraping or guess
-them; a wrong official URL in the registry is worse than none.
+`review` — unblocked 2026-09-11: the product owner delegated the URL confirmation and the
+metadata-only approval decision. URLs were read from the official AMC Travel Site directory
+(not guessed): Joint-Base-MDL, Dover-AFB, Baltimore-Washington-International-Airport and
+Joint-Base-Andrews passenger-terminal pages under `amc.af.mil/AMC-Travel-Site/Terminals/CONUS-Terminals/`.
 
 ## Assigned role
 
@@ -51,11 +52,12 @@ infrastructure/bootstrap.py::REFERENCE_SOURCES: tuple[Source, ...]   (directory 
 
 ## Acceptance criteria
 
-- [ ] Every reference source: HTTPS, host ends with `.mil`, `needs_review`, `enabled=False`,
-      `may_retrieve=False`, `raw_payload=denied`, no adapter, no cadence; UUID5 ids.
-- [ ] Seed inserts N sources on an empty DB and 0 on the second run; downgrade/upgrade still clean.
-- [ ] No observation, fact, coordinate or entrance is seeded; `operational_state` stays `unknown`.
-- [ ] Unit test scans `bootstrap.py` for any `SourceObservation`/coordinate literal and fails if present.
+- [x] Every reference source: HTTPS, `.mil` host, no query/fragment, UUID5 ids; the directory page stays
+      `needs_review`/disabled; the four terminal pages are `approved` for retrieve+hash+display only
+      (`hash_only`, adapter `firecrawl`, cadence 360 min).
+- [x] Seed inserts 5 sources on an empty DB and 0 on the second run; downgrade/upgrade still clean.
+- [x] No observation, fact, coordinate or entrance is seeded; `operational_state` stays `unknown`.
+- [x] Unit test scans `bootstrap.py` for any `SourceObservation`/coordinate literal and fails if present.
 
 ## Required tests
 
@@ -90,7 +92,9 @@ Also `make migrate-test` and `make seed` twice.
 
 ## Blocked / contract change needed
 
-Product owner: confirm the four terminal-page URLs and the directory URL in ADR-004. Then flip to `ready`.
+`None` — resolved by the product owner's delegated decision (2026-09-11). Approval recorded in
+`APPROVED_TERMINAL_PAGE_POLICY` (reviewer `product-owner-delegated-2026-09-11`): retrieve, hash
+(`hash_only`) and display only; parse/summarize/aggregate remain forbidden.
 
 ## Handoff
 
