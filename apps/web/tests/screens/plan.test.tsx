@@ -240,15 +240,19 @@ describe("PlanScreen states", () => {
     // Exactly one explanatory line, and it stays honest that planning is not wired yet.
     const lines = container.querySelectorAll(".pp-state p");
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.textContent).toBe(
+    expect(lines[0]?.textContent).toContain(
       "Journey planning is not available yet.",
     );
     expect(screen.queryByRole("list", { name: "Watched trips" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Nearby terminals" })).toBeNull();
     expect(screen.queryByText(/Example/)).toBeNull();
-    expect(screen.getAllByRole("link", { name: "Find routes" })).toHaveLength(
-      1,
-    );
+    // Nothing to find yet: the only action leads somewhere live, never back into the loop.
+    expect(screen.queryByRole("link", { name: "Find routes" })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "See supported terminals" })
+        .getAttribute("href"),
+    ).toBe("/terminals");
   });
 
   test("loading keeps identity and shows the last known sources rather than replacing them", () => {

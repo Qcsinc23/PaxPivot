@@ -36,10 +36,10 @@ export function PlanScreen({ model }: Props) {
         <AppHeader title="Plan" />
         <EmptyState
           title="Nothing planned yet"
-          body="Journey planning is not available yet."
+          body="Journey planning is not available yet. The terminal network and its official sources are live."
           action={
-            <Button href="/trips" block>
-              Find routes
+            <Button href="/terminals" variant="secondary" block>
+              See supported terminals
             </Button>
           }
         />
