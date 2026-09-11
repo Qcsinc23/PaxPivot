@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, Engine
 
 from paxpivot.application.ports.auth import Authenticator, Principal
@@ -34,7 +35,7 @@ from paxpivot.application.read_services import (
 from paxpivot.domain.base import Contract
 from paxpivot.infrastructure.audit import audit_event
 from paxpivot.infrastructure.auth import authenticator_from_env
-from paxpivot.infrastructure.database import engine_from_env, read_snapshot
+from paxpivot.infrastructure.database import database_ready, engine_from_env, read_snapshot
 from paxpivot.infrastructure.repositories import (
     SqlKillSwitchRepository,
     SqlSourceObservationRepository,
@@ -140,3 +141,22 @@ def terminal_detail(terminal_id: UUID, repos: Repos) -> TerminalDetailRead:
 @app.get("/api/v1/sources/health", response_model=SourceHealthRead, dependencies=[Authorized])
 def source_health(repos: Repos) -> SourceHealthRead:
     return list_source_health(repos.sources, repos.observations, repos.kill_switches)
+
+
+class ReadyResponse(Contract):
+    status: Literal["ready", "unavailable"]
+
+
+@app.get("/ready", response_model=ReadyResponse, responses={503: {"model": ReadyResponse}})
+def ready(engine: Annotated[Engine, Depends(get_engine)]) -> Response:
+    """Readiness for orchestrators: the database answers and is at the migration head.
+
+    Says only ready/unavailable; no error text, host or schema detail leaves the process.
+    """
+    if database_ready(engine):
+        return JSONResponse(ReadyResponse(status="ready").model_dump())
+    return JSONResponse(
+        ReadyResponse(status="unavailable").model_dump(),
+        status_code=503,
+        headers={"Cache-Control": "no-store"},
+    )

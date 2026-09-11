@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from enum import StrEnum
 from functools import cache
+from pathlib import Path
 
 from sqlalchemy import (
     Boolean,
@@ -335,6 +336,31 @@ def read_snapshot(engine: Engine) -> Iterator[Connection]:
             yield connection
         finally:
             transaction.rollback()
+
+
+@cache
+def migration_head() -> set[str]:
+    """The single Alembic head this build ships; read once from the migration scripts."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    # Repository checkout by default; the container image sets PAXPIVOT_ALEMBIC_INI explicitly.
+    default = Path(__file__).resolve().parents[4] / "apps/api/alembic.ini"
+    ini = os.environ.get("PAXPIVOT_ALEMBIC_INI", str(default))
+    return set(ScriptDirectory.from_config(Config(ini)).get_heads())
+
+
+def database_ready(engine: Engine) -> bool:
+    """True when the database answers a query and is migrated to this build's head."""
+    from alembic.runtime.migration import MigrationContext
+
+    try:
+        with read_snapshot(engine) as connection:
+            connection.execute(text("SELECT 1"))
+            current = set(MigrationContext.configure(connection).get_current_heads())
+    except Exception:  # noqa: BLE001 — any failure is "unavailable"; details never leave here.
+        return False
+    return current == migration_head()
 
 
 @cache

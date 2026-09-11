@@ -403,3 +403,23 @@ def test_append_only_triggers_still_reject_update_and_delete(engine: Engine) -> 
         with pytest.raises(DBAPIError, match="append-only"):
             with engine.begin() as connection:
                 connection.execute(text(statement))
+
+
+def test_ready_reports_the_migrated_database(engine: Engine) -> None:
+    app.dependency_overrides[get_engine] = lambda: engine
+    try:
+        client = TestClient(app)
+        assert client.get("/ready").json() == {"status": "ready"}
+        # A database that exists but is not at head is not ready.
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '0001_postgis'"))
+        try:
+            assert client.get("/ready").status_code == 503
+        finally:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE alembic_version SET version_num = '0003_supersession_integrity'")
+                )
+        assert client.get("/ready").json() == {"status": "ready"}
+    finally:
+        app.dependency_overrides.clear()

@@ -164,3 +164,20 @@ async def test_a_non_ascii_credential_is_denied_not_raised() -> None:
         assert not result.ok and result.error.message_key == "auth.invalid_credential"
     assert (await authenticator.authenticate(TOKEN)).ok
     assert not (await authenticator.authenticate(None)).ok
+
+
+def test_ready_is_unavailable_without_a_database_and_says_nothing_else() -> None:
+    from paxpivot.api import get_engine
+    from sqlalchemy import create_engine
+
+    # A port nothing listens on: the probe must report unavailable quickly and silently.
+    app.dependency_overrides[get_engine] = lambda: create_engine(
+        "postgresql+psycopg://x:y@127.0.0.1:1/z", connect_args={"connect_timeout": 1}
+    )
+    try:
+        response = TestClient(app).get("/ready")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}
+    assert "127.0.0.1" not in response.text and "psycopg" not in response.text
