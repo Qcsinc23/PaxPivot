@@ -31,6 +31,9 @@ docs/decisions/ADR-003-ui-foundation.md
 docs/architecture/UI_FOUNDATION.md
 docs/architecture/CONTRACTS.md (one pointer line)
 docs/tasks/TASK-006-ui-foundation.md
+docs/tasks/SCREEN_TASK_RULES.md
+docs/tasks/TASK-007 … TASK-016 (downstream contracts created by this task)
+docs/tasks/TASK_TEMPLATE.md (UI behaviour / merge-rule sections)
 README.md (web section)
 ```
 
@@ -143,4 +146,6 @@ Token contrast (computed): every text/background pair used >= 4.5:1 (lowest 5.03
 
 **Known limitations / risks:** Colour contrast is review-verified, not machine-verified (jsdom). The map surface is a placeholder until the MapLibre task. Route stubs say "Not available yet". Fixtures are synthetic and must stay out of production paths.
 
-**Next dependency:** Screen tasks TASK-007 onward consume these contracts. API view-model adapters are a separate foundation task per endpoint.
+**Downstream build tasks created:** shared rules in `SCREEN_TASK_RULES.md`; TASK-007 Plan + Trip settings; TASK-008 source-state notices; TASK-009 Results + Why-this-order; TASK-010 Route comparison; TASK-011 Route detail; TASK-012 Terminals; TASK-013 Trips + Alerts; TASK-014 Profile + readiness; TASK-015 Ask PaxPivot presentation (blocked on the `AskAnswerView` contract); TASK-016 desktop compositions + Advanced source health (after 009 and 012). Each owns a distinct route, screen directory, screen-model file and test file.
+
+**Next dependency:** TASK-007, 008, 010, 011, 012, 013 and 014 are independently dispatchable from merged `main`; TASK-009 follows 008; TASK-016 follows 009 and 012. API view-model adapters are a separate foundation task per endpoint.

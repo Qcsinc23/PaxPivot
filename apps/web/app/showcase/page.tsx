@@ -1,8 +1,6 @@
-import { notFound } from "next/navigation";
 import { Showcase } from "@/components/showcase/Showcase";
 
-/** Development-only component gallery driven by synthetic fixtures. */
+/** Foundation component gallery. Screen tasks add their own page under /showcase/<screen>. */
 export default function ShowcasePage() {
-  if (process.env.NODE_ENV === "production") notFound();
   return <Showcase />;
 }
