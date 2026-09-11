@@ -112,15 +112,24 @@ describe("live /advanced", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
-  test("not_configured renders the honest empty state, not fixture data", async () => {
+  test("not_configured is a configuration error, never an empty registry", async () => {
     readApiMock.mockResolvedValue({ ok: false, reason: "not_configured" });
     const { container } = render(await AdvancedPage());
-
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByRole("table")).toBeNull();
-    expect(pillLabels(container)).toEqual([]);
-    // Nothing from the showcase fixtures.
-    expect(container.textContent).not.toMatch(/Synthetic fixture explanation/);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "configuration problem, not evidence that no terminals or sources exist",
+    );
+    expect(
+      screen.getByText("PaxPivot data is not available right now."),
+    ).toBeTruthy();
+    // No absence claim is made as a heading: those belong to a successful empty response only.
+    expect(
+      screen.queryByRole("heading", {
+        name: /No terminals|No sources|No terminal to show|not being checked/i,
+      }),
+    ).toBeNull();
+    expect(container.querySelector("article")).toBeNull();
+    // Nothing operational leaks: no URL, token or variable name.
+    expect(container.textContent).not.toMatch(/PAXPIVOT_|http|token/i);
   });
 
   test.each(["unauthorized", "unavailable"] as const)(

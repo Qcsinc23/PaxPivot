@@ -1,4 +1,5 @@
 import { SourceHealthScreen } from "@/components/screens/advanced/SourceHealthScreen";
+import { NotConfigured } from "@/components/shell/NotConfigured";
 import { readApi } from "@/lib/api/client";
 import type { SourceHealthRead } from "@/lib/api/contracts";
 import { toSourceHealthScreenModel } from "@/lib/presentation/adapters/source-health";
@@ -17,16 +18,19 @@ import {
  * Every outcome is its own state, and none of them is an absence claim:
  *
  * * `ok` — the registry, including an honest empty state when no source is registered;
- * * `not_configured` — the API is not wired up for this deployment, so the screen says that
- *   rather than implying there are no sources;
+ * * `not_configured` — a configuration failure of this deployment, rendered as an error,
+ *   never as an empty registry;
  * * `unauthorized` / `unavailable` — a failure on our side.
  */
 export default async function AdvancedPage() {
   const result = await readApi<SourceHealthRead>("/api/v1/sources/health");
   if (!result.ok) {
+    if (result.reason === "not_configured") {
+      return <NotConfigured title="Source health" />;
+    }
     const model: SourceHealthScreenModel = {
       ...emptySourceHealth,
-      status: result.reason === "not_configured" ? "empty" : "error",
+      status: "error",
     };
     return <SourceHealthScreen model={model} />;
   }
