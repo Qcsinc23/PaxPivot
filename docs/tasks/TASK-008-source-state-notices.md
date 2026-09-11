@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready` — dispatch after TASK-006 is merged to main. Read `docs/tasks/SCREEN_TASK_RULES.md` first.
+`review` — implemented on `build/TASK-008-source-state-notices`; see Handoff.
 
 ## Assigned role
 
@@ -63,13 +63,13 @@ lib/presentation/notices.ts::fixtureNotices
 
 ## Acceptance criteria
 
-- [ ] `RefreshNotice` shows "Checking N sources · M done" with `Progress` and per-source pills; `KeptResultNotice` keeps the previous result visible, dimmed, labelled with its read time and a Stale pill and the line "kept on screen while we re-check".
-- [ ] `LateCheckNotice` shows expected vs actual check and states the last result stays stale; `ConflictNotice` lists both official claims with dates and "held until a person decides"; both expose the application explanation via `SourceStateDisclosure`.
-- [ ] `NotRankedNotice` shows the count and per-source states and the line that none of them is evidence that nothing is flying.
-- [ ] `HonestAbsencePanel` renders title, state summary pills, `SourceLedger`, one "best move" card with a single action, an optional commercial option via `CommercialBaselineCard`, and a "Why not just say no flights?" disclosure/link.
-- [ ] No notice contains the phrases "no flights", "none scheduled" or "nothing flying" as a state (a test asserts this).
-- [ ] Unknown counts/times render "Unknown".
-- [ ] Tests, axe, no unrelated files.
+- [x] `RefreshNotice` shows "Checking N sources · M done" with `Progress` and per-source pills; `KeptResultNotice` keeps the previous result visible, dimmed, labelled with its read time and a Stale pill and the line "kept on screen while we re-check".
+- [x] `LateCheckNotice` shows expected vs actual check and states the last result stays stale; `ConflictNotice` lists both official claims with dates and "held until a person decides"; both expose the application explanation via `SourceStateDisclosure`.
+- [x] `NotRankedNotice` shows the count and per-source states and the line that none of them is evidence that nothing is flying.
+- [x] `HonestAbsencePanel` renders title, state summary pills, `SourceLedger`, one "best move" card with a single action, an optional commercial option via `CommercialBaselineCard`, and a "Why not just say no flights?" disclosure/link.
+- [x] No notice contains the phrases "no flights", "none scheduled" or "nothing flying" as a state (a test asserts this).
+- [x] Unknown counts/times render "Unknown".
+- [x] Tests, axe, no unrelated files.
 
 ## Required tests
 
@@ -103,4 +103,70 @@ make compose-check
 
 ## Handoff
 
-(fill in per template)
+**Branch:** `build/TASK-008-source-state-notices` from `main` @ `0dee150` (TASK-007 merge).
+
+**Commit:** Reported in the PR.
+
+**Files changed** (all owned paths):
+
+```text
+apps/web/lib/presentation/notices.ts                    RefreshNoticeView, KeptResultNoticeView,
+                                                        LateCheckNoticeView, ConflictClaimView,
+                                                        ConflictNoticeView, NotRankedNoticeView,
+                                                        HonestAbsenceView, sourceCountText, fixtureNotices
+apps/web/components/paxpivot/notices/RefreshNotice.tsx
+apps/web/components/paxpivot/notices/KeptResultNotice.tsx
+apps/web/components/paxpivot/notices/LateCheckNotice.tsx
+apps/web/components/paxpivot/notices/ConflictNotice.tsx
+apps/web/components/paxpivot/notices/NotRankedNotice.tsx
+apps/web/components/paxpivot/notices/HonestAbsencePanel.tsx
+apps/web/app/showcase/notices/page.tsx                  development-only gallery of all six
+apps/web/tests/notices.test.tsx                         15 tests
+docs/tasks/TASK-008-source-state-notices.md
+```
+
+No file outside the owned paths was modified.
+
+**Interfaces added/changed:** the six view types plus `sourceCountText` and `fixtureNotices` in
+`lib/presentation/notices.ts`, and the six notice components. No foundation type, component,
+token, dependency or API/schema contract changed. No existing foundation component was edited
+("Out of scope: no changes to existing foundation components").
+
+**Migrations:** None.
+
+**Verification run:** after the final change, on the exact head:
+
+```text
+make format-check -> PASS
+make lint         -> PASS
+make typecheck    -> PASS
+make test-unit    -> PASS (pytest 156 unit; Vitest 8 files / 97 tests, 15 new)
+make test-integration -> PASS (pytest 3)
+make test         -> PASS
+make build        -> PASS
+make migrate      -> PASS
+make migrate-check-> PASS
+make compose-check-> PASS
+```
+
+**Live responsive probe** (Next dev, real Chromium) on `/showcase/notices` at 360 / 375 / 430 /
+1280 px: no page-level horizontal scroll, no element overflows the viewport, exactly one `h1`,
+and both `SourceStateDisclosure` elements render closed by default.
+
+**How criterion 5 is enforced.** The task requires a literal `"Why not just say no flights?"`
+affordance while also forbidding the phrase "no flights" in a notice. The test therefore
+separates the two: no `.pp-pill` (the vocabulary that asserts a source state) may contain
+"no flights", "none scheduled" or "nothing flying", and outside that question affordance no
+notice text may contain them at all. The live probe confirms exactly one visible occurrence of
+"no flights" across the whole gallery — the question link — and zero in every state pill. The
+`NotRankedNotice` line is phrased "None of these states is evidence that nothing is flying.",
+which also avoids the forbidden substrings.
+
+**Known limitations / risks:** the specified notice fields for counts and times are plain
+`number`/`string` rather than `Fact`, so the unknown case applies to `KeptResultNotice.facts`
+(covered by test) and to `SourceEvidenceView.ageText`, which the foundation omits when no read
+time exists. `RefreshNotice` is `role="status"` with `aria-live="polite"`, so a screen reader
+announces the running count; it is not a focus target. Colour contrast remains review-verified.
+
+**Next dependency:** TASK-009 consumes all six notices and may now be dispatched.
+
