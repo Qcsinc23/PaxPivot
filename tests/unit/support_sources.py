@@ -267,7 +267,8 @@ class FakeObservations:
         self.items.append(observation)
 
     def latest_per_source(self) -> Mapping[UUID, SourceObservation]:
-        # Same rule as the SQL: retire explicitly superseded rows, then newest observed_at, then id.
+        # Same rule as the SQL except the tie-break: the domain model has no recorded_at, so
+        # equal observed_at falls straight to observation_id here. Keep such ties out of fixtures.
         superseded = {
             o.supersedes_observation_id for o in self.items if o.supersedes_observation_id
         }

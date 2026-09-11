@@ -203,8 +203,9 @@ source_observations = Table(
     Column("confidence_reasons", ARRAY(Text), nullable=False),
     Column("payload_ref", Text, nullable=True),  # Reference only; bodies never live here.
     # Explicit supersession: must name an existing observation of the same source (composite
-    # foreign key below), never itself; append-only rows make a cycle impossible because a
-    # superseder can only name a row that already exists (migration 0003).
+    # foreign key below), never itself. Rows are append-only and `append` inserts one row per
+    # statement, so from the application a superseder can only name a row that already exists
+    # and a cycle is unreachable (a multi-row raw INSERT could still construct one; migration 0003).
     Column("supersedes_observation_id", Uuid, nullable=True),
     Column("recorded_at", _tz(), nullable=False, server_default=text("now()")),
     CheckConstraint(_in("state", SourceState), name="state"),
@@ -315,10 +316,13 @@ def transaction(
 def read_snapshot(engine: Engine) -> Iterator[Connection]:
     """The read seam: one REPEATABLE READ snapshot that the database itself keeps read-only.
 
-    ``SET TRANSACTION READ ONLY`` is issued by the driver, so any INSERT/UPDATE/DELETE through
-    this connection fails with a database error whatever Python code attempted it. The block
-    always ends in rollback; nothing can be committed from here. GET routes and read services
-    compose on this seam only (ADR-004 "Read and write seams").
+    ``SET TRANSACTION READ ONLY`` is issued by the driver, so ordinary DML (INSERT/UPDATE/
+    DELETE, DDL) through this connection fails with a database error whatever Python code
+    attempted it. The first statement below pins the transaction characteristics, so a later
+    ``SET TRANSACTION READ WRITE`` is refused by Postgres as well. Raw transaction-control SQL
+    (``COMMIT``) issued by a caller is not something this seam can forbid; a SELECT-only database
+    role is the remaining hardening (TASK-027). The block always ends in rollback. GET routes and
+    read services compose on this seam only (ADR-004 "Read and write seams").
     """
     with engine.connect() as connection:
         connection = connection.execution_options(
@@ -326,6 +330,8 @@ def read_snapshot(engine: Engine) -> Iterator[Connection]:
         )
         transaction = connection.begin()
         try:
+            # Any query fixes the snapshot and the READ ONLY mode for the transaction's lifetime.
+            connection.execute(text("SELECT 1"))
             yield connection
         finally:
             transaction.rollback()

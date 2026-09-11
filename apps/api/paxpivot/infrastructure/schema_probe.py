@@ -50,6 +50,10 @@ class ParityReport:
 
 
 def _violated(exc: IntegrityError) -> str:
+    # psycopg exposes the structured field, independent of message locale/wording.
+    name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    if name:
+        return str(name)
     match = re.search(r'constraint "([^"]+)"', str(exc.orig))
     return match.group(1) if match else str(exc.orig)
 

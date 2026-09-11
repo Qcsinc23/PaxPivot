@@ -147,8 +147,10 @@ retires the claim), a chain `A ← B ← C` leaves only C, and an unrelated newe
 eligible and wins on time among the leaves. Migration 0003 makes the reference sound at the
 database: a composite foreign key `(supersedes_observation_id, source_id) → (observation_id,
 source_id)` means a superseder must name an **existing observation of the same source**, and a
-CHECK forbids naming itself. Because rows are append-only and a superseder can only name a row
-that already exists, a cycle cannot be created — no graph machinery is needed. Superseded rows
+CHECK forbids naming itself. Rows are append-only and `append` inserts one row per statement, so
+from the application a superseder can only name a row that already exists and a cycle is
+unreachable — no graph machinery is needed. (A hand-written multi-row INSERT could still build a
+two-cycle because foreign keys are checked per statement; that path does not exist in the code.) Superseded rows
 stay in `list_for_source`: history is never hidden, only currentness is decided.
 
 **Reference data.** `infrastructure/bootstrap.seed_reference_data` inserts four public AMC

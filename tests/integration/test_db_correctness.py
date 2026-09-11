@@ -85,6 +85,9 @@ def test_read_snapshot_reads_one_snapshot_and_refuses_every_write(engine: Engine
         assert first == second
         assert reader.execute(text("SHOW transaction_isolation")).scalar_one() == "repeatable read"
         assert reader.execute(text("SHOW transaction_read_only")).scalar_one() == "on"
+        # The mode is pinned: it cannot be switched back once the snapshot has started.
+        with pytest.raises(DBAPIError, match="before any query"):
+            reader.execute(text("SET TRANSACTION READ WRITE"))
     assert count(engine) == first + 1  # the concurrent write did commit
 
     statements = {
@@ -242,7 +245,7 @@ def test_check_parity_holds_and_detects_a_removed_constraint(engine: Engine) -> 
     with engine.connect() as c:
         report = verify_check_parity(c)
         c.rollback()
-    assert report.constraints_verified >= 18
+    assert report.constraints_verified == 19 == len(report.verified)
     # Mutation: drop one safety-critical CHECK inside a transaction that is rolled back.
     with (
         engine.connect() as c,
