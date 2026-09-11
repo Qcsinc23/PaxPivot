@@ -183,6 +183,11 @@ sources = Table(
         name="approval_reviewed",
     ),
     CheckConstraint("url NOT LIKE '%?%' AND url NOT LIKE '%#%'", name="url_carries_no_credentials"),
+    CheckConstraint(
+        "review_state <> 'restricted' OR (NOT may_retrieve AND NOT may_parse AND NOT may_summarize "
+        "AND NOT may_display AND NOT may_aggregate_history AND raw_payload = 'denied')",
+        name="restricted_allows_nothing",
+    ),
 )
 
 source_observations = Table(

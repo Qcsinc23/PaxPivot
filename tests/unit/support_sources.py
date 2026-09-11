@@ -79,6 +79,12 @@ RESTRICTED = NEEDS_REVIEW.model_copy(
     update={
         "review_state": PolicyReviewState.RESTRICTED,
         "policy_version_id": "synthetic-restricted-v1",
+        "may_retrieve": False,
+        "may_parse": False,
+        "may_summarize": False,
+        "may_display": False,
+        "may_aggregate_history": False,
+        "raw_payload": RawPayloadPolicy.DENIED,
     }
 )
 

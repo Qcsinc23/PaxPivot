@@ -164,6 +164,16 @@ class SourceProcessingPolicy(Contract):
             self.snapshot_retention_days is not None
         ):
             raise ValueError("Snapshot retention is required exactly when snapshots are allowed")
+        if self.review_state == PolicyReviewState.RESTRICTED and (
+            self.may_retrieve
+            or self.may_parse
+            or self.may_summarize
+            or self.may_display
+            or self.may_aggregate_history
+            or self.raw_payload != RawPayloadPolicy.DENIED
+        ):
+            # The register must say what the gate does: a restricted source allows nothing.
+            raise ValueError("A restricted source allows no processing and retains nothing")
         return self
 
     def allows(self, mode: ProcessingMode) -> bool:

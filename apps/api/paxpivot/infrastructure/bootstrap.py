@@ -308,14 +308,10 @@ def seed_reference_data(engine: Engine) -> dict[str, int]:
                     db.sources.c.source_id == source.identity.source_id,
                     db.sources.c.policy_version_id != source.policy.policy_version_id,
                     db.sources.c.policy_version_id.in_(UPGRADABLE_POLICY_VERSIONS),
-                    # A person's pause or restriction is never loosened by seeding; it may only
-                    # be replaced by a restriction.
-                    (
-                        db.sources.c.review_state.notin_(
-                            [PolicyReviewState.PAUSED.value, PolicyReviewState.RESTRICTED.value]
-                        )
-                        if source.policy.review_state != PolicyReviewState.RESTRICTED
-                        else db.sources.c.review_state != PolicyReviewState.RESTRICTED.value
+                    # A person's pause or restriction is never rewritten by seeding, even to
+                    # tighten it: the reviewer and time on that row are the incident trail.
+                    db.sources.c.review_state.notin_(
+                        [PolicyReviewState.PAUSED.value, PolicyReviewState.RESTRICTED.value]
                     ),
                 )
                 .values(**{k: v for k, v in source_row(source).items() if k in POLICY_COLUMNS})

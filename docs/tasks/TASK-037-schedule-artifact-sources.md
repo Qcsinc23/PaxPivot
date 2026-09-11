@@ -66,6 +66,20 @@ official document) under `schedule-artifact-user-open-v2`: restricted, never ret
 hashed or displayed by PaxPivot. Re-seeding tightens any `schedule-artifact-parse-v1` row to
 this policy and never loosens a pause.
 
+## Review fixes on the option-1 follow-up (0 Critical / 1 Important → fixed)
+
+- A restricted source contributes no evidence to terminal reads (summary headline and the
+  per-source row show nothing); operators keep the history on source health. The three
+  hash-only observations recorded under v1 are retained as history lawful under that version:
+  a SHA-256 is not content, and `Provenance.policy_version_id` records which policy applied.
+- Domain validator and CHECK `ck_sources_restricted_allows_nothing` (migration 0005): a
+  restricted register row allows nothing and retains nothing, so the register cannot contradict
+  the gate. Gate keys `source.restricted` / `source.paused` distinguish a decision from a pending
+  review. The provider refuses any source its own gate refuses, even on a direct call.
+- Seeding never rewrites a paused row, even to tighten it; a person re-applies the restriction.
+- Firecrawl's own logs and caches for the four renders are outside PaxPivot's control; request
+  deletion through the account if the owner wants that closed.
+
 ## Handoff
 
 - **Merged:** PR #43 (discovery, capture, hash-only observation) and the option-1 follow-up.

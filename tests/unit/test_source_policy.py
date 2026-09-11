@@ -120,7 +120,7 @@ def test_gate_order_is_switch_then_enabled_then_policy() -> None:
     assert not flagged.ok and flagged.error.message_key == "source.policy_denies_mode"
 
     paused = authorize_processing(source("z", policy=PAUSED), ProcessingMode.RETRIEVE, [])
-    assert not paused.ok and paused.error.message_key == "source.not_approved"
+    assert not paused.ok and paused.error.message_key == "source.paused"
 
 
 def test_adapter_switch_does_not_cover_a_source_without_adapter() -> None:

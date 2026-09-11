@@ -67,6 +67,10 @@ def authorize_processing(
                 policy_version_id=source.policy.policy_version_id,
             )
         )
+    if source.policy.review_state == PolicyReviewState.RESTRICTED:
+        return _forbidden("source.restricted")  # a decision, not a pending review
+    if source.policy.review_state == PolicyReviewState.PAUSED:
+        return _forbidden("source.paused")
     if source.policy.review_state != PolicyReviewState.APPROVED:
         return _forbidden("source.not_approved")
     return _forbidden("source.policy_denies_mode")

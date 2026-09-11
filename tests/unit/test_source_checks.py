@@ -144,9 +144,9 @@ def test_a_disabled_source_is_skipped_without_calling_the_provider() -> None:
     [
         (
             APPROVED.model_copy(update={"review_state": PolicyReviewState.PAUSED}),
-            "source.not_approved",
+            "source.paused",
         ),
-        (RESTRICTED, "source.not_approved"),
+        (RESTRICTED, "source.restricted"),
         (NEEDS_REVIEW.model_copy(update={"may_retrieve": False}), "source.not_approved"),
     ],
     ids=["paused", "restricted", "unreviewed-without-retrieve"],

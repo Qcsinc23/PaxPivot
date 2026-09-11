@@ -525,10 +525,10 @@ def test_trip_requests_persist_and_the_api_creates_them_in_one_transaction(engin
         app.dependency_overrides.clear()
 
 
-def test_seed_tightens_an_approved_artifact_row_to_restricted_but_never_loosens_a_pause(
+def test_seed_tightens_an_approved_artifact_row_to_restricted_but_never_rewrites_a_pause(
     engine: Engine,
 ) -> None:
-    """TASK-037 option 1: a marked artifact approved under v1 becomes restricted on re-seed."""
+    """TASK-037 option 1: a v1-approved artifact becomes restricted on re-seed; a pause stays."""
     from paxpivot.infrastructure.bootstrap import SCHEDULE_ARTIFACT_SOURCES
 
     approved, paused = SCHEDULE_ARTIFACT_SOURCES[0], SCHEDULE_ARTIFACT_SOURCES[1]
@@ -542,14 +542,17 @@ def test_seed_tightens_an_approved_artifact_row_to_restricted_but_never_loosens_
                 ),
                 {"id": src.identity.source_id, "state": state},
             )
-    assert seed_reference_data(engine)["policies_upgraded"] == 2
+    assert seed_reference_data(engine)["policies_upgraded"] == 1
     with engine.connect() as connection:
         rows = connection.execute(
             text(
                 "SELECT review_state, may_retrieve, policy_version_id FROM sources "
-                "WHERE source_id IN (:a, :b)"
+                "WHERE source_id IN (:a, :b) ORDER BY review_state"
             ),
             {"a": approved.identity.source_id, "b": paused.identity.source_id},
         ).all()
-    assert {tuple(r) for r in rows} == {("restricted", False, "schedule-artifact-user-open-v2")}
+    assert [tuple(r) for r in rows] == [
+        ("paused", True, "schedule-artifact-parse-v1"),
+        ("restricted", False, "schedule-artifact-user-open-v2"),
+    ]
     assert seed_reference_data(engine)["policies_upgraded"] == 0
