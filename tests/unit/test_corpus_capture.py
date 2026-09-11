@@ -133,3 +133,17 @@ def test_reference_terminal_pages_are_now_approved_for_parsing_under_the_gate() 
         assert src.policy.allows(ProcessingMode.PARSE)
         assert not src.policy.allows(ProcessingMode.STORE_RAW)
         assert src.policy.raw_payload == RawPayloadPolicy.HASH_ONLY
+
+
+def test_capture_directory_can_be_pointed_outside_the_checkout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Inside the image the checkout is read-only; the operator names a writable directory."""
+    import paxpivot.tooling as tooling
+
+    monkeypatch.setenv("PAXPIVOT_CORPUS_DIR", str(tmp_path / "corpus"))
+    assert tooling._corpus_directory() == tmp_path / "corpus"
+    monkeypatch.delenv("PAXPIVOT_CORPUS_DIR")
+    assert (
+        tooling._corpus_directory() == tooling.ROOT / "private-fixtures/parsers/amc-terminal-page"
+    )
