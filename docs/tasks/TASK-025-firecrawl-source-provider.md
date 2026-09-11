@@ -94,6 +94,16 @@ make compose-check
 
 `docs/agent/MERGE_POLICY.md`; OPSEC review required (restricted-source bypass, token leakage, raw exposure).
 
+## Handoff notes (review outcomes)
+
+- A transport failure to Firecrawl is a `Failure` (nothing recorded), never a `source_unreachable`
+  observation: an outage on our side is not evidence about the official page.
+- `check-sources` exits 2 (no key) or 3 (provider failures) so cron output is actionable; the run
+  is one write transaction (all-or-nothing per run; do not run under an idle-in-transaction
+  timeout shorter than ~5 minutes).
+- `cadence_minutes` is informational until a scheduler task lands: the runner checks every
+  enabled source on every invocation, so keep the cron interval equal to the cadence (360 min).
+
 ## Out of scope
 
 - No crawl/monitor scheduling, no parsing, no schedule rows, no snapshot store, no cadence budget UI.

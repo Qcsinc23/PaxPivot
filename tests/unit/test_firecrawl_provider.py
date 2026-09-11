@@ -87,6 +87,7 @@ def test_reachable_page_is_fresh_metadata_with_a_hash_and_no_body() -> None:
     assert request.headers["Authorization"] == "Bearer synthetic-key"
     sent = json.loads(request.content)
     assert sent["url"] == str(SOURCE_A.identity.url) and sent["formats"] == ["rawHtml"]
+    assert sent["maxAge"] == 0  # never a cached page recorded as observed now
     # The pipeline accepts it for an approved hash_only source registered against this adapter.
     registered = source("fc", adapter="firecrawl")
     repo = FakeObservations([])
@@ -126,10 +127,27 @@ def test_page_failures_are_failure_states_never_absence_or_restricted(
     assert obs.state not in {SourceState.NO_DEPARTURES, SourceState.RESTRICTED}
 
 
-def test_transport_error_is_an_unreachable_observation() -> None:
+def test_transport_error_to_firecrawl_records_nothing_about_the_source() -> None:
     result = observe(SOURCE_A, transport(raise_exc=True))
-    assert result.ok and result.value.state == SourceState.UNREACHABLE
-    assert "transport_error" in result.value.confidence_reasons
+    assert not result.ok
+    assert result.error.message_key == "source_provider.firecrawl_unreachable"
+    assert result.error.retryable is True
+
+
+def test_missing_raw_html_under_hash_only_says_so_and_a_surrogate_does_not_abort() -> None:
+    no_body = observe(SOURCE_A, transport(page_status=200, body=None))
+    assert no_body.ok and no_body.value.state == SourceState.FRESH
+    assert no_body.value.content_hash is None
+    assert "content_hash_unavailable" in no_body.value.confidence_reasons
+    # A lone surrogate escape, as Firecrawl's JSON can carry; httpx decodes it to a str the
+    # utf-8 codec refuses without surrogatepass.
+    raw = b'{"success":true,"data":{"rawHtml":"<p>x\\ud800</p>","metadata":{"statusCode":200}}}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+
+    surrogate = observe(SOURCE_A, httpx.MockTransport(handler))
+    assert surrogate.ok and surrogate.value.content_hash is not None
 
 
 @pytest.mark.parametrize(

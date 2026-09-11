@@ -212,15 +212,15 @@ def cold_start_check(cycles: int) -> None:
 def check_sources() -> int:
     """One pass over the registered sources through the observation pipeline (TASK-024/025).
 
-    Firecrawl is the only provider today; without ``FIRECRAWL_API_KEY`` nothing is retrieved
-    and the command exits 2 so a scheduler notices. Every source yields exactly one outcome.
+    Firecrawl is the only provider today. Exit codes a scheduler can act on: 2 when
+    ``FIRECRAWL_API_KEY`` is unset (nothing retrieved), 3 when the provider itself failed for
+    any source (key rejected, credits, outage: nothing recorded for those sources), 0 otherwise.
+    The run is one write transaction: all appended observations commit together.
     """
     import asyncio
-    import logging
 
     from paxpivot.application.source_checks import run_source_checks
     from paxpivot.infrastructure import database as db
-    from paxpivot.infrastructure.audit import audit_event
     from paxpivot.infrastructure.providers.firecrawl import FirecrawlSourceProvider
     from paxpivot.infrastructure.repositories import (
         SqlKillSwitchRepository,
@@ -229,7 +229,6 @@ def check_sources() -> int:
     )
 
     configure()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
     engine = create_engine(os.environ["DATABASE_URL"])
     with db.transaction(engine) as connection:
         sources = SqlSourceRepository(connection)
@@ -247,14 +246,13 @@ def check_sources() -> int:
             )
         )
     engine.dispose()
-    audit_event(logging.getLogger("paxpivot.checks"), "service_started", uuid4())
     for outcome in run.outcomes:
         print(f"{outcome.source_id} {outcome.outcome} {outcome.message_key or outcome.state or ''}")
     print(
         f"Source checks: recorded={len(run.recorded)} skipped={len(run.skipped)} "
         f"rejected={len(run.rejected)} provider_failures={len(run.provider_failures)}"
     )
-    return 0
+    return 3 if run.provider_failures else 0
 
 
 def seed() -> None:

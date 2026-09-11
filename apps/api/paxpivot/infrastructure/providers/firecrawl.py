@@ -13,16 +13,17 @@ Outcome mapping (PRD §9.5: retrieval failure is preserved, never "no departures
 * 404 / 410 → ``source_missing``, retrieval failed;
 * 401 / 403 → ``source_unreachable`` with reason ``http_forbidden`` (an edge refusal is not
   evidence that the source is user-open-only);
-* any other status, a transport error or a timeout → ``source_unreachable``;
-* Firecrawl itself refusing (bad key, credits, rate limit) → ``Failure`` — nothing is recorded,
-  because nothing was observed.
+* any other page status → ``source_unreachable``;
+* Firecrawl itself failing or refusing (unreachable from this host, bad key, credits, rate
+  limit, malformed answer) → ``Failure`` — nothing is recorded, because the official page was
+  never observed; an outage on our side must not become evidence about the source.
 """
 
 import hashlib
 import os
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import httpx
@@ -44,10 +45,10 @@ API_URL = "https://api.firecrawl.dev/v1/scrape"
 REQUEST_TIMEOUT_SECONDS = 60.0
 
 
-def _failure(code: str, message_key: str, retryable: bool) -> Failure:
-    return Failure(
-        error=ApplicationError(code=code, message_key=message_key, retryable=retryable)  # type: ignore[arg-type]
-    )
+def _failure(
+    code: Literal["unauthorized", "unavailable", "invalid_input"], message_key: str, retryable: bool
+) -> Failure:
+    return Failure(error=ApplicationError(code=code, message_key=message_key, retryable=retryable))
 
 
 class FirecrawlSourceProvider:
@@ -97,9 +98,8 @@ class FirecrawlSourceProvider:
                     },
                 )
         except httpx.HTTPError:
-            return Success(
-                value=self._observation(registered, observed_at, None, None, "transport_error")
-            )
+            # Our side could not reach Firecrawl: nothing about the source was observed.
+            return _failure("unavailable", "source_provider.firecrawl_unreachable", True)
         if response.status_code == 401:
             return _failure("unauthorized", "source_provider.firecrawl_unauthorized", False)
         if response.status_code in {402, 429}:
@@ -116,20 +116,23 @@ class FirecrawlSourceProvider:
         except (ValueError, KeyError, TypeError):
             return _failure("unavailable", "source_provider.firecrawl_malformed", True)
         digest = None
-        if isinstance(document, str) and registered.policy.raw_payload != RawPayloadPolicy.DENIED:
-            digest = hashlib.sha256(document.encode("utf-8")).hexdigest()
-        del document  # The body is never retained past this point.
-        return Success(value=self._observation(registered, observed_at, page_status, digest, None))
+        hash_wanted = registered.policy.raw_payload != RawPayloadPolicy.DENIED
+        if hash_wanted and isinstance(document, str):
+            # surrogatepass: a stray surrogate in the page must not abort the run.
+            digest = hashlib.sha256(document.encode("utf-8", "surrogatepass")).hexdigest()
+        # The body is only ever hashed above; nothing below reads payload/data/document.
+        extra = "content_hash_unavailable" if hash_wanted and digest is None else None
+        return Success(value=self._observation(registered, observed_at, page_status, digest, extra))
 
     @staticmethod
     def _observation(
         source: Source,
         observed_at: datetime,
-        page_status: int | None,
+        page_status: int,
         digest: str | None,
-        error: str | None,
+        extra_reason: str | None,
     ) -> SourceObservation:
-        if page_status is not None and 200 <= page_status < 300:
+        if 200 <= page_status < 300:
             state, retrieval = SourceState.FRESH, RetrievalState.SUCCEEDED
             reasons: tuple[str, ...] = ("metadata_only", f"http_{page_status}")
         elif page_status in {404, 410}:
@@ -140,7 +143,9 @@ class FirecrawlSourceProvider:
             reasons = ("http_forbidden", f"http_{page_status}")
         else:
             state, retrieval = SourceState.UNREACHABLE, RetrievalState.FAILED
-            reasons = (error or f"http_{page_status}",)
+            reasons = (f"http_{page_status}",)
+        if extra_reason:
+            reasons = (*reasons, extra_reason)
         return SourceObservation(
             observation_id=uuid4(),
             provenance=Provenance(
