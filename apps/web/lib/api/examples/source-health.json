@@ -1,0 +1,104 @@
+{
+  "generated_at": "2026-09-10T12:00:00Z",
+  "rows": [
+    {
+      "source_id": "60808e2c-84ee-58a8-9f04-7c2564d39d26",
+      "name": "Example directory",
+      "url": "https://example.invalid/directory",
+      "kind": "directory_page",
+      "terminal_id": null,
+      "enabled": true,
+      "review_state": "needs_review",
+      "cadence_minutes": null,
+      "adapter_id": null,
+      "adapter_version": null,
+      "kill_switched": false,
+      "latest": null
+    },
+    {
+      "source_id": "e602dcb0-cebd-5b6a-b747-0f11ec39502c",
+      "name": "Example terminal-a",
+      "url": "https://example.invalid/terminal-a",
+      "kind": "terminal_page",
+      "terminal_id": "7596e1ec-3777-58c6-9987-659488f52d56",
+      "enabled": true,
+      "review_state": "approved",
+      "cadence_minutes": 30,
+      "adapter_id": "synthetic-adapter",
+      "adapter_version": "v0-synthetic",
+      "kill_switched": false,
+      "latest": {
+        "observation_id": "b58e03c4-987a-5ffc-bed0-e30862138af4",
+        "state": "fresh",
+        "observed_at": "2026-09-10T11:30:00Z",
+        "source_time": "2026-09-10T11:00:00Z",
+        "retrieval": "succeeded",
+        "extraction": "exact_text",
+        "parser_version": "synthetic-parser-v1",
+        "explanation": "A fresh source observation exists for this source; it is metadata, not a confirmed flight and not confirmed seat availability, and it still requires official verification."
+      }
+    },
+    {
+      "source_id": "9a4e58c2-2859-5302-8bdf-73a67ec93718",
+      "name": "Example terminal-b",
+      "url": "https://example.invalid/terminal-b",
+      "kind": "terminal_page",
+      "terminal_id": "e1b8fb29-00f0-52cd-9c83-68c80c7e21ab",
+      "enabled": true,
+      "review_state": "approved",
+      "cadence_minutes": 30,
+      "adapter_id": "synthetic-adapter",
+      "adapter_version": "v0-synthetic",
+      "kill_switched": true,
+      "latest": {
+        "observation_id": "17f427a5-2c7a-520e-aa3a-6ded0a9d1f72",
+        "state": "source_unreachable",
+        "observed_at": "2026-09-10T11:45:00Z",
+        "source_time": null,
+        "retrieval": "failed",
+        "extraction": "not_attempted",
+        "parser_version": null,
+        "explanation": "The source could not currently be reached, so this check obtained no observation. That is missing data, not evidence that there are no departures."
+      }
+    },
+    {
+      "source_id": "e4f2e459-01e7-5c6c-98cb-788663bc0f5a",
+      "name": "Example terminal-c",
+      "url": "https://example.invalid/terminal-c",
+      "kind": "terminal_page",
+      "terminal_id": "071a3f4c-4916-5aeb-8190-f82e1f50103f",
+      "enabled": false,
+      "review_state": "paused",
+      "cadence_minutes": 30,
+      "adapter_id": "synthetic-adapter",
+      "adapter_version": "v0-synthetic",
+      "kill_switched": false,
+      "latest": null
+    },
+    {
+      "source_id": "45c5e004-4dca-5f27-be18-38445faae444",
+      "name": "Example terminal-d",
+      "url": "https://example.invalid/terminal-d",
+      "kind": "terminal_page",
+      "terminal_id": "11bd773a-5264-51c2-a949-a03a0f1e8fa1",
+      "enabled": false,
+      "review_state": "restricted",
+      "cadence_minutes": 30,
+      "adapter_id": null,
+      "adapter_version": null,
+      "kill_switched": false,
+      "latest": null
+    }
+  ],
+  "counts": [
+    {
+      "state": "fresh",
+      "count": 1
+    },
+    {
+      "state": "source_unreachable",
+      "count": 1
+    }
+  ],
+  "never_observed": 3
+}

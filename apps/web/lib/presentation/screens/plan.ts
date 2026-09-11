@@ -58,7 +58,8 @@ export type NearbyTerminalView = {
   id: string;
   name: string;
   accessText: Fact<string>;
-  evidence: SourceEvidenceView;
+  /** Omitted when no source for this terminal has been observed yet. */
+  evidence?: SourceEvidenceView;
   href: string;
 };
 

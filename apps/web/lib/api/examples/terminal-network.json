@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-09-10T12:00:00Z",
+  "terminals": [
+    {
+      "terminal_id": "7596e1ec-3777-58c6-9987-659488f52d56",
+      "name": "Example Terminal a",
+      "installation": "Example Installation a",
+      "timezone": "UTC",
+      "operational_state": "verified",
+      "entrance": {
+        "latitude": 0.5,
+        "longitude": 0.5
+      },
+      "entrance_kind": "passenger_terminal",
+      "official_url": "https://example.invalid/terminal-a",
+      "latest": {
+        "observation_id": "b58e03c4-987a-5ffc-bed0-e30862138af4",
+        "state": "fresh",
+        "observed_at": "2026-09-10T11:30:00Z",
+        "source_time": "2026-09-10T11:00:00Z",
+        "retrieval": "succeeded",
+        "extraction": "exact_text",
+        "parser_version": "synthetic-parser-v1",
+        "explanation": "A fresh source observation exists for this source; it is metadata, not a confirmed flight and not confirmed seat availability, and it still requires official verification."
+      }
+    },
+    {
+      "terminal_id": "e1b8fb29-00f0-52cd-9c83-68c80c7e21ab",
+      "name": "Example Terminal b",
+      "installation": "Example Installation b",
+      "timezone": "UTC",
+      "operational_state": "unknown",
+      "entrance": null,
+      "entrance_kind": null,
+      "official_url": "https://example.invalid/terminal-b",
+      "latest": {
+        "observation_id": "17f427a5-2c7a-520e-aa3a-6ded0a9d1f72",
+        "state": "source_unreachable",
+        "observed_at": "2026-09-10T11:45:00Z",
+        "source_time": null,
+        "retrieval": "failed",
+        "extraction": "not_attempted",
+        "parser_version": null,
+        "explanation": "The source could not currently be reached, so this check obtained no observation. That is missing data, not evidence that there are no departures."
+      }
+    },
+    {
+      "terminal_id": "071a3f4c-4916-5aeb-8190-f82e1f50103f",
+      "name": "Example Terminal c",
+      "installation": "Example Installation c",
+      "timezone": "UTC",
+      "operational_state": "unknown",
+      "entrance": null,
+      "entrance_kind": null,
+      "official_url": "https://example.invalid/terminal-c",
+      "latest": null
+    },
+    {
+      "terminal_id": "11bd773a-5264-51c2-a949-a03a0f1e8fa1",
+      "name": "Example Terminal d",
+      "installation": "Example Installation d",
+      "timezone": "UTC",
+      "operational_state": "unknown",
+      "entrance": null,
+      "entrance_kind": null,
+      "official_url": "https://example.invalid/terminal-d",
+      "latest": null
+    }
+  ]
+}

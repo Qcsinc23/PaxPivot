@@ -46,8 +46,11 @@ export type TerminalNetworkScreenModel = {
   status: "empty" | "ready" | "loading" | "error";
   summary: TerminalNetworkSummaryView;
   map: MapView;
-  /** The filter the application has already applied to `terminals`. */
-  filter: "reachable" | "excluded";
+  /**
+   * The filter the application has already applied to `terminals`. `all` means no travel-time
+   * evaluation exists for a trip yet: the list is the supported registry.
+   */
+  filter: "reachable" | "excluded" | "all";
   terminals: readonly TerminalCardView[];
   selected?: TerminalNetworkSelectedView;
 };
@@ -65,12 +68,18 @@ export type TerminalDetailScreenModel = {
   terminal: TerminalCardView;
   map: MapView;
   stats: readonly FactView[];
+  /** Each action appears only when the application can honour it (no dead buttons). */
   actions: {
-    directionsHref: string;
-    watchHref: string;
-    officialHref: string;
+    directionsHref?: string;
+    watchHref?: string;
+    officialHref?: string;
   };
   opportunities: readonly TerminalOpportunityView[];
+  /**
+   * What to say when `opportunities` is empty. Model-supplied so a failed or absent check is
+   * never rendered as "no opportunities are published" (PRD §9.5).
+   */
+  opportunitiesNote: string;
   travel: {
     rows: readonly EvidenceRowView[];
     handoffs: readonly {
@@ -83,13 +92,14 @@ export type TerminalDetailScreenModel = {
     }[];
   };
   evidence: {
-    age: EvidenceAgeView;
+    /** Omitted when no source for this terminal has been observed yet. */
+    age?: EvidenceAgeView;
     rows: readonly EvidenceRowView[];
     /** Why this terminal is in the list at all; shown behind a disclosure. */
     whyIncluded: string;
   };
   history: HistoricalSummaryView;
-  compareHref: string;
+  compareHref?: string;
 };
 
 const UNKNOWN_AGE: EvidenceAgeView = {
@@ -136,6 +146,7 @@ export const emptyTerminalDetail: TerminalDetailScreenModel = {
     officialHref: "/terminals",
   },
   opportunities: [],
+  opportunitiesNote: "PaxPivot has not checked a source for this terminal yet.",
   travel: { rows: [], handoffs: [] },
   evidence: { age: UNKNOWN_AGE, rows: [], whyIncluded: "" },
   history: NO_HISTORY,
@@ -196,6 +207,8 @@ export const fixtureTerminalDetail: TerminalDetailScreenModel = {
       evidence: { state: "withdrawn" },
     },
   ],
+  opportunitiesNote:
+    "No opportunities are published for this terminal right now.",
   travel: {
     rows: fixtureEvidenceRows,
     handoffs: [

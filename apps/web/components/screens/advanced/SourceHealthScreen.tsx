@@ -19,6 +19,7 @@ const APPROVAL: Readonly<
   approved: { text: "Approved", tone: "verified" },
   review: { text: "Needs review", tone: "caution" },
   paused: { text: "Paused", tone: "unknown" },
+  restricted: { text: "Restricted", tone: "caution" },
   unknown: { text: "Unknown", tone: "unknown" },
 };
 
@@ -122,6 +123,17 @@ export function SourceHealthScreen({ model }: Props) {
                         <StatusPill tone={approval.tone}>
                           {approval.text}
                         </StatusPill>
+                        {row.killSwitched ? (
+                          <>
+                            {" "}
+                            <StatusPill
+                              tone="caution"
+                              srText="an operator stopped processing this source; earlier checks are kept"
+                            >
+                              Stopped
+                            </StatusPill>
+                          </>
+                        ) : null}
                       </span>
                     </th>
                     <td>

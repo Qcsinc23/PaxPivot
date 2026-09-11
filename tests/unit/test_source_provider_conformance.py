@@ -33,6 +33,10 @@ OBSERVATION_ID = UUID("66666666-6666-4666-8666-666666666666")
 OBSERVED_AT = datetime(2026, 2, 1, 12, 0, tzinfo=UTC)
 SOURCE_TIME = datetime(2026, 2, 1, 6, 0, tzinfo=UTC)
 CONFIGURATION_MESSAGE_KEY = "source_provider.not_configured"
+# The identity every fixture provider declares, and the value it stamps into the observations it
+# returns. A real adapter's own identity and its provenance stamp are the same string, and the
+# pipeline refuses a result whose `provider_id` names a different adapter than the one that ran.
+FIXTURE_PROVIDER_ID = "synthetic-fixture-provider"
 
 
 class NetworkAccessAttemptedError(AssertionError):
@@ -127,7 +131,7 @@ def provenance(fixture: SyntheticObservation) -> Provenance:
         source=synthetic_source(),
         observed_at=OBSERVED_AT,
         source_time=fixture.source_time,
-        provider_id="synthetic-fixture-provider",
+        provider_id=FIXTURE_PROVIDER_ID,
         policy_version_id="synthetic-not-approved-v1",
     )
 
@@ -151,6 +155,7 @@ class FixtureProvider:
     """Deterministic metadata-only provider driven by one synthetic fixture input."""
 
     fixture: SyntheticObservation
+    provider_id: str = FIXTURE_PROVIDER_ID
 
     async def observe(self, source: SourceIdentity) -> Result[SourceObservation]:
         del source  # The fixture already fixes identity; no I/O and no provider call.
@@ -160,6 +165,8 @@ class FixtureProvider:
 @dataclass(frozen=True)
 class ConfigurationFailureProvider:
     """Returns an application Failure, distinct from an expected source-state observation."""
+
+    provider_id: str = FIXTURE_PROVIDER_ID
 
     async def observe(self, source: SourceIdentity) -> Result[SourceObservation]:
         del source
@@ -175,6 +182,8 @@ class ConfigurationFailureProvider:
 @dataclass(frozen=True)
 class InvalidAbsenceProvider:
     """A provider that tries to disguise failed retrieval as an absence claim."""
+
+    provider_id: str = FIXTURE_PROVIDER_ID
 
     async def observe(self, source: SourceIdentity) -> Result[SourceObservation]:
         del source

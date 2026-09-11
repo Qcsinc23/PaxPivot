@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 PY := uv run --frozen
-.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test dev check
+.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed dev check
 setup:
 	pnpm install --frozen-lockfile
 	uv sync --frozen
@@ -36,6 +36,8 @@ migrate-check:
 	$(PY) python -m paxpivot.tooling migrate-check
 migrate-test: services
 	$(PY) python -m paxpivot.tooling migrate-test
+seed: migrate
+	$(PY) python -m paxpivot.tooling seed
 dev:
 	$(PY) python -m paxpivot.tooling dev
 check: format-check lint typecheck test build migrate migrate-check compose-check

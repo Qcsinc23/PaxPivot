@@ -191,6 +191,8 @@ def test_party_references_and_minimization() -> None:
 
 def test_provider_substitution_preserves_failure_observation() -> None:
     class FakeProvider:
+        provider_id = "synthetic-fixture-provider"
+
         async def observe(self, source: SourceIdentity) -> Result[SourceObservation]:
             result = observation()
             return Success(value=result)

@@ -18,7 +18,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
 import { factText } from "@/lib/presentation/fact";
 import type { TerminalNetworkScreenModel } from "@/lib/presentation/screens/terminals";
 
-type Filter = TerminalNetworkScreenModel["filter"];
+type Filter = Exclude<TerminalNetworkScreenModel["filter"], "all">;
 
 /** The two filters the application can apply. The screen never filters the list itself. */
 const FILTER_OPTIONS: readonly SegmentOption<Filter>[] = [
@@ -34,14 +34,18 @@ type Props = { model: TerminalNetworkScreenModel };
  * Filtering, travel time and inclusion are the application's; the screen only reports them.
  */
 export function TerminalNetworkScreen({ model }: Props) {
-  const [filter, setFilter] = useState<Filter>(model.filter);
+  const [filter, setFilter] = useState<Filter>(
+    model.filter === "all" ? "reachable" : model.filter,
+  );
   const [sheetOpen, setSheetOpen] = useState(false);
   const listHeadingId = useId();
 
   const header = (
     <AppHeader
       title="Terminals"
-      subtitle="By travel time from you"
+      subtitle={
+        model.filter === "all" ? "Supported network" : "By travel time from you"
+      }
       back={{ href: "/" }}
     />
   );
@@ -88,24 +92,32 @@ export function TerminalNetworkScreen({ model }: Props) {
 
       <MapSurface map={model.map} size="hero" />
 
-      <div className="pp-card__hd">
-        <StatusPill tone="verified">
-          Reachable {factText(model.summary.reachable)}
-        </StatusPill>
-        <StatusPill tone="ghost">
-          Excluded {factText(model.summary.excluded)}
-        </StatusPill>
-      </div>
+      {model.filter === "all" ? (
+        <p className="pp-meta">
+          Travel time from you is not computed until you plan a trip.
+        </p>
+      ) : (
+        <>
+          <div className="pp-card__hd">
+            <StatusPill tone="verified">
+              Reachable {factText(model.summary.reachable)}
+            </StatusPill>
+            <StatusPill tone="ghost">
+              Excluded {factText(model.summary.excluded)}
+            </StatusPill>
+          </div>
 
-      <Card as="div">
-        <span className="pp-label">Show</span>
-        <SegmentedControl
-          label="Terminals to show"
-          value={filter}
-          options={FILTER_OPTIONS}
-          onChange={setFilter}
-        />
-      </Card>
+          <Card as="div">
+            <span className="pp-label">Show</span>
+            <SegmentedControl
+              label="Terminals to show"
+              value={filter}
+              options={FILTER_OPTIONS}
+              onChange={setFilter}
+            />
+          </Card>
+        </>
+      )}
 
       {selected ? (
         <Card as="div" tone="flat">
@@ -137,7 +149,9 @@ export function TerminalNetworkScreen({ model }: Props) {
           <h2 id={listHeadingId} className="pp-title">
             {model.filter === "excluded"
               ? "Excluded terminals"
-              : "Reachable terminals"}
+              : model.filter === "all"
+                ? "Supported terminals"
+                : "Reachable terminals"}
           </h2>
           <ul
             aria-label="Terminals"
