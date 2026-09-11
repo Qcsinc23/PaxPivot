@@ -20,6 +20,7 @@ and drive it with a fixture provider.
 """
 
 import asyncio
+import json
 import socket
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
@@ -98,7 +99,7 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
 def engine() -> Iterator[Engine]:
     with temporary_database() as url:
         engine = create_engine(url)
-        assert seed_reference_data(engine) == {"sources": 5, "terminals": 4, "policies_upgraded": 0}
+        assert seed_reference_data(engine) == {"sources": 9, "terminals": 4, "policies_upgraded": 0}
         yield engine
         engine.dispose()
 
@@ -658,6 +659,7 @@ def test_firecrawl_provider_records_fresh_metadata_through_the_runner(engine: En
     from paxpivot.application.source_checks import run_source_checks
     from paxpivot.domain.source import SourceState
     from paxpivot.infrastructure import database as db
+    from paxpivot.infrastructure.bootstrap import SCHEDULE_ARTIFACT_SOURCES
     from paxpivot.infrastructure.providers.firecrawl import FirecrawlSourceProvider
     from paxpivot.infrastructure.repositories import (
         SqlKillSwitchRepository,
@@ -665,20 +667,27 @@ def test_firecrawl_provider_records_fresh_metadata_through_the_runner(engine: En
         SqlSourceRepository,
     )
 
+    # Every terminal page links each terminal's 72-hour artifact; artifacts render as markdown.
+    links = "".join(
+        f'<a href="{s.identity.url}72HR%20SEP11.pdf?ver=1">72</a>'
+        for s in SCHEDULE_ARTIFACT_SOURCES
+    )
+
     def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["formats"] == ["markdown"]:
+            data: dict[str, object] = {"markdown": "| 12 SEP | 0600 | X | 10T |"}
+        else:
+            data = {"rawHtml": f"<p>BODY-MARKER-9f3a</p>{links}"}
         return httpx.Response(
-            200,
-            json={
-                "success": True,
-                "data": {"rawHtml": "<p>BODY-MARKER-9f3a</p>", "metadata": {"statusCode": 200}},
-            },
+            200, json={"success": True, "data": {**data, "metadata": {"statusCode": 200}}}
         )
 
     with db.transaction(engine) as connection:
         sources = SqlSourceRepository(connection)
         registry = {s.identity.source_id: s for s in sources.list_sources()}
         approved = [s for s in registry.values() if s.adapter_id == "firecrawl" and s.enabled]
-        assert len(approved) == 4  # TASK-023: the four official terminal pages
+        assert len(approved) == 8  # four terminal pages (TASK-023) + four artifacts (TASK-037)
         provider = FirecrawlSourceProvider(
             "k-synthetic", registry, transport=httpx.MockTransport(handler)
         )

@@ -63,7 +63,7 @@ def _fact_count(engine: Engine) -> int:
 def engine() -> Iterator[Engine]:
     with temporary_database() as url:
         engine = create_engine(url)
-        assert seed_reference_data(engine) == {"sources": 5, "terminals": 4, "policies_upgraded": 0}
+        assert seed_reference_data(engine) == {"sources": 9, "terminals": 4, "policies_upgraded": 0}
         assert seed_reference_data(engine) == {"sources": 0, "terminals": 0, "policies_upgraded": 0}
         yield engine
         engine.dispose()
@@ -98,7 +98,7 @@ def test_seed_is_metadata_only_and_not_fresh(engine: Engine) -> None:
     with engine.connect() as connection:
         terminals = SqlTerminalRepository(connection).list_terminals()
         sources = SqlSourceRepository(connection).list_sources()
-        assert len(terminals) == 4 and len(sources) == 5
+        assert len(terminals) == 4 and len(sources) == 9
         for terminal in terminals:
             assert terminal.entrance is None and terminal.base_coordinates is None
             assert terminal.operational_state == "unknown"
@@ -144,7 +144,7 @@ def test_observations_are_append_only_and_keep_unknowns(engine: Engine) -> None:
         health = list_source_health(
             SqlSourceRepository(connection), repo, SqlKillSwitchRepository(connection)
         )
-        assert health.counts[0].state == SourceState.FRESH and health.never_observed == 4
+        assert health.counts[0].state == SourceState.FRESH and health.never_observed == 8
     # The database itself refuses rewrites of history, whatever the caller.
     for statement in (
         "UPDATE source_observations SET state = 'no_departures_published'",

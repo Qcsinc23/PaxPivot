@@ -20,7 +20,9 @@ Outcome mapping (PRD §9.5: retrieval failure is preserved, never "no departures
 """
 
 import hashlib
+import html as html_module
 import os
+import re
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -36,6 +38,7 @@ from paxpivot.domain.source import (
     RetrievalState,
     Source,
     SourceIdentity,
+    SourceKind,
     SourceObservation,
     SourceState,
 )
@@ -43,6 +46,22 @@ from paxpivot.domain.source import (
 PROVIDER_ID = "firecrawl"
 API_URL = "https://api.firecrawl.dev/v1/scrape"
 REQUEST_TIMEOUT_SECONDS = 60.0
+# TASK-037: the current 72-hour artifact is a dated file under the terminal's document folder,
+# linked from the terminal page. Discovery is a prefix match plus this filename pattern.
+ARTIFACT_FILENAME = re.compile(r"72", re.IGNORECASE)
+HREF = re.compile(r'href="([^"]+)"', re.IGNORECASE)
+
+
+def discover_artifact(page_html: str, folder: str) -> str | None:
+    """First link on the page under `folder` whose filename names the 72-hour schedule."""
+    for raw in HREF.findall(page_html):
+        href: str = html_module.unescape(raw)
+        if not href.startswith(folder):
+            continue
+        filename = href[len(folder) :].split("?", 1)[0]
+        if "/" not in filename and ARTIFACT_FILENAME.search(filename):
+            return href
+    return None
 
 
 def _failure(
@@ -87,7 +106,7 @@ class FirecrawlSourceProvider:
         registered = self._sources.get(source.source_id)
         if registered is None or registered.identity != source:
             return _failure("invalid_input", "source_provider.unknown_source", False)
-        fetched = await self._fetch(source)
+        fetched = await self._fetch_registered(registered)
         if not fetched.ok:
             return fetched
         page_status, document = fetched.value
@@ -98,7 +117,7 @@ class FirecrawlSourceProvider:
         if registered is None or registered.identity != source:
             return _failure("invalid_input", "source_provider.unknown_source", False)
         observed_at = self._clock()
-        fetched = await self._fetch(source)
+        fetched = await self._fetch_registered(registered)
         if not fetched.ok:
             return fetched
         page_status, document = fetched.value
@@ -111,7 +130,37 @@ class FirecrawlSourceProvider:
         extra = "content_hash_unavailable" if hash_wanted and digest is None else None
         return Success(value=self._observation(registered, observed_at, page_status, digest, extra))
 
-    async def _fetch(self, source: SourceIdentity) -> Result[tuple[int, Any]]:
+    async def _fetch_registered(self, source: Source) -> Result[tuple[int, Any]]:
+        """A terminal page is fetched as HTML; a schedule artifact is discovered on its terminal
+        page first, then fetched as text (Firecrawl renders the PDF to markdown)."""
+        if source.kind != SourceKind.SCHEDULE_ARTIFACT:
+            return await self._fetch(str(source.identity.url), "rawHtml")
+        parent = next(
+            (
+                s
+                for s in self._sources.values()
+                if s.kind == SourceKind.TERMINAL_PAGE
+                and s.terminal_id == source.terminal_id
+                and s.enabled
+                and s.policy.may_retrieve
+            ),
+            None,
+        )
+        if parent is None:
+            return _failure("invalid_input", "source_provider.artifact_parent_missing", False)
+        page = await self._fetch(str(parent.identity.url), "rawHtml")
+        if not page.ok:
+            return page
+        page_status, page_html = page.value
+        if not (200 <= page_status < 300 and isinstance(page_html, str)):
+            # The terminal page itself did not answer; that is its observation, not this one's.
+            return _failure("unavailable", "source_provider.artifact_parent_unreachable", True)
+        href = discover_artifact(page_html, str(source.identity.url))
+        if href is None:
+            return _failure("unavailable", "source_provider.artifact_not_linked", True)
+        return await self._fetch(href, "markdown")
+
+    async def _fetch(self, url: str, fmt: str) -> Result[tuple[int, Any]]:
         try:
             async with httpx.AsyncClient(
                 transport=self._transport, timeout=REQUEST_TIMEOUT_SECONDS
@@ -120,8 +169,8 @@ class FirecrawlSourceProvider:
                     API_URL,
                     headers={"Authorization": f"Bearer {self._api_key}"},
                     json={
-                        "url": str(source.url),
-                        "formats": ["rawHtml"],
+                        "url": url,
+                        "formats": [fmt],
                         "onlyMainContent": False,
                         "maxAge": 0,
                     },
@@ -141,7 +190,7 @@ class FirecrawlSourceProvider:
             payload: Any = response.json()
             data = payload["data"]
             page_status = int(data["metadata"]["statusCode"])
-            document = data.get("rawHtml")
+            document = data.get(fmt)
         except (ValueError, KeyError, TypeError):
             return _failure("unavailable", "source_provider.firecrawl_malformed", True)
         return Success(value=(page_status, document))
