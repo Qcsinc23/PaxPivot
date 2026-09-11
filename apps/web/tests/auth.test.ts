@@ -84,6 +84,8 @@ describe("session token", () => {
     expect(timingSafeEqual("abc", "ab")).toBe(false);
     expect(timingSafeEqual("", "")).toBe(true);
     expect(timingSafeEqual("", "a")).toBe(false);
+    expect(timingSafeEqual("a\u0000", "a")).toBe(false);
+    expect(timingSafeEqual("a", "a\u0000")).toBe(false);
   });
 });
 
@@ -166,13 +168,27 @@ describe("guard decisions", () => {
       ).toEqual({ action: "allow" });
     }
     expect(safeNextPath("/terminals/x")).toBe("/terminals/x");
+    expect(safeNextPath("/terminals?filter=x")).toBe("/terminals?filter=x");
     for (const bad of [
       undefined,
       null,
       "",
       "https://evil.invalid/",
       "//evil.invalid",
+      "/\\evil.invalid/",
+      "/\t/evil.invalid/",
+      "/\n/evil.invalid",
+      "/..//evil.invalid/",
+      "/a/..//evil.invalid/",
+      "/.//evil.invalid/",
+      "/%2e%2e//evil.invalid/",
+      "/./\\evil.invalid",
+      "///",
+      "//[",
+      "//a:99999/",
       "terminals",
+      "javascript:alert(1)",
+      ["/a", "/b"],
     ]) {
       expect(safeNextPath(bad)).toBe("/");
     }
