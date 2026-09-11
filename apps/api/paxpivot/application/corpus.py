@@ -1,9 +1,11 @@
 """Labeled-corpus capture for source-specific parsers (TASK-031; PRD §9.2, SRC-009).
 
 A parser may only be trusted after its labeled corpus reaches the accuracy gate. This module
-captures one page through the registered provider and writes it to a fixture directory in the
-repository, next to an empty label template a person completes. It never writes to the
-database and refuses a source whose policy does not allow parsing.
+captures one page through the registered provider and writes it to a directory that git ignores
+(`private-fixtures/`), next to an empty label template a person completes. Bodies never enter
+the database or the public repository: the registry policy stays `hash_only` for storage, and
+the corpus is retained locally for at most the 90 days PRD §16.4 allows for schedule
+observations. It refuses a source whose policy does not allow parsing.
 """
 
 import hashlib
@@ -55,11 +57,26 @@ async def capture_corpus(
         authorization = authorize_processing(source, mode, switches)
         if not authorization.ok:
             return authorization
+    if source.adapter_id is None or provider.provider_id != source.adapter_id:
+        return Failure(
+            error=ApplicationError(
+                code="invalid_input",
+                message_key="source_provider.identity_mismatch",
+                retryable=False,
+            )
+        )
     fetched = await provider.fetch_document(source.identity)
     if not fetched.ok:
         return fetched
     page_status, document = fetched.value
-    if document is None:
+    if not 200 <= page_status < 300:
+        # An edge refusal or error page is not a terminal page; it must not enter the corpus.
+        return Failure(
+            error=ApplicationError(
+                code="unavailable", message_key="corpus.page_not_ok", retryable=True
+            )
+        )
+    if not document:
         return Failure(
             error=ApplicationError(
                 code="unavailable", message_key="corpus.document_unavailable", retryable=True

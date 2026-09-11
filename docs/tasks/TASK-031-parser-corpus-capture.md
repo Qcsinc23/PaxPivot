@@ -69,3 +69,13 @@ No parser, no schedule rows, no UI change.
 ## Handoff
 
 (fill in per template)
+
+## Review decisions (2026-09-11, delegated product-owner call)
+
+- Captured page bodies live in `private-fixtures/parsers/amc-terminal-page/` (gitignored), never
+  in this public repository or the database; retain at most 90 days (PRD §16.4). Registry policy
+  stays `hash_only`.
+- `seed` upgrades only known prior versions (`terminal-page-metadata-v1`) and never touches
+  paused or restricted rows; each upgrade is printed with its source id.
+- Capture refuses non-2xx pages, empty bodies, and a provider whose id differs from the
+  source's adapter id.

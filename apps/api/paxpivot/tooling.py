@@ -280,7 +280,7 @@ def capture_corpus_command(source_id: str) -> int:
     if provider is None:
         print("FIRECRAWL_API_KEY is not set; nothing captured.")
         return 2
-    directory = ROOT / "tests/fixtures/parsers/amc-terminal-page"
+    directory = ROOT / "private-fixtures/parsers/amc-terminal-page"  # gitignored; never committed
     result = asyncio.run(capture_corpus(source, provider, switches, directory))
     if not result.ok:
         print(f"Refused: {result.error.message_key}")

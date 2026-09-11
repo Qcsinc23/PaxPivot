@@ -172,6 +172,10 @@ TERMINAL_PAGE_SOURCES: tuple[Source, ...] = tuple(
 
 REFERENCE_SOURCES: tuple[Source, ...] = (DIRECTORY_SOURCE, *TERMINAL_PAGE_SOURCES)
 
+# Policy versions this seed is allowed to replace. Any other version on a reference row was set
+# by a person (an incident pause, a restriction) and is left alone.
+UPGRADABLE_POLICY_VERSIONS = frozenset({"terminal-page-metadata-v1"})
+
 POLICY_COLUMNS = frozenset(
     {
         "policy_version_id",
@@ -191,7 +195,7 @@ POLICY_COLUMNS = frozenset(
 
 
 def seed_reference_data(engine: Engine) -> dict[str, int]:
-    """Insert the reference rows that are missing; existing rows are never rewritten."""
+    """Insert missing reference rows; upgrade only known prior policy versions of reference rows."""
     inserted = {"sources": 0, "terminals": 0, "policies_upgraded": 0}
     with engine.begin() as connection:
         # RETURNING yields one row per inserted row and none on conflict (rowcount is
@@ -223,16 +227,25 @@ def seed_reference_data(engine: Engine) -> dict[str, int]:
             )
         for source in TERMINAL_PAGE_SOURCES:
             insert_source(source)
-        # Registry rows are mutable (observations are not): bring an older policy version of a
-        # reference source up to the current one so new observations carry it. Never touches
-        # rows whose policy_version_id already matches, and never rewrites URLs or names.
+        # Registry rows are mutable (observations are not): bring a known older policy version
+        # of a reference source up to the current one so new observations carry it. Rows on an
+        # unrecognised version, or paused/restricted by a person, are never touched; URLs and
+        # names are never rewritten. Each upgrade is printed so the register change is visible.
         for source in REFERENCE_SOURCES:
-            inserted["policies_upgraded"] += connection.execute(
+            upgraded = connection.execute(
                 update(db.sources)
                 .where(
                     db.sources.c.source_id == source.identity.source_id,
                     db.sources.c.policy_version_id != source.policy.policy_version_id,
+                    db.sources.c.policy_version_id.in_(UPGRADABLE_POLICY_VERSIONS),
+                    db.sources.c.review_state.notin_(
+                        [PolicyReviewState.PAUSED.value, PolicyReviewState.RESTRICTED.value]
+                    ),
                 )
                 .values(**{k: v for k, v in source_row(source).items() if k in POLICY_COLUMNS})
-            ).rowcount
+                .returning(db.sources.c.source_id)
+            ).all()
+            for (source_id,) in upgraded:
+                print(f"Policy upgraded: {source_id} -> {source.policy.policy_version_id}")
+            inserted["policies_upgraded"] += len(upgraded)
     return inserted

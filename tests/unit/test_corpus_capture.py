@@ -101,6 +101,25 @@ def test_capture_refuses_when_parsing_or_retrieval_is_not_allowed(tmp_path: Path
     assert list(tmp_path.iterdir()) == []
 
 
+def test_capture_refuses_error_pages_empty_bodies_and_foreign_adapters(tmp_path: Path) -> None:
+    src = source("page", policy=PARSE_APPROVED, adapter="firecrawl")
+    blocked = asyncio.run(capture_corpus(src, provider_for(src, status=403), [], tmp_path))
+    assert not blocked.ok and blocked.error.message_key == "corpus.page_not_ok"
+    empty = asyncio.run(capture_corpus(src, provider_for(src, body=""), [], tmp_path))
+    assert not empty.ok and empty.error.message_key == "corpus.document_unavailable"
+    foreign = src.model_copy(update={"adapter_id": "other-adapter"})
+    result = asyncio.run(capture_corpus(foreign, provider_for(src), [], tmp_path))
+    assert not result.ok and result.error.message_key == "source_provider.identity_mismatch"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_capture_directory_is_ignored_by_git() -> None:
+    from paxpivot.tooling import ROOT
+
+    ignored = [line.strip() for line in (ROOT / ".gitignore").read_text().splitlines()]
+    assert "private-fixtures/" in ignored
+
+
 def test_capture_without_a_document_is_a_failure(tmp_path: Path) -> None:
     src = source("nobody", policy=PARSE_APPROVED, adapter="firecrawl")
     result = asyncio.run(capture_corpus(src, provider_for(src, body=None), [], tmp_path))
