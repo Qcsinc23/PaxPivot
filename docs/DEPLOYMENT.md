@@ -25,7 +25,8 @@ Generate with `openssl rand -hex 32`. Rotating `PAXPIVOT_SESSION_SECRET` signs e
 ## Preflight checklist
 
 1. `make check` and `make migrate-test` green on the commit being deployed.
-2. `make build-images` succeeds (api + web images build from a clean checkout).
+2. `make build-images` succeeds, and each image is smoke-tested: web `/login` → 200 with headers,
+   anonymous `/terminals` → 307; api `/health` → ok, `/ready` → 200 against a migrated database.
 3. `docker compose --env-file .env.production -f compose.prod.yml config --quiet` is valid.
 4. Host: Docker Engine + Compose v2, ports 80/443 free, disk for the Postgres volume.
 5. A restore test of the previous backup has been performed on this host (see below).

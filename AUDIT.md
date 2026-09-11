@@ -152,3 +152,20 @@ Top-3 sketches:
 3. **Backup cadence and retention** for the append-only observation history (pilot §16.4).
 4. **TASK-023/025 inputs** (official terminal URLs, source approval, Firecrawl policy/budget)
    remain outstanding and are unrelated to deployability.
+
+## 7. Post-Execution Status (branch `audit/improvements-2026-09-11`, PR #32)
+
+| Task | Status | Evidence |
+|---|---|---|
+| M1-1 Security headers | Done | `apps/web/tests/edges.test.tsx`; image smoke: headers present on `/login` |
+| M1-2 `/ready` probe | Done | unit 503 on unreachable DB; integration 200 at head / 503 at wrong head; api image: `/ready` 200 |
+| M1-3 Error boundaries | Done | `edges.test.tsx` incl. axe |
+| M2-1 Images + topology | Prepared (built, smoke-tested, not deployed) | `make build-images`; web image: 200/307/303/200/404; api image: health, ready, 401/200 |
+| M2-2 Runbook | Done | `docs/DEPLOYMENT.md` |
+| M2-3 Proxy-aware API start | Done | `deploy/api-entrypoint.sh` (`--proxy-headers`) |
+| Deploy to host | Blocked | product decisions §6 (host/domain, ADR-005 acceptance, backup cadence) |
+| M3-1/2/3 | Not started | need product/hosting decisions |
+
+Two defects were found only by running the built images (relative proxy redirect crashing the
+Next runtime; flattened migrations directory in the api image) and fixed on this branch — the
+image smoke test is now part of the preflight in `docs/DEPLOYMENT.md`.
