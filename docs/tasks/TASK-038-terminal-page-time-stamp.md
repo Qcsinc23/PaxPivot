@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — product owner: "go ahead with TASK-038" (2026-09-11).
+`done` — merged in PR #45 (56cee3a, post-merge CI green); deployed to the VPS at tag 56cee3a on 2026-09-11.
 
 ## Assigned role
 
@@ -68,4 +68,13 @@ Departure rows, seat states, opportunities (TASK-032, blocked on permission).
 
 ## Handoff
 
-(fill in after merge)
+- **Merged:** PR #45 → 56cee3a; post-merge `Quality` green. Deployed `paxpivot-api:56cee3a`.
+- **Live result (check-sources after deploy):** BWI, Andrews and MDL terminal pages now carry
+  `source_time` read from their own stamp (`extraction=exact_text`, `amc-page-time-v1`); Dover
+  prints no stamp and reports `extraction=failed`, `source_time` unknown. The terminal detail's
+  evidence age shows the page time beside the read time (SRC-008).
+- **Adversarial review (fresh, 0 Critical / 2 Important → fixed):** parse gated by engaged
+  switches; date-only stamps set no time; first stamp decides; strict months/years; local-clock
+  interpretation recorded as a reason.
+- **Not done:** no departure rows, seat states or opportunities; TASK-032 stays blocked on
+  written permission for the marked schedule artifacts (TASK-037).
