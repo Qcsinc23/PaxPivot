@@ -8,6 +8,7 @@
 import { known, unknown } from "./fact";
 import type {
   AlertRowView,
+  AskAnswerView,
   CommercialBaselineView,
   EvidenceAgeView,
   EvidenceRowView,
@@ -348,4 +349,86 @@ export const fixtureHistoryUnknown: HistoricalSummaryView = {
   sinceLastText: unknown(),
   medianSeats: unknown("Seat counts not published"),
   coverageNote: "Sample below the minimum gate; nothing is inferred.",
+};
+
+/** A structured Ask answer. Every fact in it points at the other fixtures; nothing is composed. */
+export const fixtureAskAnswer: AskAnswerView = {
+  question:
+    "Is it worth driving to Example Terminal C instead of Example Terminal A?",
+  verdict: {
+    title: "Example Terminal A keeps the fresher evidence",
+    kind: "recommendation",
+  },
+  comparison: {
+    options: [
+      {
+        id: fixtureRoute.id,
+        headline: { kind: "best_space_a" },
+        title: fixtureRoute.title,
+        href: "/showcase#route",
+      },
+      {
+        id: fixtureCandidate.id,
+        headline: { kind: "space_a_candidate", position: 2 },
+        title: fixtureCandidate.title,
+        href: "/showcase#route-2",
+      },
+    ],
+    rows: [
+      {
+        id: "drive",
+        label: "Drive",
+        cells: [
+          { value: known("35 min"), emphasis: "better" },
+          { value: known("1 h 55"), emphasis: "none" },
+        ],
+      },
+      {
+        id: "evidence",
+        label: "Evidence",
+        cells: [
+          {
+            value: known("Fresh"),
+            evidence: { state: "fresh", ageText: "9m" },
+            emphasis: "better",
+          },
+          {
+            value: known("Stale"),
+            evidence: { state: "source_stale", ageText: "3d" },
+            emphasis: "none",
+          },
+        ],
+      },
+    ],
+  },
+  explanation:
+    "Synthetic explanation: the closer terminal has a fresh published schedule; the farther one's page has not been read successfully for three days. Neither is a reservation.",
+  actions: [
+    { label: "Open route", href: "/showcase#route", variant: "primary" },
+    { label: "Compare both", href: "/showcase#compare", variant: "secondary" },
+  ],
+  grounding: [
+    { kind: "route_search", count: 1 },
+    { kind: "source_record", count: 2 },
+  ],
+  followUps: [
+    "What changed since this morning?",
+    "What do I still need before roll call?",
+  ],
+};
+
+/** The honest shape when a required tool returned unknown: the verdict says so, verbatim. */
+export const fixtureAskAnswerUnknown: AskAnswerView = {
+  question: "Will there be a seat tomorrow?",
+  verdict: {
+    title: "Seat release is not published",
+    kind: "unknown",
+  },
+  explanation:
+    "Synthetic explanation: no source has published seat counts for that departure, so PaxPivot cannot say. Check the official page or the terminal at roll call.",
+  actions: [
+    { label: "See the source", href: "/showcase#ledger", variant: "secondary" },
+  ],
+  grounding: [{ kind: "source_record", count: 1 }],
+  followUps: ["What does the terminal page currently show?"],
 };

@@ -11,7 +11,24 @@ import {
   ELIGIBILITY_WORDING,
   eligibilitySummaryText,
 } from "@/lib/presentation/eligibility";
-import { SORT_MODE_LABELS, SORT_OPTIONS } from "@/lib/presentation/types";
+import {
+  ASK_GROUNDING_NOUNS,
+  ASK_VERDICT_WORDING,
+  askGroundingText,
+} from "@/lib/presentation/ask";
+import {
+  fixtureAskAnswer,
+  fixtureAskAnswerUnknown,
+} from "@/lib/presentation/fixtures";
+import type { CompareRowView as ScreenCompareRowView } from "@/lib/presentation/screens/compare";
+import {
+  SORT_MODE_LABELS,
+  SORT_OPTIONS,
+  type AskAnswerView,
+  type AskGroundingKind,
+  type AskVerdictKind,
+  type CompareRowView,
+} from "@/lib/presentation/types";
 
 describe("Fact", () => {
   test("unknown never formats as a number", () => {
@@ -112,5 +129,75 @@ describe("eligibility wording", () => {
     }
     expect(ELIGIBILITY_WORDING.unknown.tone).toBe("unknown");
     expect(ELIGIBILITY_WORDING.eligible.srText).toMatch(/not guaranteed/);
+  });
+});
+
+describe("AskAnswerView contract", () => {
+  test("unknown is an explicit verdict kind and renders the word Unknown verbatim", () => {
+    const kinds: AskVerdictKind[] = [
+      "recommendation",
+      "unknown",
+      "clarification",
+    ];
+    expect(Object.keys(ASK_VERDICT_WORDING).sort()).toEqual([...kinds].sort());
+    expect(ASK_VERDICT_WORDING.unknown.label).toBe("Unknown");
+    expect(ASK_VERDICT_WORDING.unknown.tone).toBe("unknown");
+    expect(fixtureAskAnswerUnknown.verdict.kind).toBe("unknown");
+    // The title alone may not mention unknown; the kind is what carries it.
+    expect(
+      ASK_VERDICT_WORDING[fixtureAskAnswerUnknown.verdict.kind].label,
+    ).toBe("Unknown");
+  });
+
+  test("grounding is counted provenance, never a citation composed here", () => {
+    const kinds: AskGroundingKind[] = [
+      "route_search",
+      "source_record",
+      "policy",
+      "history",
+    ];
+    expect(Object.keys(ASK_GROUNDING_NOUNS).sort()).toEqual([...kinds].sort());
+    expect(askGroundingText(fixtureAskAnswer.grounding)).toBe(
+      "Based on 1 route search · 2 source records",
+    );
+    expect(askGroundingText([])).toBe("Based on no structured records");
+    expect(askGroundingText([{ kind: "policy", count: 0 }])).toBe(
+      "Based on 0 policy citations",
+    );
+    for (const item of fixtureAskAnswer.grounding) {
+      expect(Number.isInteger(item.count)).toBe(true);
+    }
+  });
+
+  test("the comparison reuses the Compare screen's row contract", () => {
+    // Type-level: the screen re-exports the foundation type, so both names are one type.
+    const row: CompareRowView = fixtureAskAnswer.comparison!.rows[0]!;
+    const same: ScreenCompareRowView = row;
+    expect(same.cells).toHaveLength(
+      fixtureAskAnswer.comparison!.options.length,
+    );
+    for (const cell of row.cells) {
+      expect(["better", "tie", "none"]).toContain(cell.emphasis);
+    }
+  });
+
+  test("an answer carries only structured parts: no free text can add a fact", () => {
+    const answer: AskAnswerView = fixtureAskAnswer;
+    expect(Object.keys(answer).sort()).toEqual(
+      [
+        "question",
+        "verdict",
+        "comparison",
+        "explanation",
+        "actions",
+        "grounding",
+        "followUps",
+      ].sort(),
+    );
+    for (const action of answer.actions) {
+      expect(["primary", "secondary", "ghost"]).toContain(action.variant);
+      expect(action.href.length).toBeGreaterThan(0);
+    }
+    expect(answer.explanation).not.toMatch(/guarantee|will fly|probab/i);
   });
 });

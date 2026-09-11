@@ -18,7 +18,10 @@ apps/web/
     fact.ts               Fact<T>: known | unknown; factText never renders unknown as 0
     source-state.ts       13 SourceState codes mirrored verbatim + compact lexicon
     types.ts              view-model contracts consumed by components/paxpivot; SORT_OPTIONS;
-                          HandoffUnknownKind (what a provider handoff leaves unconfirmed)
+                          HandoffUnknownKind (what a provider handoff leaves unconfirmed);
+                          Compare{Emphasis,CellView,RowView,OptionView}; AskAnswerView and its parts
+    ask.ts                ASK_VERDICT_WORDING (unknown → "Unknown"), ASK_GROUNDING_NOUNS,
+                          askGroundingText ("Based on 1 route search · 2 source records")
     eligibility.ts        ELIGIBILITY_WORDING + eligibilitySummaryText ("Eligible · 2 travelers")
     navigation.ts         destinations for bottom nav and rail; Ask href
     fixtures.ts           synthetic fixtures for tests and the showcase
@@ -75,6 +78,23 @@ it in the task's "Blocked / contract change needed" section rather than deriving
   action. Because `Tabs` keeps hidden panels mounted, a screen that places the bar inside a tab
   panel must mount it only while that tab is active (Route Detail mirrors the selection through
   `Tabs.onChange`); a regression test covers this lifecycle.
+
+## Ask PaxPivot presentation contract
+
+`AskAnswerView` (types.ts, TASK-019) is the only input to the Ask screen. It is a **structured**
+answer the application builds from typed tool results (PRD §11.2): `question`, `verdict`
+(`title` + `kind`), an optional `comparison` in the Compare screen's row contract,
+one-paragraph `explanation`, `actions` (label/href/variant), `grounding` (provenance kind +
+count) and `followUps`. The presentation:
+
+- renders `verdict.kind: "unknown"` with the word "Unknown" verbatim (`ASK_VERDICT_WORDING`);
+- renders grounding as counts by kind (`askGroundingText`), never as citations it composes;
+- renders the comparison with the `.pp-table` semantics, deciding no emphasis itself;
+- offers a composer only when a tool contract exists, and never submits free text to a model;
+- cannot add a fact the underlying tool results did not provide — there is no field for one.
+
+No AI provider, LLM call or tool invocation exists in the web app; eligibility and routing are
+never decided by an LLM.
 
 ## Progressive disclosure
 

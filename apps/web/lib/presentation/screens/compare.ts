@@ -8,33 +8,17 @@
 import { known, unknown } from "@/lib/presentation/fact";
 import { fixtureCandidate, fixtureRoute } from "@/lib/presentation/fixtures";
 import type {
-  Fact,
-  RouteHeadline,
-  SourceEvidenceView,
+  CompareOptionView,
+  CompareRowView,
 } from "@/lib/presentation/types";
 
-/** How a cell compares to the other options. Application truth, never computed in the screen. */
-export type CompareEmphasis = "better" | "tie" | "none";
-
-export type CompareCellView = {
-  value: Fact<string>;
-  evidence?: SourceEvidenceView;
-  emphasis: CompareEmphasis;
-};
-
-export type CompareRowView = {
-  id: string;
-  label: string;
-  cells: readonly CompareCellView[];
-};
-
-export type CompareOptionView = {
-  id: string;
-  /** A Space-A headline, or the commercial baseline's own label. */
-  headline: RouteHeadline | "safest_overall";
-  title: string;
-  href: string;
-};
+/** The row/option contracts are foundation types since TASK-019 (Ask shares them). */
+export type {
+  CompareCellView,
+  CompareEmphasis,
+  CompareOptionView,
+  CompareRowView,
+} from "@/lib/presentation/types";
 
 export type CompareScreenModel = {
   status: "empty" | "ready" | "loading" | "error";
