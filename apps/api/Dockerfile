@@ -10,7 +10,8 @@ FROM python:3.12.13-slim
 RUN useradd --system --uid 10001 paxpivot
 WORKDIR /srv
 COPY --from=build /srv/.venv /srv/.venv
-COPY apps/api/alembic.ini apps/api/migrations ./apps/api/
+COPY apps/api/alembic.ini ./apps/api/alembic.ini
+COPY apps/api/migrations ./apps/api/migrations
 COPY deploy/api-entrypoint.sh /usr/local/bin/api-entrypoint
 ENV PATH="/srv/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PAXPIVOT_ALEMBIC_INI=/srv/apps/api/alembic.ini
 USER paxpivot
