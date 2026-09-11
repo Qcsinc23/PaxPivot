@@ -22,6 +22,9 @@ import {
  *   never as an empty registry;
  * * `unauthorized` / `unavailable` — a failure on our side.
  */
+// Live data is read per request; never prerendered at build time (where no API is configured).
+export const dynamic = "force-dynamic";
+
 export default async function AdvancedPage() {
   const result = await readApi<SourceHealthRead>("/api/v1/sources/health");
   if (!result.ok) {

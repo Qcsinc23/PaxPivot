@@ -1,0 +1,13 @@
+.git
+.venv
+node_modules
+**/node_modules
+**/.next
+**/__pycache__
+.env*
+!.env.example
+.pnpm-store
+.uv-cache
+.ruff_cache
+.mypy_cache
+tests/.pytest_cache

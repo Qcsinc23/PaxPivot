@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 PY := uv run --frozen
-.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed cold-start-check dev check
+.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed cold-start-check build-images dev check
 setup:
 	pnpm install --frozen-lockfile
 	uv sync --frozen
@@ -38,6 +38,10 @@ migrate-test: services
 	$(PY) python -m paxpivot.tooling migrate-test
 seed: migrate
 	$(PY) python -m paxpivot.tooling seed
+PAXPIVOT_TAG ?= local
+build-images:
+	docker build -f apps/api/Dockerfile -t paxpivot-api:$(PAXPIVOT_TAG) .
+	docker build -f apps/web/Dockerfile -t paxpivot-web:$(PAXPIVOT_TAG) .
 # Destroys this checkout's local database volume; proves first-boot readiness (TASK-028).
 CYCLES ?= 20
 cold-start-check:

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { guard, redirectTo } from "@/lib/auth/guard";
+import { guard } from "@/lib/auth/guard";
 import { SESSION_COOKIE } from "@/lib/auth/session";
 
 /**
@@ -19,6 +19,9 @@ export async function proxy(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   }
+  // Next requires an absolute Location from the proxy and relativises it when the host matches
+  // the request's own, so no external host is ever guessed. Route handlers answer relatively.
   const next = decision.next + request.nextUrl.search;
-  return redirectTo(`/login?next=${encodeURIComponent(next)}`, 307);
+  const login = new URL(`/login?next=${encodeURIComponent(next)}`, request.url);
+  return NextResponse.redirect(login, 307);
 }

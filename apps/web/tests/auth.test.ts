@@ -203,7 +203,7 @@ describe("proxy", () => {
       );
       expect(anonymous.status).toBe(307);
       expect(anonymous.headers.get("location")).toBe(
-        "/login?next=%2Fterminals%2Fabc",
+        "http://pilot.invalid/login?next=%2Fterminals%2Fabc",
       );
       const token = await issueSession(SECRET);
       const signed = await proxy(
