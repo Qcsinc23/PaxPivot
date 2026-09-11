@@ -2,11 +2,7 @@
 
 ## Status
 
-`review` — unblocked 2026-09-11 by the product owner's delegated decision: TASK-023 approved the
-four official terminal pages for metadata-only retrieval; Firecrawl is the retriever (the pilot
-host's own egress is refused by the site's edge, verified; Firecrawl reaches the page, verified);
-cadence 360 min (4 credits per run, ~16 credits/day); the API key is a server-side secret
-(`FIRECRAWL_API_KEY` in `/opt/paxpivot/.env.production`, supplied by the product owner).
+`done` — merged to `main` in 8de8f27 (PR #37); post-merge Quality green; deployed on the pilot VPS with a 6-hourly `check-sources` cron. Retrieval starts on the first run after the product owner places `FIRECRAWL_API_KEY` in `/opt/paxpivot/.env.production` (until then each run exits 2 and records nothing).
 
 ## Assigned role
 
@@ -114,4 +110,6 @@ make compose-check
 
 ## Handoff
 
-(fill in per template)
+**Branch/commit:** `foundation/TASK-025-firecrawl-provider`, merged as 8de8f27. **Migrations:** none. **Dependency:** `httpx` runtime.
+**Verification:** make check + migrate-test PASS on the final head (pytest 234 unit / 36 integration; Vitest 329); two adversarial review passes, final 0 Critical / 0 Important; live: images 8de8f27 running, `/ready` 200, first `check-sources` exits 2 (no key yet).
+**Operations:** `/etc/cron.d/paxpivot-checks` (every 6 h, log at `/opt/paxpivot/backups/checks.log`); exit 2 = no key, 3 = provider failure.

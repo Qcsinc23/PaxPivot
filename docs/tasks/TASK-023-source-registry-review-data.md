@@ -2,10 +2,7 @@
 
 ## Status
 
-`review` — unblocked 2026-09-11: the product owner delegated the URL confirmation and the
-metadata-only approval decision. URLs were read from the official AMC Travel Site directory
-(not guessed): Joint-Base-MDL, Dover-AFB, Baltimore-Washington-International-Airport and
-Joint-Base-Andrews passenger-terminal pages under `amc.af.mil/AMC-Travel-Site/Terminals/CONUS-Terminals/`.
+`done` — merged to `main` in 6976401 (PR #36); post-merge Quality green; deployed and seeded on the pilot VPS (4 sources inserted, idempotent on re-run).
 
 ## Assigned role
 
@@ -98,4 +95,6 @@ Also `make migrate-test` and `make seed` twice.
 
 ## Handoff
 
-(fill in per template)
+**Branch/commit:** `foundation/TASK-023-source-registry`, merged as 6976401. **Migrations:** none.
+**Verification:** make check + migrate-test PASS on the head; live: `/advanced` lists the four AMC terminal pages as Approved / Not checked yet and the directory page as Needs review.
+**Decision record:** URLs read from the AMC Travel Site directory; approval delegated by the product owner (2026-09-11), metadata-only (retrieve, hash, display), parse forbidden.
