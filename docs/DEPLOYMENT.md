@@ -63,7 +63,8 @@ Observations and terminal facts are append-only; a lost volume is lost history.
 
 ## Rollback
 
-`PAXPIVOT_TAG=<previous sha> docker compose --env-file .env.production -f compose.prod.yml up -d --wait`
+`PAXPIVOT_TAG=<previous sha> docker compose --env-file .env.production -f compose.prod.yml up -d --wait --no-build`
+(`--no-build` makes a missing tag fail loudly instead of silently building the current checkout)
 (images are tagged per commit by `make build-images PAXPIVOT_TAG=<sha>`). Migrations are forward-only
 in production; do not `alembic downgrade` on a database with observations (it drops tables).
 
