@@ -107,6 +107,15 @@ quality checks for CI and local use; record individual failures/results when a c
 
 A task cannot move to `done` unless these commands were run successfully after the final change.
 
+## UI behaviour (screen tasks only)
+
+State responsive behaviour, accessibility behaviour and loading/empty/error states, or write
+`See docs/tasks/SCREEN_TASK_RULES.md` when the shared rules apply unchanged.
+
+## Review / merge rules
+
+`docs/agent/MERGE_POLICY.md` applies. Note any task-specific gate here.
+
 ## Out of scope
 
 Explicitly state nearby work the agent must not implement in this task.

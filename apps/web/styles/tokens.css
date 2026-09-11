@@ -1,0 +1,92 @@
+/* Espresso App tokens — the single source of visual values (ADR-003).
+   Warm cream ground, espresso ink, terracotta for action/caution, slate for
+   verified/fresh, warm neutral for unknown. No green anywhere. Components take
+   every colour, font, radius, shadow and spacing step from these properties. */
+
+:root {
+  color-scheme: light;
+
+  /* roles */
+  --color-bg: #faf3e7;
+  --color-surface: #ffffff;
+  --color-text: #241a14;
+  --color-accent: #b0472b;
+  --color-accent-2: #2f5065;
+  --color-divider: #ece2d3;
+
+  /* warm neutrals */
+  --color-neutral-100: #fbf6ec;
+  --color-neutral-200: #f3eadb;
+  --color-neutral-300: #e4d7c3;
+  --color-neutral-400: #cbb9a6;
+  --color-neutral-500: #a1907f;
+  --color-neutral-600: #7d6b5e;
+  --color-neutral-700: #54443a;
+  --color-neutral-800: #3a2c24;
+  --color-neutral-900: #241a14;
+
+  /* terracotta */
+  --color-accent-100: #fcede7;
+  --color-accent-200: #f7d6c9;
+  --color-accent-300: #edae99;
+  --color-accent-400: #d97d62;
+  --color-accent-500: #b0472b;
+  --color-accent-600: #963a20;
+  --color-accent-700: #7a2d17;
+  --color-accent-800: #5a200f;
+  --color-accent-900: #3b150a;
+
+  /* slate */
+  --color-accent-2-100: #e9eef2;
+  --color-accent-2-200: #d2dde5;
+  --color-accent-2-300: #afc1ce;
+  --color-accent-2-400: #7e97a9;
+  --color-accent-2-500: #52738a;
+  --color-accent-2-600: #3e5d73;
+  --color-accent-2-700: #2f5065;
+  --color-accent-2-800: #223948;
+  --color-accent-2-900: #16242e;
+
+  /* status axis: verified → slate, caution → terracotta, unknown → neutral */
+  --status-verified-bg: var(--color-accent-2-100);
+  --status-verified-fg: var(--color-accent-2-800);
+  --status-verified-solid: var(--color-accent-2-700);
+  --status-caution-bg: var(--color-accent-100);
+  --status-caution-fg: var(--color-accent-800);
+  --status-caution-solid: var(--color-accent-500);
+  --status-unknown-bg: var(--color-neutral-200);
+  --status-unknown-fg: var(--color-neutral-700);
+  --status-unknown-solid: var(--color-neutral-500);
+
+  /* type: self-hosted via @fontsource (no runtime CDN) */
+  --font-heading: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --font-body:
+    "Manrope Variable", "Manrope", system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+
+  /* spacing: 8px spine with a 4px half step, in rem so it scales with zoom */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2.25rem;
+  --space-12: 3.5rem;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 3px rgba(36, 26, 20, 0.07);
+  --shadow-md: 0 2px 10px rgba(36, 26, 20, 0.09);
+  --shadow-lg: 0 16px 40px rgba(36, 26, 20, 0.18);
+
+  /* interaction */
+  --hit: 2.75rem; /* ~44px minimum touch target */
+  --nav-height: 3.75rem;
+  --rail-width: 13.5rem;
+  --content-max: 44rem;
+  --content-max-wide: 72rem;
+  --motion: 120ms ease;
+}

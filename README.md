@@ -12,7 +12,9 @@ Read [AGENTS.md](AGENTS.md), [production PRD](PAXPIVOT_PRODUCTION_PRD.md), the
 
 - Node **24.15.0**, pnpm **10.15.1** (one workspace/lockfile).
 - Python **3.12.13**, uv **0.6.9** (one root virtualenv/lockfile).
-- Next.js **16.3.4**, TypeScript **5.9.3**, React **19.2.4**.
+- Next.js **16.3.4**, TypeScript **5.9.3**, React **19.2.4**, lucide-react **1.44.0**,
+  Fontsource Manrope/DM Serif Display **5.3.0**; web tests use Testing Library, jsdom **30.0.1**
+  and axe-core **4.13.0**.
 - FastAPI **0.135.4**, Pydantic **2.13.5**, SQLAlchemy **2.0.52**, Alembic **1.18.5**.
 - Ruff **0.15.5**, mypy **1.19.1**, pytest **9.0.2**; ESLint **9.39.4**,
   Prettier **3.8.1**, Vitest **4.0.18**.
@@ -45,7 +47,7 @@ Run from the repository root:
 | `make format-check` | Check formatting without writing |
 | `make lint` | Ruff + ESLint |
 | `make typecheck` | Strict mypy + Next type generation + strict TypeScript |
-| `make test-unit` | Python contract/security tests + web smoke tests |
+| `make test-unit` | Python contract/security tests + web shell/component/accessibility tests |
 | `make test-integration` | Isolated empty-database migration checks + real API process boot |
 | `make test` | All unit and integration tests |
 | `make build` | Python sdist/wheel + production Next.js build |
@@ -68,7 +70,11 @@ startup. Log only the allowlisted structured events; never request/provider payl
 
 ## Layout and handoff
 
-- `apps/web`: Next App Router; no duplicate Python domain rules in TypeScript.
+- `apps/web`: Next App Router with the Espresso App UI foundation (tokens, shell, primitives,
+  semantic components, typed view models; see
+  [UI_FOUNDATION](docs/architecture/UI_FOUNDATION.md) and ADR-003). `/showcase` renders every
+  component from synthetic fixtures in development only. No duplicate Python domain rules in
+  TypeScript; components render application-supplied view models.
 - `apps/api/paxpivot/domain`: immutable Pydantic contracts, no framework/provider/DB imports.
 - `apps/api/paxpivot/application`: result conventions and provider/auth ports.
 - `apps/api/paxpivot/infrastructure`: deny-all auth stub, DB metadata and audit logging.
