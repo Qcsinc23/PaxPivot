@@ -1,0 +1,5 @@
+# TLS-terminating reverse proxy for the pilot. PAXPIVOT_DOMAIN must resolve to this host.
+{$PAXPIVOT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
