@@ -54,6 +54,7 @@ Run from the repository root:
 | `make migrate` | Apply Alembic head to local development database |
 | `make migrate-check` | Verify single head, applied head, PostGIS and schema drift |
 | `make migrate-test` | Migrate a fresh uniquely named local DB, prove drift detection and rollback/reapply |
+| `make cold-start-check` | Local only: wipes this checkout's database volume, then proves N cold starts connect immediately after `--wait` (TASK-028) |
 | `make compose-check` | Validate Compose without exposing resolved secrets |
 | `make check` | All required quality/build/test/migration/config checks |
 
