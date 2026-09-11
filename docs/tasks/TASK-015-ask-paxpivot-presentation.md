@@ -2,7 +2,7 @@
 
 ## Status
 
-`blocked` — needs the foundation `AskAnswerView` contract (see below) before dispatch. Read `docs/tasks/SCREEN_TASK_RULES.md` first.
+`ready` — the foundation `AskAnswerView` contract merged in TASK-019. Read `docs/tasks/SCREEN_TASK_RULES.md` first.
 
 ## Assigned role
 
@@ -19,10 +19,14 @@ PRD §11 (AI explains deterministic tool results; every factual statement traces
 ## Dependencies
 
 - Required merged task/contract: `TASK-006`
-- Required foundation contract (not yet merged): `apps/web/lib/presentation/types.ts::AskAnswerView` with at least
-  `{ question; verdict: { title; kind: "recommendation" | "unknown" | "clarification" }; comparison?: CompareRowsView;
-  explanation: string; actions: readonly { label; href; variant }[]; grounding: readonly { kind: "route_search" | "source_record" | "policy" | "history"; count }[];
-  followUps: readonly string[] }` and the rule that `verdict.kind: "unknown"` must render "Unknown" wording verbatim.
+- Required merged foundation contract (TASK-019): `apps/web/lib/presentation/types.ts::AskAnswerView`
+  with `AskVerdictKind`, `AskGroundingKind`, `AskActionView` (`variant: AskActionVariant`),
+  `AskGroundingView`, `AskComparisonView` (`options: CompareOptionView[]`, `rows: CompareRowView[]`);
+  helpers in `apps/web/lib/presentation/ask.ts` (`ASK_VERDICT_WORDING`, `ASK_GROUNDING_NOUNS`,
+  `askGroundingText`); fixtures `fixtureAskAnswer` and `fixtureAskAnswerUnknown` in
+  `apps/web/lib/presentation/fixtures.ts`; table semantics via `.pp-table-wrap > table.pp-table`
+  with `data-emphasis` (TASK-018). Rule: `verdict.kind: "unknown"` renders `ASK_VERDICT_WORDING.unknown.label`
+  ("Unknown") verbatim, and grounding renders `askGroundingText(model.grounding)`.
 
 ## Owned paths
 
@@ -38,7 +42,8 @@ docs/tasks/TASK-015-ask-paxpivot-presentation.md
 ## Acceptance criteria (once unblocked)
 
 - [ ] Ask is reached from the floating action; the screen has a labelled close `IconButton` and no bottom-nav entry.
-- [ ] The answer card renders verdict, comparison rows (reusing the compare table semantics), explanation and actions from the model; grounding renders "Based on N route searches · M source records"; unknown verdicts say so.
+- [ ] The answer card renders the verdict pill (`ASK_VERDICT_WORDING[kind]`) and title, the comparison rows (`.pp-table`, `data-emphasis` from the model, no emphasis decided in the screen), the explanation and the actions from the model; grounding renders `askGroundingText(...)` ("Based on 1 route search · 2 source records"); an `unknown` verdict shows "Unknown" verbatim (test with `fixtureAskAnswerUnknown`, whose title does not contain the word).
+- [ ] `lib/presentation/screens/ask.ts` defines `AskScreenModel = { status: "empty" | "ready" | "loading" | "error"; answer?: AskAnswerView; composerPlaceholder: string }` plus `emptyAsk`/`fixtureAsk`; the live `/ask` route renders `emptyAsk` (no synthetic answer).
 - [ ] Composer is present but disabled with a model-supplied placeholder until the tool contract exists.
 - [ ] Tests, axe, responsive and accessibility rules.
 
@@ -64,7 +69,7 @@ make compose-check
 
 ## Blocked / contract change needed
 
-Foundation must add `AskAnswerView` (and reuse of the compare row shape) to `lib/presentation/types.ts` under an ADR-003 amendment or note, then flip this task to `ready`.
+`None` — resolved by TASK-019 (ADR-003 amendment).
 
 ## Handoff
 

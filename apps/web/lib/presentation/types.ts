@@ -220,3 +220,73 @@ export type EligibilitySummaryView = {
   travelerCount: number;
   detailHref?: Href;
 };
+
+/* ── comparison rows (shared by Compare and Ask) ───────────────────── */
+
+/** How a cell compares to the other options. Application truth, never computed in the screen. */
+export type CompareEmphasis = "better" | "tie" | "none";
+
+export type CompareCellView = {
+  value: Fact<string>;
+  evidence?: SourceEvidenceView;
+  emphasis: CompareEmphasis;
+};
+
+export type CompareRowView = {
+  id: string;
+  label: string;
+  cells: readonly CompareCellView[];
+};
+
+export type CompareOptionView = {
+  id: string;
+  /** A Space-A headline, or the commercial baseline's own label. */
+  headline: RouteHeadline | "safest_overall";
+  title: string;
+  href: Href;
+};
+
+/* ── Ask PaxPivot answer (PRD §11) ─────────────────────────────────── */
+
+/**
+ * A structured answer the presentation renders verbatim. It is produced by the application
+ * from typed tool results (PRD §11.2): the browser never composes, ranks or grounds an answer.
+ * `unknown` is a first-class verdict — when a required tool returned unknown, the answer says so.
+ */
+export type AskVerdictKind = "recommendation" | "unknown" | "clarification";
+
+/** Provenance categories the application counted; never citations invented by the browser. */
+export type AskGroundingKind =
+  | "route_search"
+  | "source_record"
+  | "policy"
+  | "history";
+
+/** The button presentations an answer action may use (a subset of `ButtonVariant`). */
+export type AskActionVariant = "primary" | "secondary" | "ghost";
+
+export type AskActionView = {
+  label: string;
+  href: Href;
+  variant: AskActionVariant;
+};
+
+export type AskGroundingView = { kind: AskGroundingKind; count: number };
+
+/** A small comparison the answer built, in the same row contract as the Compare screen. */
+export type AskComparisonView = {
+  options: readonly CompareOptionView[];
+  rows: readonly CompareRowView[];
+};
+
+export type AskAnswerView = {
+  /** The traveler's question as the application received it. */
+  question: string;
+  verdict: { title: string; kind: AskVerdictKind };
+  comparison?: AskComparisonView;
+  /** One short paragraph of explanation; general text, never a new fact. */
+  explanation: string;
+  actions: readonly AskActionView[];
+  grounding: readonly AskGroundingView[];
+  followUps: readonly string[];
+};

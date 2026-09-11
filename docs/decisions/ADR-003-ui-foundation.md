@@ -91,3 +91,14 @@ Later API contracts will feed adapters that produce these view models; the shape
 `make check` (Vitest suites for shell, primitives, presentation, semantic components and the
 showcase; strict TypeScript; ESLint; production build) and the accessibility assertions listed
 in TASK-006.
+
+## Amendments
+
+- **2026-09-10, TASK-018.** Added foundation primitives within the same boundary: `ScreenSection`,
+  `SORT_OPTIONS`, `lib/presentation/eligibility.ts`, `.pp-table*`, `SplitLayout.asideFirst`,
+  `HandoffUnknownKind`. Route Detail mounts its sticky action only while Overview is active.
+- **2026-09-10, TASK-019.** Promoted the comparison row/option types into `types.ts` and added
+  the `AskAnswerView` presentation contract plus `lib/presentation/ask.ts`. The Ask screen
+  consumes a structured answer only; `unknown` is an explicit verdict kind rendered verbatim,
+  grounding is count-by-kind provenance, and no AI provider or free-text call is introduced.
+  Documented in `docs/architecture/UI_FOUNDATION.md`; the decision above is unchanged.
