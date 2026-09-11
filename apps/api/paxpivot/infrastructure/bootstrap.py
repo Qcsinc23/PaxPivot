@@ -92,18 +92,22 @@ APPROVED_TERMINAL_PAGE_POLICY = SourceProcessingPolicy(
 # PDF/slide artifacts under each terminal's official document folder. Approved by the product
 # owner (2026-09-11) for retrieval and parsing under the same public-official rules. Display
 # stays off until the parser passes the SRC-009 gate (TASK-032). hash_only: no body stored.
-APPROVED_SCHEDULE_ARTIFACT_POLICY = SourceProcessingPolicy(
-    policy_version_id="schedule-artifact-parse-v1",
-    review_state=PolicyReviewState.APPROVED,
-    may_retrieve=True,
-    may_parse=True,
+# v2 (2026-09-11, product owner, option 1): the retrieved artifacts carry CUI markings and a
+# notice forbidding retransmission (Andrews, Dover; PRD §16.2, register "notice/marking state").
+# They are user-opened only: never retrieved, parsed, hashed or displayed by PaxPivot. The
+# register entries stay so the terminal page can point travelers at the official document.
+RESTRICTED_SCHEDULE_ARTIFACT_POLICY = SourceProcessingPolicy(
+    policy_version_id="schedule-artifact-user-open-v2",
+    review_state=PolicyReviewState.RESTRICTED,
+    may_retrieve=False,
+    may_parse=False,
     may_summarize=False,
     may_display=False,
     may_aggregate_history=False,
-    raw_payload=RawPayloadPolicy.HASH_ONLY,
+    raw_payload=RawPayloadPolicy.DENIED,
     snapshot_retention_days=None,
     reviewer="product-owner-2026-09-11",
-    reviewed_at=datetime(2026, 9, 11, 19, 0, tzinfo=UTC),
+    reviewed_at=datetime(2026, 9, 11, 20, 0, tzinfo=UTC),
 )
 
 REGISTRY_PROVENANCE = Provenance(
@@ -204,7 +208,7 @@ SCHEDULE_ARTIFACT_SOURCES: tuple[Source, ...] = tuple(
         cadence_minutes=360,
         adapter_id="firecrawl",
         adapter_version="v1",
-        policy=APPROVED_SCHEDULE_ARTIFACT_POLICY,
+        policy=RESTRICTED_SCHEDULE_ARTIFACT_POLICY,
         created_at=SEED_RECORDED_AT,
         updated_at=SEED_RECORDED_AT,
     )
@@ -240,7 +244,7 @@ REFERENCE_SOURCES: tuple[Source, ...] = (
 
 # Policy versions this seed is allowed to replace. Any other version on a reference row was set
 # by a person (an incident pause, a restriction) and is left alone.
-UPGRADABLE_POLICY_VERSIONS = frozenset({"terminal-page-metadata-v1"})
+UPGRADABLE_POLICY_VERSIONS = frozenset({"terminal-page-metadata-v1", "schedule-artifact-parse-v1"})
 
 POLICY_COLUMNS = frozenset(
     {
@@ -304,8 +308,14 @@ def seed_reference_data(engine: Engine) -> dict[str, int]:
                     db.sources.c.source_id == source.identity.source_id,
                     db.sources.c.policy_version_id != source.policy.policy_version_id,
                     db.sources.c.policy_version_id.in_(UPGRADABLE_POLICY_VERSIONS),
-                    db.sources.c.review_state.notin_(
-                        [PolicyReviewState.PAUSED.value, PolicyReviewState.RESTRICTED.value]
+                    # A person's pause or restriction is never loosened by seeding; it may only
+                    # be replaced by a restriction.
+                    (
+                        db.sources.c.review_state.notin_(
+                            [PolicyReviewState.PAUSED.value, PolicyReviewState.RESTRICTED.value]
+                        )
+                        if source.policy.review_state != PolicyReviewState.RESTRICTED
+                        else db.sources.c.review_state != PolicyReviewState.RESTRICTED.value
                     ),
                 )
                 .values(**{k: v for k, v in source_row(source).items() if k in POLICY_COLUMNS})

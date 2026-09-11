@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — product-owner decision 2026-09-11: "approve the PDFs as schedule artifacts and go with option 1".
+`done` — merged in PR #43 (da424f5, post-merge CI green) and the option-1 follow-up PR; artifacts are registered but user-opened only after the marking finding below.
 
 ## Assigned role
 
@@ -54,9 +54,25 @@ make migrate-test
 
 No parsing (TASK-032), no display of schedule content, no history.
 
+## Marking finding and product-owner decision (2026-09-11)
+
+The first captures showed that the Joint Base Andrews 72-hour slide deck is stamped CUI and
+that the Andrews and Dover documents carry a notice restricting the information to determining
+Space-A availability and forbidding retransmission. PRD §16.2 and the register's "notice/marking
+state" make this a stop. The retrieved text was deleted from the host, the container and the
+working directory; the three hash-only observations hold no content. The product owner chose
+option 1: the artifacts stay registered (so the terminal page can point travelers at the
+official document) under `schedule-artifact-user-open-v2`: restricted, never retrieved, parsed,
+hashed or displayed by PaxPivot. Re-seeding tightens any `schedule-artifact-parse-v1` row to
+this policy and never loosens a pause.
+
 ## Handoff
 
-(fill in after merge)
+- **Merged:** PR #43 (discovery, capture, hash-only observation) and the option-1 follow-up.
+- **Live:** artifact register rows restricted; `check-sources` skips them (`skipped` outcome).
+- **Not done:** no schedule parsing; TASK-032 is blocked until AMC/terminal permission exists
+  (option 2). The terminal page's own "current as of" stamp is the honest next signal
+  (proposed TASK-038: page metadata parse under `terminal-page-parse-v2`).
 
 ## Review decisions (2026-09-11)
 

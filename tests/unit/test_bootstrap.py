@@ -64,15 +64,14 @@ def test_bootstrap_seeds_no_observation_coordinate_or_entrance() -> None:
         assert terminal.operational_state == "unknown"
 
 
-def test_schedule_artifacts_are_approved_to_parse_but_not_display_and_sit_under_a_folder() -> None:
-    """TASK-037: one 72-hour artifact per terminal; the URL is the official document folder."""
+def test_schedule_artifacts_are_registered_but_user_opened_only() -> None:
+    """TASK-037 option 1: marked artifacts are never retrieved; the register keeps the pointer."""
     terminal_ids = {t.terminal_id for t in REFERENCE_TERMINALS}
     assert {s.terminal_id for s in SCHEDULE_ARTIFACT_SOURCES} == terminal_ids
     for source in SCHEDULE_ARTIFACT_SOURCES:
         assert source.kind == SourceKind.SCHEDULE_ARTIFACT
-        assert str(source.identity.url).endswith("/") and source.adapter_id == "firecrawl"
+        assert str(source.identity.url).endswith("/")
         policy = source.policy
-        assert policy.review_state == PolicyReviewState.APPROVED and policy.reviewer
-        assert policy.allows(ProcessingMode.RETRIEVE) and policy.allows(ProcessingMode.PARSE)
-        assert not policy.allows(ProcessingMode.DISPLAY)  # gated on the parser corpus
-        assert not policy.allows(ProcessingMode.STORE_RAW)
+        assert policy.review_state == PolicyReviewState.RESTRICTED and policy.reviewer
+        for mode in ProcessingMode:
+            assert not policy.allows(mode)
