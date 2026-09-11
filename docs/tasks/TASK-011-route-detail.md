@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready` — dispatch after TASK-006 is merged to main. Read `docs/tasks/SCREEN_TASK_RULES.md` first.
+`review` — implemented on `build/TASK-011-route-detail`; see Handoff.
 
 ## Assigned role
 
@@ -62,13 +62,13 @@ components/screens/route-detail/RouteDetailScreen.tsx::RouteDetailScreen({ model
 
 ## Acceptance criteria
 
-- [ ] Tabs are exactly Overview, Evidence, Fallback, History (no Journey tab); `Tabs` keyboard behaviour is inherited.
-- [ ] Overview: `MapSurface`, `StatGrid` of four stats (unknown reads "Unknown"), a card with the headline pill, ranking reason and an "Unknown:" line when provided, `JourneyTimeline` in supplied order, and a `StickyActionBar` with the prepare action.
-- [ ] Evidence: source card with `SourceStateBadge`, `EvidenceAge` (source time separate from read time), an "Open source" secondary button, `EvidenceRows` (seat state as published, applies-to-party, reader, revision history), the one-line "record of what a page showed" note, and a "Report this as wrong" row.
-- [ ] Fallback: `CommercialBaselineCard` with `headline: "fallback"` (handoff label mandatory) plus "Other ways out" rows.
-- [ ] History: `HistoricalStats` and an "About these numbers" disclosure/link; no chart in this task (the chart contract is deferred).
-- [ ] Live route renders the empty state; showcase renders the fixture.
-- [ ] Tests, axe, responsive and accessibility rules.
+- [x] Tabs are exactly Overview, Evidence, Fallback, History (no Journey tab); `Tabs` keyboard behaviour is inherited.
+- [x] Overview: `MapSurface`, `StatGrid` of four stats (unknown reads "Unknown"), a card with the headline pill, ranking reason and an "Unknown:" line when provided, `JourneyTimeline` in supplied order, and a `StickyActionBar` with the prepare action.
+- [x] Evidence: source card with `SourceStateBadge`, `EvidenceAge` (source time separate from read time), an "Open source" secondary button, `EvidenceRows` (seat state as published, applies-to-party, reader, revision history), the one-line "record of what a page showed" note, and a "Report this as wrong" row.
+- [x] Fallback: `CommercialBaselineCard` with `headline: "fallback"` (handoff label mandatory) plus "Other ways out" rows.
+- [x] History: `HistoricalStats` and an "About these numbers" disclosure/link; no chart in this task (the chart contract is deferred).
+- [x] Live route renders the empty state; showcase renders the fixture.
+- [x] Tests, axe, responsive and accessibility rules.
 
 ## Required tests
 
@@ -102,4 +102,86 @@ make compose-check
 
 ## Handoff
 
-(fill in per template)
+**Branch:** `build/TASK-011-route-detail` from `main` @ `9e954d1` (TASK-010 merge).
+
+**Commit:** Reported in the PR.
+
+**Files changed** (all owned paths):
+
+```text
+apps/web/lib/presentation/screens/route-detail.ts        RouteDetailScreenModel,
+                                                         RouteDetailEvidenceView,
+                                                         RouteDetailFallbackView,
+                                                         emptyRouteDetail, fixtureRouteDetail
+apps/web/components/screens/route-detail/RouteDetailScreen.tsx
+apps/web/app/trips/[tripId]/routes/[routeId]/page.tsx     live route: empty state only
+apps/web/app/showcase/route-detail/page.tsx               development-only fixture route
+apps/web/tests/screens/route-detail.test.tsx              18 tests
+docs/tasks/TASK-011-route-detail.md
+```
+
+No file outside the owned paths was modified. `app/trips/[tripId]/page.tsx` (TASK-009) and
+`app/trips/[tripId]/compare/**` (TASK-010) are untouched; this task adds the nested
+`routes/[routeId]` segment only.
+
+**Interfaces added/changed:** `RouteDetailScreenModel`, `RouteDetailEvidenceView`,
+`RouteDetailFallbackView`, `emptyRouteDetail`, `fixtureRouteDetail`,
+`RouteDetailScreen({ model, initialTab? })`. No foundation type, component, token, dependency or
+API/schema contract changed.
+
+**Migrations:** None.
+
+**Verification run:** after the final change, on the exact head:
+
+```text
+make format-check -> PASS      make test-integration -> PASS (pytest 3)
+make lint         -> PASS      make test             -> PASS
+make typecheck    -> PASS      make build            -> PASS
+make test-unit    -> PASS      make migrate          -> PASS
+                               make migrate-check    -> PASS
+                               make compose-check    -> PASS
+```
+
+Counts: pytest 156 unit + 3 integration; Vitest 11 files / 159 tests (18 new, all passing).
+
+**Live responsive probe** (Next dev, real Chromium) on `/showcase/route-detail` and
+`/trips/a/routes/b` at 360 / 430 / 1280 px:
+
+```text
+no page-level sideways scroll and no overflowing element at any width, on every tab
+tabs render exactly Overview / Evidence / Fallback / History
+sticky prepare action present; rail/bottom-nav swap at 60rem
+live route renders no tab panels at all
+```
+
+**How the "no Journey tab" criterion is proved.** The test asserts the exact tab list equals
+`["Overview","Evidence","Fallback","History"]` and that no tab named "Journey" exists, so adding
+one would fail. The Overview panel is separately asserted to contain the complete
+`JourneyTimeline` in the supplied order.
+
+**Tab scoping in tests.** `Tabs` mounts every panel and hides the inactive ones, and
+Testing Library's text queries do not respect `hidden`. Every panel-specific assertion is
+therefore scoped to `getByRole("tabpanel")` (role queries exclude hidden panels), which is why
+the Fallback tab's "Fallback" pill is asserted inside the panel rather than against the whole
+document — otherwise the tab label itself would satisfy the query and the assertion would pass
+even with no fallback card rendered.
+
+**Review findings corrected.** My first draft of this suite had five assertions that were wrong
+rather than the code: it asserted focus movement that actually lands on the back control, counted
+"Unknown" occurrences across the whole document instead of the visible panel, read a `<dd>` whose
+value sits in a nested span, matched the "Fallback" *tab label* when looking for the fallback
+*pill*, and expected the word "Fallback" to disappear when only the card was removed. Each was
+fixed to assert the real contract; the tab-index assertion now checks roving tabindex plus
+fallback-to-first for an unrecognised `initialTab`.
+
+**Known limitations / risks:** the fallback tab renders the model's `CommercialBaselineView`
+unchanged rather than overwriting `headline` to `"fallback"`. The fixture supplies
+`headline: "fallback"`, so the rendered result matches the criterion, but the screen deliberately
+does not rewrite application labelling — a commercial card labelled `safest_overall` in the
+fallback slot would render as such. The `StickyActionBar` lives inside the Overview panel as the
+criterion specifies, so it is mounted (and suppresses the floating Ask action) even while another
+tab is shown; `Tabs` keeps hidden panels mounted. Colour contrast remains review-verified.
+
+**Next dependency:** TASK-012, 013 and 014 may now be dispatched; TASK-016 follows TASK-009 and
+TASK-012.
+
