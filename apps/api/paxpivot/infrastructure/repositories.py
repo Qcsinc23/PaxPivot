@@ -264,26 +264,23 @@ class SqlSourceObservationRepository:
         self._c.execute(insert(db.source_observations).values(observation_row(observation)))
 
     def latest_per_source(self) -> Mapping[UUID, SourceObservation]:
+        """Current observation per source: explicit supersession first, then temporal order.
+
+        An observation named by another observation's ``supersedes_observation_id`` is retired
+        whatever its timestamps say (ADR-004, TASK-026): the reference is an explicit semantic
+        statement, and the database guarantees it names an existing row of the same source. The
+        remaining leaves are ranked by ``observed_at``, then ``recorded_at`` (Postgres ``now()`` at
+        transaction start, so rows appended together share it), then ``observation_id`` so the
+        choice is total and stable. Superseded rows stay in ``list_for_source``: history is
+        never hidden, only currentness is decided here.
+        """
         o = db.source_observations
-        # A total order matters: `recorded_at` defaults to Postgres now(), which is the
-        # transaction start time, so two observations appended in one transaction share it.
-        # Without the id tiebreaker the "latest" row would be arbitrary.
+        superseded = select(o.c.supersedes_observation_id).where(
+            o.c.supersedes_observation_id.is_not(None)
+        )
         order = (o.c.observed_at.desc(), o.c.recorded_at.desc(), o.c.observation_id.desc())
         rank = func.row_number().over(partition_by=o.c.source_id, order_by=order).label("rank")
-        # Supersession precedence (ADR-004) needs no extra clause here, and that is a deliberate
-        # decision rather than an omission. `supersedes_observation_id` is recorded history: it
-        # says which earlier claim an observation retires. A retirement is by definition recorded
-        # at or after the claim it names, so it already outranks that claim under this order and
-        # is therefore already the current row — a claim can never be rank 1 while a later
-        # observation retires it. An *out-of-order* withdrawal (one carrying an older
-        # `observed_at` than the claim it names) is inert, which is the safe reading: a source
-        # cannot retract a claim it had not yet made. Adding a "not superseded" filter on top of
-        # this ordering would provably never remove the rank-1 row, so it would be untestable
-        # code guarding a rule the ordering already enforces. The behaviour is pinned by
-        # `test_superseded_observation_is_not_current` and
-        # `test_a_withdrawal_retires_only_the_claim_it_names`; if this rank order ever changes,
-        # those tests are what must fail first.
-        ranked = select(o, rank).subquery()
+        ranked = select(o, rank).where(o.c.observation_id.not_in(superseded)).subquery()
         rows = self._c.execute(select(ranked).where(ranked.c.rank == 1)).all()
         return {r._mapping["source_id"]: _observation(r) for r in rows}
 

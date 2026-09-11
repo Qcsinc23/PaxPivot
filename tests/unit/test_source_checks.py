@@ -425,3 +425,33 @@ def test_the_fixture_world_covers_the_states_this_suite_relies_on() -> None:
     assert DIRECTORY.adapter_id is None  # enabled, but nothing is wired to it
     assert SOURCE_A.policy.allows(ProcessingMode.RETRIEVE)
     assert any(s.scope == KillSwitchScope.SOURCE for s in SWITCHES)
+
+
+def test_started_at_must_be_timezone_aware() -> None:
+    """A4: the run's clock is an aware datetime, UTC or not; naive is refused up front."""
+    from datetime import UTC, timedelta, timezone
+
+    from paxpivot.application.source_checks import SourceCheckRun
+
+    utc = SourceCheckRun(started_at=datetime(2026, 9, 11, 12, 0, tzinfo=UTC), outcomes=())
+    assert utc.started_at.tzinfo is not None
+    offset = SourceCheckRun(
+        started_at=datetime(2026, 9, 11, 8, 0, tzinfo=timezone(timedelta(hours=-4))), outcomes=()
+    )
+    assert offset.started_at.utcoffset() == timedelta(hours=-4)
+    with pytest.raises(ValueError):
+        SourceCheckRun(started_at=datetime(2026, 9, 11, 12, 0), outcomes=())
+    with pytest.raises(ValueError, match="aware"):
+        asyncio.run(
+            run_source_checks(
+                FakeSources([]),
+                FakeObservations([]),
+                FakeSwitches([]),
+                ScriptedProvider(
+                    Failure(
+                        error=ApplicationError(code="unavailable", message_key="x", retryable=False)
+                    )
+                ),
+                now=datetime(2026, 9, 11, 12, 0),
+            )
+        )

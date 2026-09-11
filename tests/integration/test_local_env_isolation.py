@@ -6,6 +6,7 @@ initialisation state (and therefore cannot disagree about the generated password
 """
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,8 +18,14 @@ pytestmark = pytest.mark.integration
 
 
 def resolved(root: Path) -> dict[str, object]:
+    # Only the checkout's own .env may name the project: another test in this process may have
+    # loaded the real checkout's .env into os.environ (tooling.configure), and Compose gives an
+    # environment variable precedence over the .env file it finds in `cwd`.
+    env = {
+        k: v for k, v in os.environ.items() if not k.startswith(("COMPOSE_", "POSTGRES_", "REDIS_"))
+    }
     output = subprocess.check_output(
-        ["docker", "compose", "config", "--format", "json"], cwd=root, text=True
+        ["docker", "compose", "config", "--format", "json"], cwd=root, text=True, env=env
     )
     config = json.loads(output)
     services = config["services"]

@@ -23,7 +23,7 @@ unknown values and timezone-aware timestamps. They are not database ORM models.
 | domain/terminal.py (ADR-004) | Terminal.installation (optional); TerminalOperationalFact, TerminalFactKind, FactText |
 | application/source_gate.py | authorize_processing(source, mode, switches) -> Result[ProcessingAuthorization]; engaged_switch |
 | application/source_pipeline.py | record_observation(source, provider, observations, switches) -> Result[SourceObservation], async; the provider attach point |
-| application/ports/repositories.py | SourceRepository, SourceObservationRepository (append-only), TerminalRepository, KillSwitchRepository — sync protocols |
+| application/ports/repositories.py | Reader ports SourceReader, ObservationReader, TerminalReader, KillSwitchReader (no mutation methods; what read services and GET routes receive); repository ports extend them with append-only writes — sync protocols |
 | application/read_models.py | SourceEvidenceRead, TerminalSummaryRead, TerminalDetailRead, TerminalNetworkRead, SourceHealthRead (+rows/counts): the /api/v1 wire contracts; no payload refs or hashes |
 | application/read_services.py | list_terminal_network, get_terminal_detail -> Result, list_source_health |
 | infrastructure/repositories.py | Sql* implementations over one Connection; row <-> domain mappers |
@@ -31,6 +31,9 @@ unknown values and timezone-aware timestamps. They are not database ORM models.
 | infrastructure/auth.py | BearerTokenAuthenticator (PAXPIVOT_API_TOKEN, interim), authenticator_from_env, LOCAL_PRINCIPAL_ID |
 | api.py (ADR-004) | GET /api/v1/terminals, /api/v1/terminals/{id}, /api/v1/sources/health; every route behind require_principal; get_repositories/get_engine/get_authenticator are the overridable seams |
 | migrations/versions/0002_sources_terminals.py | tables above, CHECK constraints for every enum, append-only trigger on observations and facts |
+| migrations/versions/0003_supersession_integrity.py | supersedes_observation_id must name an existing observation of the same source (composite FK) and never itself (CHECK) |
+| infrastructure/schema_probe.py | verify_check_parity(connection) -> ParityReport: every domain enum member inserts, invented values and invariant counter-examples are refused by the named CHECK; run by make migrate-test |
+| application/source_checks.py | SourceCheckRun.started_at: AwareDatetime; run_source_checks rejects a naive `now` |
 
 A SourceObservation is not a ScheduleObservation or an opportunity. Its `fresh` state may
 refer to source metadata only; no automatic movement claim follows. Successful retrieval

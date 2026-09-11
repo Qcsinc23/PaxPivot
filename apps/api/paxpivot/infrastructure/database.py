@@ -22,11 +22,13 @@ from sqlalchemy import (
     Double,
     Engine,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     MetaData,
     Table,
     Text,
+    UniqueConstraint,
     Uuid,
     create_engine,
     text,
@@ -200,12 +202,11 @@ source_observations = Table(
     Column("content_hash", Text, nullable=True),
     Column("confidence_reasons", ARRAY(Text), nullable=False),
     Column("payload_ref", Text, nullable=True),  # Reference only; bodies never live here.
-    Column(
-        "supersedes_observation_id",
-        Uuid,
-        ForeignKey("source_observations.observation_id"),
-        nullable=True,
-    ),
+    # Explicit supersession: must name an existing observation of the same source (composite
+    # foreign key below), never itself. Rows are append-only and `append` inserts one row per
+    # statement, so from the application a superseder can only name a row that already exists
+    # and a cycle is unreachable (a multi-row raw INSERT could still construct one; migration 0003).
+    Column("supersedes_observation_id", Uuid, nullable=True),
     Column("recorded_at", _tz(), nullable=False, server_default=text("now()")),
     CheckConstraint(_in("state", SourceState), name="state"),
     CheckConstraint(_in("retrieval", RetrievalState), name="retrieval"),
@@ -217,6 +218,18 @@ source_observations = Table(
     ),
     CheckConstraint("payload_ref IS NULL OR retrieval = 'succeeded'", name="payload_retrieved"),
     CheckConstraint("cardinality(confidence_reasons) > 0", name="reasons_present"),
+    CheckConstraint(
+        "supersedes_observation_id IS NULL OR supersedes_observation_id <> observation_id",
+        name="supersedes_not_self",
+    ),
+    UniqueConstraint(
+        "observation_id", "source_id", name="uq_source_observations_observation_source"
+    ),
+    ForeignKeyConstraint(
+        ["supersedes_observation_id", "source_id"],
+        ["source_observations.observation_id", "source_observations.source_id"],
+        name="fk_source_observations_supersedes_same_source",
+    ),
     CheckConstraint(
         "source_url NOT LIKE '%?%' AND source_url NOT LIKE '%#%'",
         name="url_carries_no_credentials",
@@ -300,10 +313,28 @@ def transaction(
 
 
 @contextmanager
-def repositories(engine: Engine) -> Iterator[Connection]:
-    """A read unit of work: one snapshot, no commit (nothing may have been written)."""
-    with transaction(engine) as connection:
-        yield connection
+def read_snapshot(engine: Engine) -> Iterator[Connection]:
+    """The read seam: one REPEATABLE READ snapshot that the database itself keeps read-only.
+
+    ``SET TRANSACTION READ ONLY`` is issued by the driver, so ordinary DML (INSERT/UPDATE/
+    DELETE, DDL) through this connection fails with a database error whatever Python code
+    attempted it. The first statement below pins the transaction characteristics, so a later
+    ``SET TRANSACTION READ WRITE`` is refused by Postgres as well. Raw transaction-control SQL
+    (``COMMIT``) issued by a caller is not something this seam can forbid; a SELECT-only database
+    role is the remaining hardening (TASK-027). The block always ends in rollback. GET routes and
+    read services compose on this seam only (ADR-004 "Read and write seams").
+    """
+    with engine.connect() as connection:
+        connection = connection.execution_options(
+            isolation_level="REPEATABLE READ", postgresql_readonly=True
+        )
+        transaction = connection.begin()
+        try:
+            # Any query fixes the snapshot and the READ ONLY mode for the transaction's lifetime.
+            connection.execute(text("SELECT 1"))
+            yield connection
+        finally:
+            transaction.rollback()
 
 
 @cache

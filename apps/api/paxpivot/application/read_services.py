@@ -14,10 +14,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from paxpivot.application.ports.repositories import (
-    KillSwitchRepository,
-    SourceObservationRepository,
-    SourceRepository,
-    TerminalRepository,
+    KillSwitchReader,
+    ObservationReader,
+    SourceReader,
+    TerminalReader,
 )
 from paxpivot.application.read_models import (
     SourceEvidenceRead,
@@ -83,9 +83,9 @@ def terminal_summary(
 
 
 def list_terminal_network(
-    terminals: TerminalRepository,
-    sources: SourceRepository,
-    observations: SourceObservationRepository,
+    terminals: TerminalReader,
+    sources: SourceReader,
+    observations: ObservationReader,
     *,
     now: datetime | None = None,
 ) -> TerminalNetworkRead:
@@ -113,7 +113,7 @@ def fact_read(fact: TerminalOperationalFact) -> TerminalFactRead:
 
 
 def displayable_facts(
-    facts: Sequence[TerminalOperationalFact], sources: SourceRepository
+    facts: Sequence[TerminalOperationalFact], sources: SourceReader
 ) -> tuple[TerminalOperationalFact, ...]:
     """Only facts whose producing source currently permits display leave this service.
 
@@ -131,9 +131,9 @@ def displayable_facts(
 
 def get_terminal_detail(
     terminal_id: UUID,
-    terminals: TerminalRepository,
-    sources: SourceRepository,
-    observations: SourceObservationRepository,
+    terminals: TerminalReader,
+    sources: SourceReader,
+    observations: ObservationReader,
     *,
     now: datetime | None = None,
 ) -> Result[TerminalDetailRead]:
@@ -196,9 +196,9 @@ def health_row(
 
 
 def list_source_health(
-    sources: SourceRepository,
-    observations: SourceObservationRepository,
-    kill_switches: KillSwitchRepository,
+    sources: SourceReader,
+    observations: ObservationReader,
+    kill_switches: KillSwitchReader,
     *,
     now: datetime | None = None,
 ) -> SourceHealthRead:

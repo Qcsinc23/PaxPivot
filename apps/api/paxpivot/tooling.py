@@ -166,11 +166,20 @@ def empty_database_check() -> None:
         second = seed_reference_data(engine)
         if not any(first.values()) or any(second.values()):
             raise RuntimeError(f"Seed is not idempotent: {first} then {second}")
+        # The CHECK contract (which `alembic check` cannot see) holds on the deployed schema.
+        from paxpivot.infrastructure.schema_probe import verify_check_parity
+
+        with engine.connect() as connection:
+            parity = verify_check_parity(connection)
+            connection.rollback()
         engine.dispose()
         command.downgrade(config, "base")
         command.upgrade(config, "head")
         migration_check()
-        print("Empty database baseline, drift detection, idempotent seed and roundtrip: PASS")
+        print(
+            "Empty database baseline, drift detection, idempotent seed, "
+            f"{parity.constraints_verified} CHECK rules and roundtrip: PASS"
+        )
 
 
 def seed() -> None:

@@ -16,10 +16,10 @@ from sqlalchemy import Connection, Engine
 
 from paxpivot.application.ports.auth import Authenticator, Principal
 from paxpivot.application.ports.repositories import (
-    KillSwitchRepository,
-    SourceObservationRepository,
-    SourceRepository,
-    TerminalRepository,
+    KillSwitchReader,
+    ObservationReader,
+    SourceReader,
+    TerminalReader,
 )
 from paxpivot.application.read_models import (
     SourceHealthRead,
@@ -34,7 +34,7 @@ from paxpivot.application.read_services import (
 from paxpivot.domain.base import Contract
 from paxpivot.infrastructure.audit import audit_event
 from paxpivot.infrastructure.auth import authenticator_from_env
-from paxpivot.infrastructure.database import engine_from_env, repositories
+from paxpivot.infrastructure.database import engine_from_env, read_snapshot
 from paxpivot.infrastructure.repositories import (
     SqlKillSwitchRepository,
     SqlSourceObservationRepository,
@@ -68,21 +68,23 @@ def get_engine() -> Engine:
 
 
 def get_connection(engine: Annotated[Engine, Depends(get_engine)]) -> Iterator[Connection]:
-    """One read unit of work per request, over a single snapshot (ADR-004 "Read isolation").
+    """One read-only snapshot per request (ADR-004 "Read and write seams").
 
-    The read use cases compose several statements; handing them one REPEATABLE READ snapshot
-    keeps a concurrent write from being half-visible. Reads never commit through this seam.
+    The read use cases compose several statements; one REPEATABLE READ snapshot keeps a
+    concurrent write from being half-visible, and READ ONLY makes any write fail at the database.
     """
-    with repositories(engine) as connection:
+    with read_snapshot(engine) as connection:
         yield connection
 
 
 @dataclass(frozen=True)
 class Repositories:
-    terminals: TerminalRepository
-    sources: SourceRepository
-    observations: SourceObservationRepository
-    kill_switches: KillSwitchRepository
+    """Reader ports only: a GET route cannot name a write, and the snapshot refuses one anyway."""
+
+    terminals: TerminalReader
+    sources: SourceReader
+    observations: ObservationReader
+    kill_switches: KillSwitchReader
 
 
 def get_repositories(

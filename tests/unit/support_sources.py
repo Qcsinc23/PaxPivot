@@ -267,10 +267,21 @@ class FakeObservations:
         self.items.append(observation)
 
     def latest_per_source(self) -> Mapping[UUID, SourceObservation]:
+        # Same rule as the SQL except the tie-break: the domain model has no recorded_at, so
+        # equal observed_at falls straight to observation_id here. Keep such ties out of fixtures.
+        superseded = {
+            o.supersedes_observation_id for o in self.items if o.supersedes_observation_id
+        }
         latest: dict[UUID, SourceObservation] = {}
         for o in self.items:
+            if o.observation_id in superseded:
+                continue
             sid = o.provenance.source.source_id
-            if sid not in latest or o.provenance.observed_at > latest[sid].provenance.observed_at:
+            key = (o.provenance.observed_at, str(o.observation_id))
+            if sid not in latest or key > (
+                latest[sid].provenance.observed_at,
+                str(latest[sid].observation_id),
+            ):
                 latest[sid] = o
         return latest
 

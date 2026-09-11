@@ -102,19 +102,28 @@ mismatch costs no retrieval and cannot be used to sidestep an ADAPTER-scope kill
 keys on the configured `adapter_id`. A source with `adapter_id IS NULL` is inert: nothing is wired
 to it, so nothing may observe it.
 
-## Write and read transaction boundaries
+## Read and write seams (amended by TASK-026)
 
-`infrastructure/database.transaction(engine)` is the explicit write seam: it opens a transaction,
-commits on success and rolls back on failure, so a unit of work that raises partway through leaves
-no partial observation or fact. `repositories(engine)` is the read seam over the same boundary.
+`infrastructure/database.transaction(engine)` is the explicit **write** seam: it opens a
+transaction, commits on success and rolls back on failure, so a unit of work that raises partway
+through leaves no partial observation or fact.
 
-**Isolation.** Both default to `REPEATABLE READ`, so every unit of work sees one snapshot. The
+`infrastructure/database.read_snapshot(engine)` is the explicit **read** seam: one
+`REPEATABLE READ` snapshot that is also `READ ONLY` at the database (`SET TRANSACTION READ
+ONLY`, via SQLAlchemy's `postgresql_readonly`). Any INSERT/UPDATE/DELETE issued through it fails
+with a database error whatever Python attempted it, and the block always ends in rollback, so
+nothing can be committed from a read. GET routes and read services compose on this seam only,
+and they are handed the *reader* ports (`SourceReader`, `ObservationReader`, `TerminalReader`,
+`KillSwitchReader`), which carry no mutation method; the repository ports extend the readers with
+their append-only writes for write units of work. The distinction is enforced twice — by the
+type a read path can name and by the database — not by naming convention.
+
+**Isolation.** Both seams use `REPEATABLE READ`, so every unit of work sees one snapshot. The
 read use cases compose several statements per request (terminals, then their sources, then the
 newest observations); under `READ COMMITTED` a concurrent append landing between them is visible
 to the later statement but not the earlier one, which is how a source with an observation can read
 as "never observed". `SERIALIZABLE` was rejected as disproportionate: it would require retry
-handling on read paths that never write, and the failure mode it adds (serialization aborts) is
-worse for a read-only view than the anomaly it removes.
+handling on read paths that never write.
 
 ## Two resolved policy questions
 
@@ -127,16 +136,22 @@ not aggregation over observation history. Stating this explicitly is the decisio
 and source-independent even when history aggregation is forbidden. `test_source_policy` pins it by
 proving both flags change no read model.
 
-**Supersession precedence.** `supersedes_observation_id` is recorded history naming the earlier
-claim an observation retires. Precedence is the recording order, not the source's own clock: a
-withdrawal is recorded at or after the claim it names, so it already outranks that claim under the
-`(observed_at, recorded_at, observation_id)` order `latest_per_source` ranks by, and a retracted
-claim can never be the current row. An out-of-order withdrawal (older `observed_at` than the claim
-it names) is deliberately inert — a source cannot retract a claim it had not yet made. No
-"not superseded" filter is added to the current-state query because such a filter provably could
-not remove the rank-1 row under this ordering; it would be untestable code guarding a rule the
-ordering already enforces. The behaviour is pinned by two integration tests instead, which are
-what must fail first if the rank order ever changes.
+**Supersession precedence (amended by TASK-026).** `supersedes_observation_id` is an explicit
+semantic statement: the observation that carries it retires the observation it names, whatever
+either row's timestamps say. Currentness is therefore decided in two steps, and the SQL does
+exactly this: (1) drop every observation named by another observation's
+`supersedes_observation_id` — the leaves remain; (2) rank the leaves by `observed_at`, then
+`recorded_at`, then `observation_id`, newest first. So `A ← B` makes B current even when B carries
+an older `observed_at` than A (a withdrawal recorded with the source's earlier timestamp still
+retires the claim), a chain `A ← B ← C` leaves only C, and an unrelated newer observation stays
+eligible and wins on time among the leaves. Migration 0003 makes the reference sound at the
+database: a composite foreign key `(supersedes_observation_id, source_id) → (observation_id,
+source_id)` means a superseder must name an **existing observation of the same source**, and a
+CHECK forbids naming itself. Rows are append-only and `append` inserts one row per statement, so
+from the application a superseder can only name a row that already exists and a cycle is
+unreachable — no graph machinery is needed. (A hand-written multi-row INSERT could still build a
+two-cycle because foreign keys are checked per statement; that path does not exist in the code.) Superseded rows
+stay in `list_for_source`: history is never hidden, only currentness is decided.
 
 **Reference data.** `infrastructure/bootstrap.seed_reference_data` inserts four public AMC
 passenger terminals (names, installations, `America/New_York`; `operational_state = unknown`;
@@ -197,3 +212,11 @@ append-only trigger, unknown source time, failed retrieval, latest-per-source, c
 kill switch, supersession precedence, write-transaction commit/rollback, API over the real
 composition root); `apps/web/tests/adapters.test.tsx`, `api-client.test.ts`; `make check` and
 `make migrate-test` in CI.
+
+## Amendments
+
+- **2026-09-11, TASK-026.** Read seam made read-only at the database (`read_snapshot`), reader
+  ports introduced, explicit supersession now decides currentness before temporal ranking
+  (migration 0003: same-source composite foreign key, not-self CHECK), CHECK-constraint parity
+  probe (`infrastructure/schema_probe.py`) run by `make migrate-test`, and `SourceCheckRun.started_at`
+  is an `AwareDatetime`. The sections above were rewritten to match the SQL.
