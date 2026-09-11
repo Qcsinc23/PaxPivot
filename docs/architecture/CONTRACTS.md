@@ -42,3 +42,6 @@ from travelers. No independently mutable seat count can diverge from party size.
 
 The initial downstream tasks add functions with signatures fixed in their task contracts,
 not new shared ports/schema. No web domain copy, API registration or migration is authorized.
+
+Web presentation contracts (view models, source-state lexicon, navigation) are documented in
+`docs/architecture/UI_FOUNDATION.md` and decided in ADR-003; they are foundation-owned too.

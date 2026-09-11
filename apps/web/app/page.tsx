@@ -1,12 +1,14 @@
-export default function Home() {
+import { AppHeader } from "@/components/ui/AppHeader";
+import { EmptyState } from "@/components/ui/States";
+
+export default function PlanPage() {
   return (
-    <main>
-      <h1>PaxPivot</h1>
-      <p>Development foundation. Journey planning is not available yet.</p>
-      <p>
-        Space-A transportation is not guaranteed. Verify with the official
-        source.
-      </p>
-    </main>
+    <>
+      <AppHeader title="Plan" />
+      <EmptyState
+        title="Where to?"
+        body="Journey planning is not available yet. Trip requests arrive with the Plan task."
+      />
+    </>
   );
 }
