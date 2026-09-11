@@ -8,14 +8,15 @@ from paxpivot.infrastructure.bootstrap import (
     DIRECTORY_SOURCE,
     REFERENCE_SOURCES,
     REFERENCE_TERMINALS,
+    SCHEDULE_ARTIFACT_SOURCES,
     TERMINAL_PAGE_SOURCES,
 )
 
 
 def test_every_reference_source_is_an_official_https_page_without_credentials() -> None:
-    assert len(REFERENCE_SOURCES) == 5
+    assert len(REFERENCE_SOURCES) == 9
     ids = {s.identity.source_id for s in REFERENCE_SOURCES}
-    assert len(ids) == 5
+    assert len(ids) == 9
     for source in REFERENCE_SOURCES:
         url = source.identity.url
         assert url.scheme == "https" and url.host and url.host.endswith(".mil")
@@ -61,3 +62,17 @@ def test_bootstrap_seeds_no_observation_coordinate_or_entrance() -> None:
     for terminal in REFERENCE_TERMINALS:
         assert terminal.entrance is None and terminal.base_coordinates is None
         assert terminal.operational_state == "unknown"
+
+
+def test_schedule_artifacts_are_approved_to_parse_but_not_display_and_sit_under_a_folder() -> None:
+    """TASK-037: one 72-hour artifact per terminal; the URL is the official document folder."""
+    terminal_ids = {t.terminal_id for t in REFERENCE_TERMINALS}
+    assert {s.terminal_id for s in SCHEDULE_ARTIFACT_SOURCES} == terminal_ids
+    for source in SCHEDULE_ARTIFACT_SOURCES:
+        assert source.kind == SourceKind.SCHEDULE_ARTIFACT
+        assert str(source.identity.url).endswith("/") and source.adapter_id == "firecrawl"
+        policy = source.policy
+        assert policy.review_state == PolicyReviewState.APPROVED and policy.reviewer
+        assert policy.allows(ProcessingMode.RETRIEVE) and policy.allows(ProcessingMode.PARSE)
+        assert not policy.allows(ProcessingMode.DISPLAY)  # gated on the parser corpus
+        assert not policy.allows(ProcessingMode.STORE_RAW)

@@ -16,10 +16,10 @@ from pathlib import Path
 from paxpivot.application.result import ApplicationError, Failure, Result, Success
 from paxpivot.application.source_gate import authorize_processing
 from paxpivot.domain.base import Contract
-from paxpivot.domain.source import KillSwitch, ProcessingMode, Source
+from paxpivot.domain.source import KillSwitch, ProcessingMode, Source, SourceKind
 from paxpivot.infrastructure.providers.firecrawl import FirecrawlSourceProvider
 
-LABEL_TEMPLATE = """# Human-completed labels for {name} ({sha}.html), captured {captured_at}.
+LABEL_TEMPLATE = """# Human-completed labels for {name} ({sha}.{ext}), captured {captured_at}.
 # Every departure row shown on the page, in page order. Leave `rows: []` if the page shows none.
 # Critical fields (SRC-009): date, time, destination, seat_state. Copy the page's own wording.
 source_id: {source_id}
@@ -84,7 +84,9 @@ async def capture_corpus(
         )
     sha = hashlib.sha256(document.encode("utf-8", "surrogatepass")).hexdigest()
     directory.mkdir(parents=True, exist_ok=True)
-    document_path = directory / f"{sha}.html"
+    # A schedule artifact arrives as text rendered from the PDF, so it is kept as markdown.
+    ext = "md" if source.kind == SourceKind.SCHEDULE_ARTIFACT else "html"
+    document_path = directory / f"{sha}.{ext}"
     labels_path = directory / f"{sha}.labels.yaml"
     document_path.write_text(document, encoding="utf-8", errors="surrogatepass")
     if not labels_path.exists():  # never overwrite a person's labels
@@ -92,6 +94,7 @@ async def capture_corpus(
             LABEL_TEMPLATE.format(
                 name=source.name,
                 sha=sha,
+                ext=ext,
                 captured_at=(now or datetime.now(UTC)).isoformat(),
                 source_id=source.identity.source_id,
                 page_status=page_status,

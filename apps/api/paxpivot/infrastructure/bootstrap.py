@@ -88,6 +88,24 @@ APPROVED_TERMINAL_PAGE_POLICY = SourceProcessingPolicy(
     reviewed_at=datetime(2026, 9, 11, 16, 0, tzinfo=UTC),
 )
 
+# TASK-037: the AMC terminal pages carry no departure rows; the 72-hour schedules are linked
+# PDF/slide artifacts under each terminal's official document folder. Approved by the product
+# owner (2026-09-11) for retrieval and parsing under the same public-official rules. Display
+# stays off until the parser passes the SRC-009 gate (TASK-032). hash_only: no body stored.
+APPROVED_SCHEDULE_ARTIFACT_POLICY = SourceProcessingPolicy(
+    policy_version_id="schedule-artifact-parse-v1",
+    review_state=PolicyReviewState.APPROVED,
+    may_retrieve=True,
+    may_parse=True,
+    may_summarize=False,
+    may_display=False,
+    may_aggregate_history=False,
+    raw_payload=RawPayloadPolicy.HASH_ONLY,
+    snapshot_retention_days=None,
+    reviewer="product-owner-2026-09-11",
+    reviewed_at=datetime(2026, 9, 11, 19, 0, tzinfo=UTC),
+)
+
 REGISTRY_PROVENANCE = Provenance(
     source=DIRECTORY_SOURCE.identity,
     observed_at=SEED_RECORDED_AT,
@@ -170,7 +188,55 @@ TERMINAL_PAGE_SOURCES: tuple[Source, ...] = tuple(
     )
 )
 
-REFERENCE_SOURCES: tuple[Source, ...] = (DIRECTORY_SOURCE, *TERMINAL_PAGE_SOURCES)
+# The registered URL is the terminal's official document folder; the current 72-hour artifact
+# (a dated filename) is discovered on the terminal page at observation time by the provider.
+SCHEDULE_ARTIFACT_SOURCES: tuple[Source, ...] = tuple(
+    Source(
+        identity=SourceIdentity(
+            source_id=uuid5(NAMESPACE_URL, f"paxpivot:source:{slug}-72hr-schedule"),
+            url=HttpUrl(folder),
+            authority="Air Mobility Command",
+        ),
+        name=name,
+        kind=SourceKind.SCHEDULE_ARTIFACT,
+        terminal_id=uuid5(NAMESPACE_URL, f"paxpivot:terminal:{slug}"),
+        enabled=True,
+        cadence_minutes=360,
+        adapter_id="firecrawl",
+        adapter_version="v1",
+        policy=APPROVED_SCHEDULE_ARTIFACT_POLICY,
+        created_at=SEED_RECORDED_AT,
+        updated_at=SEED_RECORDED_AT,
+    )
+    for slug, name, folder in (
+        (
+            "jb-mcguire-dix-lakehurst",
+            "Joint Base MDL 72-hour schedule (AMC artifact)",
+            "https://amc.usaf.afpims.mil/Portals/12/AMC%20Tvl%20Pg/Passenger%20Terminals/AMC%20CONUS%20Terminals/Joint%20Base%20McGuire-Dix-Lakehurst%20Passenger%20Terminal/",
+        ),
+        (
+            "dover-afb",
+            "Dover AFB 72-hour schedule (AMC artifact)",
+            "https://www.amc.af.mil/Portals/12/AMC%20Tvl%20Pg/Passenger%20Terminals/AMC%20CONUS%20Terminals/Dover%20AFB%20Pax%20Terminal/",
+        ),
+        (
+            "bwi-amc",
+            "BWI 72-hour schedule (AMC artifact)",
+            "https://www.amc.af.mil/Portals/12/AMC%20Tvl%20Pg/Passenger%20Terminals/AMC%20CONUS%20Terminals/BWI%20Passenger%20Terminal/",
+        ),
+        (
+            "jb-andrews",
+            "Joint Base Andrews 72-hour schedule (AMC artifact)",
+            "https://www.amc.af.mil/Portals/12/AMC%20Tvl%20Pg/Passenger%20Terminals/AMC%20CONUS%20Terminals/Joint%20Base%20Andrews%20Passenger%20Terminal/",
+        ),
+    )
+)
+
+REFERENCE_SOURCES: tuple[Source, ...] = (
+    DIRECTORY_SOURCE,
+    *TERMINAL_PAGE_SOURCES,
+    *SCHEDULE_ARTIFACT_SOURCES,
+)
 
 # Policy versions this seed is allowed to replace. Any other version on a reference row was set
 # by a person (an incident pause, a restriction) and is left alone.
@@ -225,7 +291,7 @@ def seed_reference_data(engine: Engine) -> dict[str, int]:
                     .returning(db.terminals.c.terminal_id)
                 ).all()
             )
-        for source in TERMINAL_PAGE_SOURCES:
+        for source in (*TERMINAL_PAGE_SOURCES, *SCHEDULE_ARTIFACT_SOURCES):
             insert_source(source)
         # Registry rows are mutable (observations are not): bring a known older policy version
         # of a reference source up to the current one so new observations carry it. Rows on an

@@ -2,7 +2,7 @@
 
 ## Status
 
-`blocked` — decisions delegated by the product owner (2026-09-11); see AUDIT.md §4/§6.
+`blocked` — retargeted 2026-09-11: the terminal HTML pages carry no departure rows, so the parser input is the 72-hour schedule artifact rendered as text (TASK-037), not the page. Blocked on ≥10 labeled artifact captures.
 
 ## Assigned role
 
@@ -10,7 +10,7 @@
 
 ## Goal
 
-First source-specific parser (PRD §9.2): `parse_terminal_page(html) -> ParsedTerminalPage`
+First source-specific parser (PRD §9.2): `parse_schedule_artifact(text) -> ParsedSchedule` over the markdown rendering of the JB MDL 72-hour artifact (TASK-037)
 (published 72-hour departures: date/time, destination, seat state text, roll call, notes; each
 row with the text span it came from), `validate_critical_fields`, and an accuracy report against
 the labeled corpus. Add `schedule_observations` (append-only, FK to the source observation,
@@ -20,7 +20,7 @@ false rows (SRC-009); then `fresh`.
 
 ## Dependencies
 
-TASK-031 + at least 10 human-labeled corpus files
+TASK-031, TASK-037 + at least 10 labeled artifact corpus files (`<sha>.md` + `.labels.yaml`)
 
 ## Owned paths
 
