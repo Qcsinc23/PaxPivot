@@ -255,6 +255,12 @@ def check_sources() -> int:
     return exit_code(run)
 
 
+def _corpus_directory() -> Path:
+    return Path(
+        os.environ.get("PAXPIVOT_CORPUS_DIR") or ROOT / "private-fixtures/parsers/amc-terminal-page"
+    )
+
+
 def capture_corpus_command(source_id: str) -> int:
     """Capture one official page into the parser corpus fixtures (TASK-031). Records nothing."""
     import asyncio
@@ -280,7 +286,9 @@ def capture_corpus_command(source_id: str) -> int:
     if provider is None:
         print("FIRECRAWL_API_KEY is not set; nothing captured.")
         return 2
-    directory = ROOT / "private-fixtures/parsers/amc-terminal-page"  # gitignored; never committed
+    # Gitignored in a checkout; inside the image ROOT is not writable, so operators set
+    # PAXPIVOT_CORPUS_DIR (see docs/DEPLOYMENT.md) and copy the files out for labeling.
+    directory = _corpus_directory()
     result = asyncio.run(capture_corpus(source, provider, switches, directory))
     if not result.ok:
         print(f"Refused: {result.error.message_key}")

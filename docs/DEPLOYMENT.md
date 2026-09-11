@@ -90,3 +90,16 @@ in production; do not `alembic downgrade` on a database with observations (it dr
 
 `docker compose … logs -f api web proxy`. The API logs allowlisted audit events and access
 lines (no request bodies, no tokens); the proxy logs TLS/HTTP. No trip data is logged.
+
+## Capturing parser corpus pages (TASK-031)
+
+The image's working tree is read-only for the service user, so point the capture at a writable
+directory and copy the files out for labeling. Bodies stay out of git and out of the database
+(`private-fixtures/` is gitignored); delete captures after 90 days.
+
+```bash
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
+  exec -T -e PAXPIVOT_CORPUS_DIR=/tmp/corpus api python -m paxpivot.tooling capture-corpus <source_id>
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
+  cp api:/tmp/corpus/. /opt/paxpivot/private-fixtures/parsers/amc-terminal-page/
+```

@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR; decisions delegated by the product owner (2026-09-11); see AUDIT.md §4/§6.
+`done` — merged in PR #40 (merge commit 2c89cd5, post-merge CI green); deployed to the VPS at tag 2c89cd5 on 2026-09-11 and four registry policies upgraded to `terminal-page-parse-v2`. Follow-up PR adds `PAXPIVOT_CORPUS_DIR` so capture works inside the image.
 
 ## Assigned role
 
@@ -68,7 +68,11 @@ No parser, no schedule rows, no UI change.
 
 ## Handoff
 
-(fill in per template)
+- **Merged:** PR #40 → 2c89cd5; post-merge `Quality` green. Deployed: images `paxpivot-{api,web}:2c89cd5`; `seed` printed four `Policy upgraded … -> terminal-page-parse-v2` lines; `check-sources` then recorded 4 fresh observations under v2.
+- **Adversarial review (fresh, 0 Critical / 1 Important → fixed before merge):** raw bodies now go to gitignored `private-fixtures/` (public repo; policy stays `hash_only`), seed upgrade restricted to known prior versions and never paused/restricted rows, capture refuses non-2xx/empty pages and adapter mismatch.
+- **Found in production verification:** inside the image the checkout is read-only, so `capture-corpus` needs `PAXPIVOT_CORPUS_DIR` (follow-up PR; runbook section added).
+- **Next (TASK-032):** capture ≥10 pages across the four AMC terminal sources over several days, a person labels each `.labels.yaml` (set `reviewer`), then the JB MDL parser under the SRC-009 gate.
+- **Not done here:** no parsing, no schedule rows, no history; nothing displays beyond page reachability.
 
 ## Review decisions (2026-09-11, delegated product-owner call)
 
