@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented on `build/TASK-013-trips-and-alerts`; see Handoff.
+`done` — merged to `main` in aa41191; post-merge Quality green; Handoff recorded below (lifecycle: docs/agent/WORKFLOW.md §7).
 
 ## Assigned role
 

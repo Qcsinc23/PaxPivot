@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented on `build/TASK-016-desktop-and-advanced`; see Handoff.
+`done` — merged to `main` in 49e4505; post-merge Quality green; Handoff recorded below (lifecycle: docs/agent/WORKFLOW.md §7).
 
 ## Assigned role
 

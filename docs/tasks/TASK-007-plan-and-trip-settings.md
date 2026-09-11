@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented on `build/TASK-007-plan-and-trip-settings`; see Handoff.
+`done` — merged to `main` in 0dee150; post-merge Quality green; Handoff recorded below (lifecycle: docs/agent/WORKFLOW.md §7).
 
 ## Assigned role
 

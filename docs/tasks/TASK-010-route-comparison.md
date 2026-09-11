@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented on `build/TASK-010-route-comparison`; see Handoff.
+`done` — merged to `main` in 9e954d1; post-merge Quality green; Handoff recorded below (lifecycle: docs/agent/WORKFLOW.md §7).
 
 ## Assigned role
 

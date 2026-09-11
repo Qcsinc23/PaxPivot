@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented on `build/TASK-008-source-state-notices`; see Handoff.
+`done` — merged to `main` in 83d915e; post-merge Quality green; Handoff recorded below (lifecycle: docs/agent/WORKFLOW.md §7).
 
 ## Assigned role
 

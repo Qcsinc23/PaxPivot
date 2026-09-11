@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready` — dispatch only after TASK-001 is merged to main.
+`done` — merged to `main` in 001de48; post-merge Quality green; Handoff recorded below (lifecycle: docs/agent/WORKFLOW.md §7).
 
 ## Assigned role
 

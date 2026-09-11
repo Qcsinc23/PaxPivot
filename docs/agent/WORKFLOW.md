@@ -125,7 +125,36 @@ Before handoff/review, rebase or merge the latest `main` according to the reposi
 
 Do not build multiple unrelated features in one branch.
 
-## 7. Definition of done
+## 7. Task lifecycle and definition of done
+
+Every task file carries exactly one status. The status is a readable coordination signal for
+agents; Git history remains the record of what actually merged.
+
+```text
+blocked → ready → in_progress → review → done
+```
+
+| Status | Meaning | Who sets it |
+| --- | --- | --- |
+| `blocked` | A dependency or shared contract named in "Blocked / contract change needed" is not merged | whoever discovers the block |
+| `ready` | Every dependency is merged to `main`; the task may be dispatched | the foundation agent (or the author of the task file) |
+| `in_progress` | An agent has branched and started implementation | the assigned agent |
+| `review` | The PR is open, the Handoff is filled, verification output is fresh, and a review is requested/recorded | the assigned agent |
+| `done` | See below | the merging agent, in the same PR or in the next foundation PR |
+
+A task becomes `done` only when **all** of the following hold:
+
+1. the task PR is merged and its merge commit exists on `main`;
+2. the required post-merge `Quality` run on that merge commit is green;
+3. the task file's Handoff section is complete (branch, files, interfaces, migrations,
+   fresh verification results, known limitations, next dependency).
+
+The status line records the evidence, e.g. `` `done` — merged to `main` in 49e4505 ``.
+Because the merge commit SHA does not exist until after the PR merges, an agent may leave the
+file at `review` when merging its own PR; the next agent that touches `docs/tasks/` (normally
+the foundation agent) normalizes merged tasks to `done`. Never mark `done` without a merge
+commit on `main`, and never treat a `review` status as proof that a PR did **not** merge — check
+`git log --merges` when it matters. A task is never moved backwards except `done` → a new task.
 
 A task is not done because code was written.
 
