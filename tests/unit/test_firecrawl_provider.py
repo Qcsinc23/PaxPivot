@@ -73,7 +73,8 @@ def test_reachable_page_is_fresh_metadata_with_a_hash_and_no_body() -> None:
     assert result.ok
     obs = result.value
     assert obs.state == SourceState.FRESH and obs.retrieval == RetrievalState.SUCCEEDED
-    assert obs.extraction == ExtractionState.NOT_ATTEMPTED and obs.parser_version is None
+    # SOURCE_A is parse-approved: the stamp was looked for and not found (TASK-038).
+    assert obs.extraction == ExtractionState.FAILED and obs.parser_version == "amc-page-time-v1"
     assert obs.content_hash and len(obs.content_hash) == 64
     assert obs.payload_ref is None and obs.provenance.source_time is None
     assert obs.provenance.provider_id == "firecrawl"
@@ -336,3 +337,61 @@ def test_an_unrenderable_pdf_is_fresh_without_a_hash_and_the_page_is_fetched_onc
     assert first.ok and first.value.content_hash is None
     assert "content_hash_unavailable" in first.value.confidence_reasons
     assert second.ok and calls.count(str(page.identity.url)) == 1
+
+
+# ---- TASK-038: the terminal page's own update stamp becomes source_time.
+
+STAMPED = "<html><p>***Current as of 11 SEPTEMBER 2026 at 0350***</p></html>"
+
+
+def test_parse_approved_terminal_page_reads_its_stamp_into_source_time() -> None:
+    from datetime import timedelta
+
+    src = source("stamped", terminal="a")
+    p = FirecrawlSourceProvider(
+        "k",
+        {src.identity.source_id: src},
+        transport=transport(body=STAMPED),
+        clock=lambda: NOW,
+        terminal_timezones={src.terminal_id: "America/New_York"},  # type: ignore[dict-item]
+    )
+    obs = asyncio.run(p.observe(src.identity)).value  # type: ignore[union-attr]
+    assert obs.state == SourceState.FRESH and obs.extraction == ExtractionState.EXACT
+    assert obs.parser_version == "amc-page-time-v1"
+    assert obs.provenance.source_time is not None
+    assert obs.provenance.source_time.utcoffset() == timedelta(hours=-4)  # EDT on 11 Sep
+    assert obs.provenance.source_time.replace(tzinfo=None) == datetime(2026, 9, 11, 3, 50)
+    assert "page_time_parsed" in obs.confidence_reasons
+    assert "metadata_only" not in obs.confidence_reasons
+    assert obs.content_hash is not None  # the hash path is unchanged
+
+
+def test_missing_stamp_or_zone_is_a_failed_extraction_never_a_guess() -> None:
+    src = source("unstamped", terminal="a")
+    no_stamp = FirecrawlSourceProvider(
+        "k",
+        {src.identity.source_id: src},
+        transport=transport(),
+        terminal_timezones={src.terminal_id: "America/New_York"},  # type: ignore[dict-item]
+    )
+    obs = asyncio.run(no_stamp.observe(src.identity)).value  # type: ignore[union-attr]
+    assert obs.state == SourceState.FRESH and obs.extraction == ExtractionState.FAILED
+    assert obs.provenance.source_time is None and "page_time_not_found" in obs.confidence_reasons
+    no_zone = FirecrawlSourceProvider(
+        "k", {src.identity.source_id: src}, transport=transport(body=STAMPED)
+    )
+    obs = asyncio.run(no_zone.observe(src.identity)).value  # type: ignore[union-attr]
+    assert obs.extraction == ExtractionState.FAILED and obs.provenance.source_time is None
+    assert "page_time_zone_unknown" in obs.confidence_reasons
+    # A source whose policy forbids parsing is never parsed, stamp or not.
+    from support_sources import NEEDS_REVIEW
+
+    unparsed = source("meta", terminal="a", policy=NEEDS_REVIEW)
+    p = FirecrawlSourceProvider(
+        "k",
+        {unparsed.identity.source_id: unparsed},
+        transport=transport(body=STAMPED),
+        terminal_timezones={unparsed.terminal_id: "America/New_York"},  # type: ignore[dict-item]
+    )
+    obs = asyncio.run(p.observe(unparsed.identity)).value  # type: ignore[union-attr]
+    assert obs.extraction == ExtractionState.NOT_ATTEMPTED and obs.provenance.source_time is None
