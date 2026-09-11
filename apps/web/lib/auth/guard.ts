@@ -28,11 +28,16 @@ export function redirectTo(path: string, status: 303 | 307 = 303): Response {
   });
 }
 
-/** Only same-origin relative paths may be used as a post-login destination. */
-export function safeNextPath(candidate: string | null | undefined): string {
-  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//"))
-    return "/";
-  return candidate;
+/**
+ * Only a same-origin path may be a post-login destination. Resolved through the URL parser
+ * against a sentinel origin, so browser quirks (`/\\evil`, tab/newline stripping, `//evil`)
+ * cannot escape; a non-string (repeated query key) falls back to `/`.
+ */
+export function safeNextPath(candidate: unknown): string {
+  if (typeof candidate !== "string" || !candidate.startsWith("/")) return "/";
+  const url = new URL(candidate, "http://local.invalid");
+  if (url.origin !== "http://local.invalid") return "/";
+  return url.pathname + url.search;
 }
 
 export async function guard(

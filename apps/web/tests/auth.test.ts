@@ -82,6 +82,8 @@ describe("session token", () => {
     expect(timingSafeEqual("abc", "abc")).toBe(true);
     expect(timingSafeEqual("abc", "abd")).toBe(false);
     expect(timingSafeEqual("abc", "ab")).toBe(false);
+    expect(timingSafeEqual("", "")).toBe(true);
+    expect(timingSafeEqual("", "a")).toBe(false);
   });
 });
 
@@ -266,9 +268,22 @@ describe("sign-in route", () => {
       );
       expect(open.headers.get("location")).toBe("/");
 
-      const out = await signOut();
+      const malformed = await signIn(
+        new Request("https://pilot.invalid/auth/session", {
+          method: "POST",
+          body: "{}",
+        }),
+      );
+      expect(malformed.status).toBe(400);
+      expect(malformed.headers.get("set-cookie")).toBeNull();
+
+      const out = await signOut(
+        new Request("https://pilot.invalid/auth/logout", { method: "POST" }),
+      );
       expect(out.status).toBe(303);
       expect(out.headers.get("set-cookie")).toMatch(/Max-Age=0/i);
+      expect(out.headers.get("set-cookie")).toMatch(/HttpOnly/i);
+      expect(out.headers.get("set-cookie")).toMatch(/Secure/i);
     });
     await withEnv(
       {

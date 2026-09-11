@@ -8,16 +8,25 @@ import {
   timingSafeEqual,
 } from "@/lib/auth/session";
 
+const FAILURE_DELAY_MS = process.env.NODE_ENV === "test" ? 0 : 500;
+
 /** POST passphrase → signed HttpOnly session cookie → redirect. Never echoes the input. */
 export async function POST(request: Request) {
   const config = accessConfig();
   if (config.mode !== "configured") {
     return new NextResponse("Sign-in is not available.", { status: 503 });
   }
-  const form = await request.formData();
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return new NextResponse("Bad request", { status: 400 });
+  }
   const passphrase = String(form.get("passphrase") ?? "");
-  const next = safeNextPath(String(form.get("next") ?? "/"));
+  const next = safeNextPath(form.get("next"));
   if (!timingSafeEqual(passphrase, config.passphrase)) {
+    // A fixed delay caps guesses per connection and equalises timing across failure kinds.
+    await new Promise((resolve) => setTimeout(resolve, FAILURE_DELAY_MS));
     return redirectTo(`/login?error=1&next=${encodeURIComponent(next)}`);
   }
   const response = new NextResponse(null, {

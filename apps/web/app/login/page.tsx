@@ -5,7 +5,12 @@ import { ErrorState } from "@/components/ui/States";
 import { accessConfig } from "@/lib/auth/config";
 import { safeNextPath } from "@/lib/auth/guard";
 
-type Props = { searchParams: Promise<{ next?: string; error?: string }> };
+type Props = {
+  searchParams: Promise<{
+    next?: string | string[];
+    error?: string | string[];
+  }>;
+};
 
 /** The single pilot user's sign-in. The passphrase is checked server-side by `/auth/session`. */
 export default async function LoginPage({ searchParams }: Props) {

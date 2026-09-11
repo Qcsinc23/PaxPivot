@@ -19,5 +19,6 @@ export async function proxy(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   }
-  return redirectTo(`/login?next=${encodeURIComponent(decision.next)}`, 307);
+  const next = decision.next + request.nextUrl.search;
+  return redirectTo(`/login?next=${encodeURIComponent(next)}`, 307);
 }
