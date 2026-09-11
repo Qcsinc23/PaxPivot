@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { StatGrid } from "@/components/ui/Facts";
 import { known, unknown } from "@/lib/presentation/fact";
 import type { HistoricalSummaryView } from "@/lib/presentation/types";
@@ -8,7 +9,8 @@ export function historySentence(history: HistoricalSummaryView): string {
     history.observed.status === "known" &&
     history.successfulChecks.status === "known"
   ) {
-    return `Observed ${history.observed.value} times in ${history.successfulChecks.value} successful checks, ${history.periodText}.`;
+    const n = history.observed.value;
+    return `Observed ${n} ${n === 1 ? "time" : "times"} in ${history.successfulChecks.value} successful checks, ${history.periodText}.`;
   }
   return `Observation count unknown for the ${history.periodText}.`;
 }
@@ -49,7 +51,7 @@ export function HistoricalStats({
       />
       <p className="pp-meta">{history.coverageNote}</p>
       {history.methodologyHref ? (
-        <a href={history.methodologyHref}>About these numbers</a>
+        <Link href={history.methodologyHref}>About these numbers</Link>
       ) : null}
     </section>
   );

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { factText, known, unknown } from "@/lib/presentation/fact";
 import {
@@ -37,6 +39,22 @@ describe("source-state lexicon", () => {
     expect(SOURCE_STATE_LEXICON.no_departures_published.srText).toMatch(
       /this source/,
     );
+  });
+
+  test("mirrors apps/api/paxpivot/domain/source.py::SourceState exactly", () => {
+    const source = readFileSync(
+      join(process.cwd(), "../api/paxpivot/domain/source.py"),
+      "utf8",
+    );
+    const body = source.slice(
+      source.indexOf("class SourceState("),
+      source.indexOf("class SourceIdentity("),
+    );
+    const python = [...body.matchAll(/= "([a-z_]+)"/g)].map(
+      (match) => match[1],
+    );
+    expect(python.length).toBe(13);
+    expect([...SOURCE_STATE_CODES].sort()).toEqual([...python].sort());
   });
 
   test("only real codes are accepted", () => {

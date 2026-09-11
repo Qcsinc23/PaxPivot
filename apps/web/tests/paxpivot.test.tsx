@@ -206,7 +206,9 @@ describe("MapSurface", () => {
 
   test("empty and error states stay honest", () => {
     render(
-      <MapSurface map={{ ...fixtureMap, status: "error", markers: [] }} />,
+      <MapSurface
+        map={{ ...fixtureMap, status: "error", markers: [], note: undefined }}
+      />,
     );
     expect(screen.getByText("No locations to show yet.")).toBeTruthy();
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain(

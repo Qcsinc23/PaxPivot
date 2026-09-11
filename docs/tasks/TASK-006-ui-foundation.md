@@ -136,13 +136,15 @@ make compose-check
 **Verification run:** 2026-09-10, after the final change, in an isolated worktree (own Compose project):
 
 ```text
-make check -> PASS (format-check, lint, typecheck; pytest 156 unit + 3 integration; Vitest 6 files / 59 tests; build; migrate; migrate-check; compose-check)
+make check -> PASS (format-check, lint, typecheck; pytest 156 unit + 3 integration; Vitest 6 files / 63 tests; build; migrate; migrate-check; compose-check)
 pnpm --filter web build -> PASS; / /trips /alerts /terminals /profile /advanced /ask /showcase prerendered static
 Live layout probe (Next dev, real Chromium): 375px -> rail display:none, bottom nav grid, nav items 60px,
   icon buttons/tabs/chips 44px, rows and facts stacked, fonts "Manrope Variable"/"DM Serif Display" loaded, no horizontal scroll;
   1280px -> rail 216px flex, bottom nav none, rail order Plan/Trips/Terminals/Alerts/Profile/Advanced, guarantee margin 0
 Token contrast (computed): every text/background pair used >= 4.5:1 (lowest 5.03 focus ring on cream)
 ```
+
+**Review:** Independent engineering review of the PR head found 0 Critical and 2 Important findings, both fixed: the floating Ask action could cover a sticky bar's primary button (StickyActionBar now marks the body and the FAB hides while one is mounted, tested); the source-state mirror test could not detect drift (it now parses `SourceState` from `apps/api/paxpivot/domain/source.py` and asserts set equality). Minor findings fixed: row dividers, card title ids via `useId`, unknown `defaultTab` in Tabs, duplicate keys, Sheet close-event test, focus-ring clipping in scroll containers, map note in the map's accessible name, Progress max clamp, "1 time" pluralisation, Rows className, internal links via `next/link`, and a test that `/showcase` 404s in production. Not changed: `themeColor` literal in layout metadata (cannot read a CSS variable) and the `Omit`-over-union cast inside `IconButton` (contained, typed at the call site).
 
 **Known limitations / risks:** Colour contrast is review-verified, not machine-verified (jsdom). The map surface is a placeholder until the MapLibre task. Route stubs say "Not available yet". Fixtures are synthetic and must stay out of production paths.
 

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardActions, CardEnd, CardHeader } from "@/components/ui/Card";
 import { FactStrip, FactValue } from "@/components/ui/Facts";
@@ -14,7 +15,7 @@ type Props = { baseline: CommercialBaselineView; headingLevel?: 2 | 3 };
  */
 export function CommercialBaselineCard({ baseline, headingLevel = 3 }: Props) {
   const Heading = headingLevel === 2 ? "h2" : "h3";
-  const titleId = `${baseline.id}-title`;
+  const titleId = useId();
   return (
     <Card as="article" tone="handoff" aria-labelledby={titleId}>
       <CardHeader>

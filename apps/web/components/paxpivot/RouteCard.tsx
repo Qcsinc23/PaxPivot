@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardActions, CardEnd, CardHeader } from "@/components/ui/Card";
 import { FactStrip, FactValue } from "@/components/ui/Facts";
@@ -18,7 +19,7 @@ type Props = { route: RouteCardView; headingLevel?: 2 | 3 };
 /** A ranked Space-A route: four facts, one line of why, one unknown, two buttons. */
 export function RouteCard({ route, headingLevel = 3 }: Props) {
   const Heading = headingLevel === 2 ? "h2" : "h3";
-  const titleId = `${route.id}-title`;
+  const titleId = useId();
   return (
     <Card as="article" aria-labelledby={titleId}>
       <CardHeader>

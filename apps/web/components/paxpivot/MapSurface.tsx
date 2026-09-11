@@ -1,4 +1,5 @@
 import { Flag, MapPin, Plane, TowerControl } from "lucide-react";
+import Link from "next/link";
 import { useId } from "react";
 import type {
   MapMarkerKind,
@@ -46,9 +47,9 @@ export function MapMarkerList({
         return (
           <li key={marker.id}>
             {marker.href ? (
-              <a className="pp-marker" href={marker.href}>
+              <Link className="pp-marker" href={marker.href}>
                 {body}
-              </a>
+              </Link>
             ) : (
               <span className="pp-marker">{body}</span>
             )}
@@ -74,7 +75,7 @@ export function MapSurface({ map, size = "inline" }: Props) {
         data-size={size}
         data-status={map.status}
         role="img"
-        aria-label={`${map.title}: ${SURFACE_TEXT[map.status]}, ${map.markers.length} locations listed below`}
+        aria-label={`${map.title}: ${map.note ?? SURFACE_TEXT[map.status]}, ${map.markers.length} locations listed below`}
       >
         <span className="pp-map__note">
           {map.note ?? SURFACE_TEXT[map.status]}

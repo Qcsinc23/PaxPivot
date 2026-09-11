@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/Progress";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Sheet } from "@/components/ui/Sheet";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
+import { StickyActionBar } from "@/components/ui/StickyActionBar";
 import { Tabs } from "@/components/ui/Tabs";
 import { expectNoAxeViolations } from "./a11y";
 
@@ -122,7 +123,7 @@ describe("SegmentedControl", () => {
 });
 
 describe("Sheet", () => {
-  test("opens as a labelled modal dialog and closes with Escape", async () => {
+  test("opens as a labelled modal dialog and closes from the Close control", async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(
@@ -133,7 +134,29 @@ describe("Sheet", () => {
     const dialog = screen.getByRole("dialog", { name: "Why this order" });
     expect(dialog.hasAttribute("open")).toBe(true);
     await user.click(screen.getByRole("button", { name: "Close" }));
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("reports a native close (Escape/cancel) through onClose", () => {
+    const onClose = vi.fn();
+    render(
+      <Sheet open onClose={onClose} title="Why this order">
+        <p>Body</p>
+      </Sheet>,
+    );
+    screen.getByRole("dialog").dispatchEvent(new Event("close"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("a mounted StickyActionBar marks the body so the Ask action hides", () => {
+    const { unmount } = render(
+      <StickyActionBar label="Route actions">
+        <button type="button">Prepare</button>
+      </StickyActionBar>,
+    );
+    expect(document.body.dataset.stickyBar).toBe("true");
+    unmount();
+    expect(document.body.dataset.stickyBar).toBeUndefined();
   });
 });
 

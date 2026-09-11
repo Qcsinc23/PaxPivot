@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 type CardProps = ComponentPropsWithoutRef<"section"> & {
@@ -34,9 +35,13 @@ export function CardActions({ children }: { children: ReactNode }) {
 }
 
 /** A list of divided rows; each `Row` is a 44px-tall line with body and end slots. */
-export function Rows({ children, ...rest }: ComponentPropsWithoutRef<"ul">) {
+export function Rows({
+  children,
+  className,
+  ...rest
+}: ComponentPropsWithoutRef<"ul">) {
   return (
-    <ul {...rest} className="pp-rows">
+    <ul {...rest} className={["pp-rows", className].filter(Boolean).join(" ")}>
       {children}
     </ul>
   );
@@ -69,9 +74,9 @@ export function Row({ icon, iconTone, title, detail, end, href }: RowProps) {
   return (
     <li>
       {href ? (
-        <a className="pp-row" href={href}>
+        <Link className="pp-row" href={href}>
           {body}
-        </a>
+        </Link>
       ) : (
         <div className="pp-row">{body}</div>
       )}

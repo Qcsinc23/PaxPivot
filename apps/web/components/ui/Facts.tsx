@@ -28,8 +28,8 @@ export function FactValue<T>({
 export function FactStrip({ facts }: { facts: readonly FactView[] }) {
   return (
     <dl className="pp-facts">
-      {facts.map((fact) => (
-        <div key={fact.label} className="pp-fact">
+      {facts.map((fact, index) => (
+        <div key={`${fact.label}-${index}`} className="pp-fact">
           <dt className="pp-fact__l">{fact.label}</dt>
           <dd>
             <FactValue fact={fact.value} />
@@ -44,8 +44,8 @@ export function FactStrip({ facts }: { facts: readonly FactView[] }) {
 export function StatGrid({ stats }: { stats: readonly FactView[] }) {
   return (
     <dl className="pp-stats">
-      {stats.map((stat) => (
-        <div key={stat.label} className="pp-stat pp-fact">
+      {stats.map((stat, index) => (
+        <div key={`${stat.label}-${index}`} className="pp-stat pp-fact">
           <dt className="pp-fact__l">{stat.label}</dt>
           <dd>
             <FactValue fact={stat.value} />

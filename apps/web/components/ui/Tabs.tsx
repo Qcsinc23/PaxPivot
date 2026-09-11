@@ -21,7 +21,11 @@ type Props = {
 /** WAI-ARIA tabs with roving tabindex, arrow/Home/End keys and automatic activation. */
 export function Tabs({ label, tabs, defaultTab, onChange }: Props) {
   const base = useId();
-  const [active, setActive] = useState(defaultTab ?? tabs[0]?.id ?? "");
+  const [active, setActive] = useState(
+    tabs.some((tab) => tab.id === defaultTab)
+      ? (defaultTab as string)
+      : (tabs[0]?.id ?? ""),
+  );
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const select = (index: number) => {

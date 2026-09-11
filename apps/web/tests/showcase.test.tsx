@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import ShowcaseLayout from "@/app/showcase/layout";
 import { Showcase } from "@/components/showcase/Showcase";
 import { expectNoAxeViolations } from "./a11y";
 
@@ -46,6 +47,16 @@ describe("showcase", () => {
       screen.getByRole("list", { name: "Locations on the map" }),
     ).toBeTruthy();
     expect(screen.getByRole("group", { name: "Sort routes" })).toBeTruthy();
+  });
+
+  test("is not served in production builds", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      expect(() => ShowcaseLayout({ children: null })).toThrow("notFound");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(ShowcaseLayout({ children: "ok" })).toBe("ok");
   });
 
   test("has no axe violations", async () => {

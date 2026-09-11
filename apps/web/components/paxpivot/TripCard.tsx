@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardActions, CardEnd, CardHeader } from "@/components/ui/Card";
 import { StatusPill } from "@/components/ui/Pill";
@@ -9,7 +10,7 @@ type Props = { trip: TripCardView; headingLevel?: 2 | 3 };
 
 export function TripCard({ trip, headingLevel = 3 }: Props) {
   const Heading = headingLevel === 2 ? "h2" : "h3";
-  const titleId = `${trip.id}-title`;
+  const titleId = useId();
   return (
     <Card as="article" aria-labelledby={titleId}>
       <CardHeader>
@@ -37,11 +38,11 @@ export function TripCard({ trip, headingLevel = 3 }: Props) {
         </div>
       ) : null}
       <div className="pp-card__hd">
-        {trip.sources.map((source) => {
+        {trip.sources.map((source, index) => {
           const lexeme = lexemeFor(source.evidence.state);
           return (
             <StatusPill
-              key={source.evidence.state}
+              key={`${source.evidence.state}-${index}`}
               tone={lexeme.tone}
               srText={lexeme.srText}
             >

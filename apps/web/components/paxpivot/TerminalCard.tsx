@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, CardActions, CardHeader } from "@/components/ui/Card";
 import { FactStrip } from "@/components/ui/Facts";
@@ -9,7 +10,7 @@ type Props = { terminal: TerminalCardView; headingLevel?: 2 | 3 };
 
 export function TerminalCard({ terminal, headingLevel = 3 }: Props) {
   const Heading = headingLevel === 2 ? "h2" : "h3";
-  const titleId = `${terminal.id}-title`;
+  const titleId = useId();
   return (
     <Card as="article" aria-labelledby={titleId}>
       <CardHeader>
