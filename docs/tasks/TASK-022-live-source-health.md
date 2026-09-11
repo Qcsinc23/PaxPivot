@@ -2,8 +2,8 @@
 
 ## Status
 
-`review` — TASK-020 is merged (`f430acb`); implemented and verified. Independent of TASK-021
-(no shared paths).
+`done` — merged to `main` in 64122a4 (PR #25); post-merge Quality green; Handoff recorded
+below. Independent of TASK-021 (no shared paths).
 
 ## Assigned role
 

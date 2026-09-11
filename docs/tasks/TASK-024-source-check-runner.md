@@ -2,7 +2,8 @@
 
 ## Status
 
-`review` — TASK-020 is merged (`f430acb`); implemented and verified.
+`done` — merged to `main` in ea899eb (PR #26); post-merge Quality green; Handoff recorded
+below.
 
 ## Assigned role
 
