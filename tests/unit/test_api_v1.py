@@ -56,7 +56,15 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
     "path", ["/api/v1/terminals", f"/api/v1/terminals/{uuid4()}", "/api/v1/sources/health"]
 )
 def test_every_read_route_requires_a_principal(client: TestClient, path: str) -> None:
-    for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic x"}):
+    for headers in (
+        {},
+        {"Authorization": "Bearer wrong"},
+        {"Authorization": "Basic x"},
+        # A non-ASCII credential must be denied, not turned into a 500 (and it must still
+        # reach the denial audit event). Raw bytes are what an attacker actually sends;
+        # Starlette decodes them as latin-1, producing a non-ASCII str.
+        {"Authorization": "Bearer caf\u00e9".encode()},
+    ):
         response = client.get(path, headers=headers)
         assert response.status_code == 401, headers
         assert response.headers["WWW-Authenticate"] == "Bearer"
@@ -131,3 +139,28 @@ def test_json_examples_match_the_read_models() -> None:
         assert path.read_text() == rendered, (
             f"{name} is stale; regenerate with PAXPIVOT_WRITE_EXAMPLES=1"
         )
+
+
+def test_every_api_v1_route_is_behind_the_principal_gate() -> None:
+    """A new unauthenticated /api/v1 route must fail here, not in production."""
+    guarded: list[str] = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if not path.startswith("/api/v1"):
+            continue
+        dependant = getattr(route, "dependant", None)
+        names = {d.call.__name__ for d in (dependant.dependencies if dependant else [])}
+        assert "require_principal" in names, f"{path} is not behind require_principal"
+        guarded.append(path)
+    assert len(guarded) == 3, guarded
+
+
+@pytest.mark.anyio
+async def test_a_non_ascii_credential_is_denied_not_raised() -> None:
+    """`hmac.compare_digest` raises TypeError on a non-ASCII str; that must become a denial."""
+    authenticator = BearerTokenAuthenticator(TOKEN)
+    for credential in ("caf\u00e9", "\u4e2d\u6587", "\U0001f600"):
+        result = await authenticator.authenticate(credential)
+        assert not result.ok and result.error.message_key == "auth.invalid_credential"
+    assert (await authenticator.authenticate(TOKEN)).ok
+    assert not (await authenticator.authenticate(None)).ok

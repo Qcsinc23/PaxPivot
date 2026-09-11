@@ -75,6 +75,11 @@ export type TerminalDetailScreenModel = {
     officialHref?: string;
   };
   opportunities: readonly TerminalOpportunityView[];
+  /**
+   * What to say when `opportunities` is empty. Model-supplied so a failed or absent check is
+   * never rendered as "no opportunities are published" (PRD §9.5).
+   */
+  opportunitiesNote: string;
   travel: {
     rows: readonly EvidenceRowView[];
     handoffs: readonly {
@@ -141,6 +146,7 @@ export const emptyTerminalDetail: TerminalDetailScreenModel = {
     officialHref: "/terminals",
   },
   opportunities: [],
+  opportunitiesNote: "PaxPivot has not checked a source for this terminal yet.",
   travel: { rows: [], handoffs: [] },
   evidence: { age: UNKNOWN_AGE, rows: [], whyIncluded: "" },
   history: NO_HISTORY,
@@ -201,6 +207,8 @@ export const fixtureTerminalDetail: TerminalDetailScreenModel = {
       evidence: { state: "withdrawn" },
     },
   ],
+  opportunitiesNote:
+    "No opportunities are published for this terminal right now.",
   travel: {
     rows: fixtureEvidenceRows,
     handoffs: [

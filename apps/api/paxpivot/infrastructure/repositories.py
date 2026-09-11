@@ -265,11 +265,18 @@ class SqlSourceObservationRepository:
 
     def latest_per_source(self) -> Mapping[UUID, SourceObservation]:
         o = db.source_observations
+        # A total order matters: `recorded_at` defaults to Postgres now(), which is the
+        # transaction start time, so two observations appended in one transaction share it.
+        # Without the id tiebreaker the "latest" row would be arbitrary.
         rank = (
             func.row_number()
             .over(
                 partition_by=o.c.source_id,
-                order_by=(o.c.observed_at.desc(), o.c.recorded_at.desc()),
+                order_by=(
+                    o.c.observed_at.desc(),
+                    o.c.recorded_at.desc(),
+                    o.c.observation_id.desc(),
+                ),
             )
             .label("rank")
         )
@@ -282,7 +289,7 @@ class SqlSourceObservationRepository:
         rows = self._c.execute(
             select(o)
             .where(o.c.source_id == source_id)
-            .order_by(o.c.observed_at.desc(), o.c.recorded_at.desc())
+            .order_by(o.c.observed_at.desc(), o.c.recorded_at.desc(), o.c.observation_id.desc())
             .limit(limit)
         ).all()
         return [_observation(r) for r in rows]
@@ -304,9 +311,13 @@ class SqlTerminalRepository:
 
     def list_current_facts(self, terminal_id: UUID) -> Sequence[TerminalOperationalFact]:
         f = db.terminal_facts
+        # `recorded_at` is caller-supplied, so ties are likely; the id makes the choice total.
         rank = (
             func.row_number()
-            .over(partition_by=f.c.kind, order_by=f.c.recorded_at.desc())
+            .over(
+                partition_by=f.c.kind,
+                order_by=(f.c.recorded_at.desc(), f.c.fact_id.desc()),
+            )
             .label("rank")
         )
         ranked = (

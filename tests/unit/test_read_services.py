@@ -1,6 +1,12 @@
 """Deterministic read use cases over in-memory repositories."""
 
-from uuid import uuid4
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from paxpivot.domain.source import Source
+    from paxpivot.domain.terminal import Terminal, TerminalOperationalFact
 
 from paxpivot.application.read_services import (
     get_terminal_detail,
@@ -95,3 +101,72 @@ def test_source_health_counts_only_observed_sources_and_flags_switches() -> None
     # A failed retrieval is reported as its failure state, never as an absence state.
     latest_b = rows[SOURCE_B.identity.source_id].latest
     assert latest_b is not None and latest_b.state == SourceState.UNREACHABLE
+
+
+def test_facts_from_a_source_that_may_not_be_displayed_are_withheld() -> None:
+    """A fact is extracted source content: it leaves the service only while its source may be
+    displayed. A paused or restricted source's content must never be reproduced (pilot SRC-003).
+    """
+    from paxpivot.domain.terminal import TerminalFactKind
+    from support_sources import SOURCE_D, fact
+
+    withheld = fact(TERMINAL_A, SOURCE_C, TerminalFactKind.COUNTER_HOURS, "synthetic hours")
+    restricted = fact(TERMINAL_A, SOURCE_D, TerminalFactKind.PHONE, "synthetic phone")
+    allowed = fact(TERMINAL_A, SOURCE_A, TerminalFactKind.COUNTER_HOURS, "synthetic hours")
+
+    class Terminals:
+        def __init__(self, facts: "tuple[TerminalOperationalFact, ...]") -> None:
+            self._facts = facts
+
+        def list_terminals(self) -> "Sequence[Terminal]":  # pragma: no cover - unused here
+            return [TERMINAL_A]
+
+        def get_terminal(self, terminal_id: UUID) -> "Terminal | None":
+            return TERMINAL_A if terminal_id == TERMINAL_A.terminal_id else None
+
+        def list_current_facts(self, terminal_id: UUID) -> "Sequence[TerminalOperationalFact]":
+            return self._facts
+
+        def append_fact(self, fact: "TerminalOperationalFact") -> None:
+            raise AssertionError("the read path must never append")
+
+    # Positive control: an approved, displayable source's fact is returned.
+    ok = get_terminal_detail(
+        TERMINAL_A.terminal_id,
+        Terminals((allowed,)),
+        FakeSources(),
+        FakeObservations(),
+        now=NOW,
+    )
+    assert ok.ok and [f.value for f in ok.value.facts] == ["synthetic hours"]
+
+    # A paused and a restricted source contribute nothing, even though the rows exist.
+    denied = get_terminal_detail(
+        TERMINAL_A.terminal_id,
+        Terminals((withheld, restricted)),
+        FakeSources(),
+        FakeObservations(),
+        now=NOW,
+    )
+    assert denied.ok and denied.value.facts == ()
+
+    # And a register that no longer knows the producing source fails closed.
+    class NoSources:
+        def list_sources(self) -> "Sequence[Source]":
+            return ()
+
+        def get_source(self, source_id: UUID) -> "Source | None":
+            return None
+
+        def list_terminal_sources(self, terminal_id: UUID) -> "Sequence[Source]":
+            return ()
+
+    unknown = fact(TERMINAL_A, SOURCE_C, TerminalFactKind.PARKING, "synthetic parking")
+    missing = get_terminal_detail(
+        TERMINAL_A.terminal_id,
+        Terminals((unknown,)),
+        NoSources(),
+        FakeObservations(),
+        now=NOW,
+    )
+    assert missing.ok and missing.value.facts == ()

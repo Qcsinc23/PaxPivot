@@ -163,6 +163,25 @@ function ageView(
   };
 }
 
+/**
+ * What to say when there are no opportunities to list. A failed or absent check must never be
+ * worded as "none are published": that would turn a PaxPivot failure into a claim about the
+ * world (PRD §9.5, paxpivot.md §11.3).
+ */
+function opportunitiesNote(summary: TerminalSummaryRead): string {
+  const latest = summary.latest;
+  if (!latest) {
+    return "PaxPivot has not checked a source for this terminal yet.";
+  }
+  if (latest.retrieval === "failed") {
+    return "The last check did not succeed, so nothing is known about departures here.";
+  }
+  if (latest.state === "no_departures_published") {
+    return "This source published no departures.";
+  }
+  return "No opportunities are published for this terminal right now.";
+}
+
 export function toTerminalDetailScreenModel(
   read: TerminalDetailRead,
   options: AdapterOptions,
@@ -205,6 +224,7 @@ export function toTerminalDetailScreenModel(
       officialHref: summary.official_url ?? undefined,
     },
     opportunities: [],
+    opportunitiesNote: opportunitiesNote(summary),
     travel: { rows: [], handoffs: [] },
     evidence: {
       age: ageView(summary, options.now),

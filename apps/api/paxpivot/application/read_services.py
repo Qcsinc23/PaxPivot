@@ -112,6 +112,23 @@ def fact_read(fact: TerminalOperationalFact) -> TerminalFactRead:
     )
 
 
+def displayable_facts(
+    facts: Sequence[TerminalOperationalFact], sources: SourceRepository
+) -> tuple[TerminalOperationalFact, ...]:
+    """Only facts whose producing source currently permits display leave this service.
+
+    A fact is extracted source content. Its existence is not permission to reproduce it: if the
+    register no longer approves that source for display, the content is withheld. The check is
+    deliberately fail-closed — an unknown or missing source yields nothing.
+    """
+    allowed: list[TerminalOperationalFact] = []
+    for fact in facts:
+        source = sources.get_source(fact.provenance.source.source_id)
+        if source is not None and source.policy.allows(ProcessingMode.DISPLAY):
+            allowed.append(fact)
+    return tuple(allowed)
+
+
 def get_terminal_detail(
     terminal_id: UUID,
     terminals: TerminalRepository,
@@ -134,7 +151,10 @@ def get_terminal_detail(
             generated_at=now or datetime.now(UTC),
             summary=terminal_summary(terminal, terminal_sources, latest),
             entrance_instructions=terminal.entrance.instructions if terminal.entrance else None,
-            facts=tuple(fact_read(f) for f in terminals.list_current_facts(terminal_id)),
+            facts=tuple(
+                fact_read(f)
+                for f in displayable_facts(terminals.list_current_facts(terminal_id), sources)
+            ),
             sources=tuple(
                 TerminalSourceRead(
                     source_id=s.identity.source_id,

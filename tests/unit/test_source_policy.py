@@ -156,3 +156,33 @@ def test_source_registry_holds_no_secret_fields() -> None:
             SOURCE_A.model_validate({**data, key: "x"})
     assert SOURCE_A.updated_at >= SOURCE_A.created_at
     assert datetime.now(UTC) > SOURCE_A.created_at
+
+
+def test_a_kill_switch_key_must_match_its_scope() -> None:
+    """A mistyped key must be rejected, never accepted as an inert switch.
+
+    A switch that never matches anything fails *open*: an operator believes processing is
+    stopped while it continues.
+    """
+
+    def kill(scope: KillSwitchScope, key: str) -> KillSwitch:
+        return KillSwitch(
+            switch_id=uuid4(),
+            scope=scope,
+            key=key,
+            reason="synthetic_incident",
+            engaged_at=NOW,
+            released_at=None,
+        )
+
+    # A valid mode key is accepted and does block that mode.
+    assert kill(KillSwitchScope.MODE, "parse").engaged
+    # A typo is rejected rather than silently inert.
+    with pytest.raises(ValidationError):
+        kill(KillSwitchScope.MODE, "Parse")
+    with pytest.raises(ValidationError):
+        kill(KillSwitchScope.SOURCE, "not-a-uuid")
+    # A canonical source UUID is accepted.
+    assert kill(KillSwitchScope.SOURCE, str(SOURCE_A.identity.source_id)).engaged
+    # Adapter keys stay free-form identifiers (a provider/adapter class name).
+    assert kill(KillSwitchScope.ADAPTER, "synthetic-adapter").engaged

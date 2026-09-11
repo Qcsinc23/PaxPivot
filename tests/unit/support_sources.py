@@ -127,6 +127,7 @@ def observation(
     extraction: ExtractionState = ExtractionState.NOT_ATTEMPTED,
     parser_version: str | None = None,
     reasons: tuple[str, ...] = ("synthetic",),
+    content_hash: str | None = None,
 ) -> SourceObservation:
     return SourceObservation(
         observation_id=uid(f"observation:{label}"),
@@ -135,7 +136,10 @@ def observation(
         retrieval=retrieval,
         extraction=extraction,
         parser_version=parser_version,
-        content_hash="hash-synthetic" if retrieval == RetrievalState.SUCCEEDED else None,
+        # A hash is only present when a caller asks for one: `raw_payload=denied` forbids it.
+        content_hash=(
+            None if content_hash is None or retrieval != RetrievalState.SUCCEEDED else content_hash
+        ),
         confidence_reasons=reasons,
     )
 
@@ -291,6 +295,9 @@ class FakeTerminals:
             key=lambda f: f.kind.value,
         )
 
+    def append_fact(self, fact: TerminalOperationalFact) -> None:
+        self.facts.append(fact)
+
 
 class FakeSwitches:
     def __init__(self, items: Sequence[KillSwitch] = SWITCHES) -> None:
@@ -298,3 +305,21 @@ class FakeSwitches:
 
     def list_engaged(self) -> Sequence[KillSwitch]:
         return [s for s in self.items if s.engaged]
+
+    def engage(self, switch: KillSwitch) -> None:
+        self.items.append(switch)
+
+
+def provenance_with_url(src: Source, url: str, observed_at: datetime | None = None) -> Provenance:
+    """Provenance as a provider would report it, with a caller-chosen URL."""
+    return Provenance(
+        source=SourceIdentity(
+            source_id=src.identity.source_id,
+            url=HttpUrl(url),
+            authority=src.identity.authority,
+        ),
+        observed_at=observed_at or T0,
+        source_time=None,
+        provider_id="synthetic-provider",
+        policy_version_id=src.policy.policy_version_id,
+    )

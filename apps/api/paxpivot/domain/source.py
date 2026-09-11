@@ -203,3 +203,24 @@ class KillSwitch(Contract):
     @property
     def engaged(self) -> bool:
         return self.released_at is None
+
+    @model_validator(mode="after")
+    def key_matches_scope(self) -> Self:
+        """A mistyped key must be rejected, never silently inert.
+
+        A safety switch that never matches anything fails *open*: an operator believes
+        processing is stopped while it continues. Each scope therefore pins the shape of its
+        key to the value the gate actually compares against.
+        """
+        if self.scope == KillSwitchScope.MODE:
+            allowed = {mode.value for mode in ProcessingMode}
+            if self.key not in allowed:
+                raise ValueError(
+                    f"A mode switch key must be one of {sorted(allowed)}, not {self.key!r}"
+                )
+        elif self.scope == KillSwitchScope.SOURCE:
+            try:
+                UUID(self.key)
+            except ValueError as exc:
+                raise ValueError("A source switch key must be a canonical source UUID") from exc
+        return self

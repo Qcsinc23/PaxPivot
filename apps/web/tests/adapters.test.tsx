@@ -7,6 +7,7 @@
  */
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
+import { SourceStateBadge } from "@/components/paxpivot/SourceStateBadge";
 import { SourceHealthScreen } from "@/components/screens/advanced/SourceHealthScreen";
 import { TerminalDetailScreen } from "@/components/screens/terminals/TerminalDetailScreen";
 import { TerminalNetworkScreen } from "@/components/screens/terminals/TerminalNetworkScreen";
@@ -22,6 +23,7 @@ import {
   formatAge,
   formatCadence,
   formatTimestamp,
+  toEvidenceView,
 } from "@/lib/presentation/adapters/format";
 import {
   toNotices,
@@ -47,6 +49,39 @@ describe("format helpers", () => {
     expect(formatAge("2026-09-10T13:00:00Z", NOW)).toBe("0m"); // clock skew, not negative
     expect(formatCadence(30)).toBe("Every 30 min");
     expect(formatCadence(360)).toBe("Every 6 h");
+  });
+
+  test("an unrecognised state code passes through and renders Unknown state", () => {
+    // Guards the presentation boundary: if the API ever reports a code this lexicon does not
+    // know, the adapter must NOT substitute a real state (e.g. source_missing, which asserts
+    // that an artifact could not be found). It passes the code through and the badge says
+    // "Unknown state" — the TASK-006 rule "never a positive state".
+    const read = {
+      observation_id: "obs-drift",
+      state: "some_future_state",
+      observed_at: "2026-09-10T11:51:00Z",
+      source_time: null,
+      retrieval: "succeeded" as const,
+      extraction: "not_attempted" as const,
+      parser_version: null,
+      explanation: "Synthetic explanation.",
+    };
+
+    const view = toEvidenceView(read, NOW);
+    expect(view.state).toBe("some_future_state");
+
+    render(<SourceStateBadge evidence={view} />);
+    expect(screen.getByText(/Unknown state/)).toBeTruthy();
+    for (const invented of [
+      "Missing",
+      "Unavailable",
+      "Stale",
+      "Fresh",
+      "None published",
+      "No match",
+    ]) {
+      expect(screen.queryByText(new RegExp(invented))).toBeNull();
+    }
   });
 });
 
@@ -235,5 +270,75 @@ describe("source health adapter", () => {
       screen.getByRole("heading", { name: "Needs attention" }),
     ).toBeTruthy();
     await expectNoAxeViolations(container, ["region"]);
+  });
+});
+
+describe("terminal detail opportunity wording", () => {
+  const base = detail.summary;
+
+  test("a failed check is never worded as 'none are published'", () => {
+    const failed = toTerminalDetailScreenModel(
+      {
+        ...detail,
+        summary: {
+          ...base,
+          latest: {
+            ...(base.latest as NonNullable<typeof base.latest>),
+            retrieval: "failed",
+            state: "source_unreachable",
+          },
+        },
+      },
+      { now: NOW },
+    );
+    expect(failed.opportunitiesNote).toBe(
+      "The last check did not succeed, so nothing is known about departures here.",
+    );
+    expect(failed.opportunitiesNote).not.toContain(
+      "no opportunities are published",
+    );
+
+    render(<TerminalDetailScreen model={failed} />);
+    const text = (document.body.textContent ?? "").toLowerCase();
+    for (const forbidden of [
+      "no opportunities are published",
+      "no flights",
+      "none scheduled",
+      "nothing flying",
+    ]) {
+      expect(text).not.toContain(forbidden);
+    }
+  });
+
+  test("a never-checked terminal says so rather than claiming an absence", () => {
+    const never = toTerminalDetailScreenModel(
+      { ...detail, summary: { ...base, latest: null } },
+      { now: NOW },
+    );
+    expect(never.opportunitiesNote).toBe(
+      "PaxPivot has not checked a source for this terminal yet.",
+    );
+    expect(never.opportunitiesNote).not.toContain(
+      "no opportunities are published",
+    );
+  });
+
+  test("a genuinely empty published source may say none are published", () => {
+    const empty = toTerminalDetailScreenModel(
+      {
+        ...detail,
+        summary: {
+          ...base,
+          latest: {
+            ...(base.latest as NonNullable<typeof base.latest>),
+            state: "no_departures_published",
+          },
+        },
+      },
+      { now: NOW },
+    );
+    expect(empty.opportunitiesNote).toBe(
+      "This source published no departures.",
+    );
   });
 });

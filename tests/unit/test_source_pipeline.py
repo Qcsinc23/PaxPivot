@@ -19,7 +19,16 @@ from paxpivot.domain.source import (
     SourceObservation,
     SourceState,
 )
-from support_sources import NEEDS_REVIEW, NOW, SOURCE_A, T0, FakeObservations, observation, source
+from support_sources import (
+    NEEDS_REVIEW,
+    NOW,
+    SOURCE_A,
+    T0,
+    FakeObservations,
+    observation,
+    provenance_with_url,
+    source,
+)
 
 
 class ScriptedProvider:
@@ -126,3 +135,68 @@ def test_provider_output_is_validated_against_registry_and_policy() -> None:
     result = run(unreviewed, ScriptedProvider(Success(value=metadata_only)), repo, [])
     assert result.ok and repo.items == [metadata_only]
     assert datetime.now(UTC) > T0
+
+    # `denied` keeps neither the body nor a hash of it, even for metadata-only retrieval.
+    with_hash = observation(
+        unreviewed,
+        "hash",
+        state=SourceState.FRESH,
+        observed_at=NOW,
+        content_hash="hash-synthetic",
+    )
+    result = run(unreviewed, ScriptedProvider(Success(value=with_hash)), repo, [])
+    assert not result.ok and result.error.message_key == "source.raw_hash_denied"
+    assert repo.items == [metadata_only]
+
+    # A credentialed URL must never enter an observation.
+    credentialed = observation(
+        SOURCE_A, "creds", state=SourceState.FRESH, observed_at=NOW
+    ).model_copy(
+        update={
+            "provenance": provenance_with_url(
+                SOURCE_A, "https://example.invalid/page?api_key=SUPERSECRET"
+            )
+        }
+    )
+    result = run(SOURCE_A, ScriptedProvider(Success(value=credentialed)), repo, [])
+    assert not result.ok and result.error.message_key == "source.url_carries_credentials"
+    assert repo.items == [metadata_only]
+
+    # A MODE-scope switch stops that mode's effect, not only retrieval.
+    parse_switch = KillSwitch(
+        switch_id=uuid4(),
+        scope=KillSwitchScope.MODE,
+        key="parse",
+        reason="synthetic_incident",
+        engaged_at=NOW,
+        released_at=None,
+    )
+    approved = source("approved")
+    parsed_approved = observation(
+        approved,
+        "parsed-approved",
+        state=SourceState.FRESH,
+        observed_at=NOW,
+        extraction=ExtractionState.EXACT,
+        parser_version="synthetic-parser-v1",
+    )
+    repo2 = FakeObservations([])
+    result = run(approved, ScriptedProvider(Success(value=parsed_approved)), repo2, [parse_switch])
+    assert not result.ok and result.error.message_key == "source.kill_switch_engaged"
+    assert repo2.items == []
+
+    store_switch = KillSwitch(
+        switch_id=uuid4(),
+        scope=KillSwitchScope.MODE,
+        key="store_raw",
+        reason="synthetic_incident",
+        engaged_at=NOW,
+        released_at=None,
+    )
+    with_payload_ref = observation(
+        approved, "payload", state=SourceState.FRESH, observed_at=NOW
+    ).model_copy(update={"payload_ref": "blob://synthetic"})
+    repo3 = FakeObservations([])
+    result = run(approved, ScriptedProvider(Success(value=with_payload_ref)), repo3, [store_switch])
+    assert not result.ok and result.error.message_key == "source.kill_switch_engaged"
+    assert repo3.items == []

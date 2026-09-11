@@ -2,7 +2,9 @@
 
 ## Status
 
-`review` — this PR; becomes `done` once merged (see Handoff).
+`review` — recovered and remediated in this PR; **not yet merged**. The independent
+architecture/OPSEC review found defects that are fixed here, plus five residual items that need a
+foundation/product decision this agent is not authorised to make. See "Recovery + review record".
 
 ## Assigned role
 
@@ -151,12 +153,89 @@ terminal-detail actions/`compareHref`/`evidence.age` becoming optional (screens 
 
 **Migrations:** `0002_sources_terminals` (single head after `0001_postgis`).
 
-**Verification run:** recorded in the PR after the final change.
+**Verification run:** after the final remediation change, in this worktree (own Compose project):
+
+```text
+make format-check   -> PASS   make build          -> PASS
+make lint           -> PASS   make migrate        -> PASS
+make typecheck      -> PASS   make migrate-check  -> PASS
+make test-unit      -> PASS   make compose-check  -> PASS
+make test-integration -> PASS make migrate-test   -> PASS
+make test           -> PASS
+```
+
+Counts: pytest 184 unit + 8 integration; Vitest 18 files / 278 tests; mypy clean on 39 files.
+An independent fresh-database probe (24 checks) also passes: seed inserts-then-idempotent,
+append-only triggers reject UPDATE and DELETE **on rows that exist**, unknown `source_time`
+stays NULL, latest is the newest by `observed_at`, no raw-body/credential column, no read model
+exposes `payload_ref`/`content_hash`, and every `/api/v1` route carries `require_principal`.
 
 **Known limitations / risks:** shared-token auth is interim; seeded terminal names/installations
 and the directory URL are `needs_review` until confirmed; a terminal's headline evidence is
 "newest observation across its sources" (documented in ADR-004); coordinates are plain columns
 until a spatial query needs PostGIS.
+
+## Recovery + review record
+
+**Recovery.** The work was found intact as a committed local branch
+(`foundation/TASK-020-sources-terminals` @ `71df38e`) in the `PaxPivot-foundation` worktree, based
+directly on `main` @ `0601c28`. The worktree was clean, there were no stashes, and nothing had to
+be reconstructed. A backup ref (`backup/TASK-020-recovered-71df38e`) preserves the original commit.
+
+**Independent review.** Three fresh read-only passes were run over `71df38e` (specification,
+architecture, security/OPSEC). The headline finding was **reproduced independently here**: a
+MODE-scope kill switch did not stop its mode.
+
+```text
+MODE=parse engaged     -> ok=True stored=1 extraction=exact_text   (bypass)
+MODE=store_raw engaged -> ok=True stored=1 payload_ref=blob://…    (bypass)
+MODE='Parse' (typo)    -> ok=True stored=1                          (fails OPEN)
+```
+
+That defeats this task's own acceptance criterion "kill switch per source/adapter/mode".
+
+**Fixed in this PR** (each with a regression test; the fix was reverted to prove each test fails):
+
+| Finding | Fix |
+| --- | --- |
+| Mode kill switches bypassed (Critical) | `validate_against_policy` now authorises PARSE/STORE_RAW through `authorize_processing`, so the gate — not just the policy — decides |
+| Kill-switch key typo failed open (Important) | `KillSwitch.key_matches_scope`: mode keys must be a `ProcessingMode`; source keys a canonical UUID |
+| Credentialed URLs persisted + served (Critical) | Rejected in `validate_against_policy` and by a `url_carries_no_credentials` CHECK on `sources`, `source_observations`, `terminal_facts`, `terminals` |
+| Facts shown without a display gate (Critical) | `displayable_facts` withholds facts whose producing source does not currently `allows(DISPLAY)`; fails closed |
+| Non-ASCII credential returned 500 (Important) | `BearerTokenAuthenticator` compares UTF-8 bytes, so it denies (401 + audit) instead of raising |
+| `raw_payload=denied` still allowed a content hash (Important) | Rejected unless the policy keeps hashes (`hash_only`/`snapshot`) |
+| Failed/never-checked terminal said "No opportunities are published" (Important) | `opportunitiesNote` is now model-supplied and derived from the decided evidence |
+| Non-deterministic "latest"/"current fact" (Important) | Added `observation_id` / `fact_id` tiebreakers (`recorded_at` is Postgres transaction time, so ties are real) |
+| Unknown source state rewritten to `source_missing` (Critical) | Adapter passes the code through; `SourceStateBadge` renders "Unknown state" |
+| Ports omitted the write methods (Important) | `append_fact` / `engage` added to the protocols; fakes implement them |
+
+**Residual items needing a decision (NOT fixed here — out of this agent's authority).**
+
+1. **Provider identity.** The ADAPTER-scope switch keys on the registry's `adapter_id`, but
+   `record_observation` accepts any `SourceProvider` and never checks it against the registry.
+   Closing this needs a declared identity on the `SourceProvider` port (a pre-existing shared
+   contract). No provider is wired yet, so it is latent.
+2. **Read isolation.** `get_terminal_detail`/`list_terminal_network` issue two statements per
+   request at READ COMMITTED, so a concurrent write between them can read as "never observed".
+   Needs a transaction-strategy decision (REPEATABLE READ per request vs one joined statement).
+3. **Write transaction seam.** `get_connection` neither commits nor rolls back. Harmless while
+   every route is read-only; TASK-024 must add an explicit write seam before wiring
+   `record_observation` behind the API.
+4. **`may_summarize` / `may_aggregate_history` are declared but unconsulted.** `counts` /
+   `never_observed` are current-state operational telemetry, not historical movement aggregation.
+   Either state that explicitly or gate them — a source-policy decision.
+5. **Supersession precedence.** `supersedes_observation_id` is stored and mapped but no query
+   reads it, so a withdrawal carrying an older `observed_at` does not displace the claim it
+   withdraws. This task's criterion only requires the field to be present; honouring it in the
+   current-state query is a domain-semantics decision.
+
+Also noted for the foundation: `make migrate-test` proves table/column/index drift but **not
+CHECK-constraint drift**, and every enum list is hand-duplicated between
+`infrastructure/database.py` and migration `0002`. A parity gate would close that.
+
+**Next dependency:** unchanged (TASK-021/022/024 ready; TASK-023/025 need product-owner input) —
+but TASK-020 should be settled (merged, or the five decisions recorded) before dependent build
+tasks branch from it.
 
 **Next dependency:** TASK-021 and TASK-022 (build, immediately ready); TASK-024 (build, ready);
 TASK-023 and TASK-025 need product-owner input (see their Blocked sections).

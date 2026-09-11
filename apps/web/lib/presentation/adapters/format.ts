@@ -3,7 +3,6 @@
  * freshness, state or availability. Times render in UTC so output is deterministic.
  */
 import type { SourceEvidenceRead } from "@/lib/api/contracts";
-import { isSourceStateCode } from "@/lib/presentation/source-state";
 import type { SourceEvidenceView, StatusTone } from "@/lib/presentation/types";
 import { lexemeFor } from "@/components/paxpivot/SourceStateBadge";
 
@@ -35,15 +34,18 @@ export function formatCadence(minutes: number): string {
 }
 
 /**
- * The state code passes through verbatim. A code the lexicon does not know still passes
- * through: the badge renders it as "Unknown state" rather than the adapter guessing.
+ * The state code passes through verbatim, exactly as the API reported it.
+ *
+ * A code the lexicon does not know is NOT replaced by a real state: `SourceStateBadge` maps it
+ * through `lexemeFor`, which renders "Unknown state". Substituting a code such as
+ * `source_missing` here would assert something specific the application never said.
  */
 export function toEvidenceView(
   read: SourceEvidenceRead,
   now: Date,
 ): SourceEvidenceView {
   return {
-    state: isSourceStateCode(read.state) ? read.state : "source_missing",
+    state: read.state,
     ageText: formatAge(read.observed_at, now),
     explanation: read.explanation,
   };

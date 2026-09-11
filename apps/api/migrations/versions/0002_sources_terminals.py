@@ -90,6 +90,14 @@ def upgrade() -> None:
             "(entrance_kind IS NULL) = (entrance_policy_version_id IS NULL)",
             name="entrance_all_or_nothing",
         ),
+        # A registered source URL is a page, never a credentialed URL. Query strings and
+        # fragments are where access tokens live, and these values are served to clients.
+        sa.CheckConstraint(
+            "evidence_source_url NOT LIKE '%?%' AND evidence_source_url NOT LIKE '%#%' AND "
+            "(entrance_source_url IS NULL OR (entrance_source_url NOT LIKE '%?%' AND "
+            "entrance_source_url NOT LIKE '%#%'))",
+            name="url_carries_no_credentials",
+        ),
         sa.PrimaryKeyConstraint("terminal_id", name=op.f("pk_terminals")),
     )
     op.create_table(
@@ -140,6 +148,9 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "review_state <> 'approved' OR (reviewer IS NOT NULL AND reviewed_at IS NOT NULL)",
             name="approval_reviewed",
+        ),
+        sa.CheckConstraint(
+            "url NOT LIKE '%?%' AND url NOT LIKE '%#%'", name="url_carries_no_credentials"
         ),
         sa.ForeignKeyConstraint(
             ["terminal_id"],
@@ -199,6 +210,10 @@ def upgrade() -> None:
             "payload_ref IS NULL OR retrieval = 'succeeded'", name="payload_retrieved"
         ),
         sa.CheckConstraint("cardinality(confidence_reasons) > 0", name="reasons_present"),
+        sa.CheckConstraint(
+            "source_url NOT LIKE '%?%' AND source_url NOT LIKE '%#%'",
+            name="url_carries_no_credentials",
+        ),
         sa.ForeignKeyConstraint(
             ["source_id"],
             ["sources.source_id"],
@@ -250,6 +265,10 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "effective_from IS NULL OR effective_to IS NULL OR effective_to > effective_from",
             name="validity_window",
+        ),
+        sa.CheckConstraint(
+            "source_url NOT LIKE '%?%' AND source_url NOT LIKE '%#%'",
+            name="url_carries_no_credentials",
         ),
         sa.ForeignKeyConstraint(
             ["source_id"], ["sources.source_id"], name=op.f("fk_terminal_facts_source_id_sources")

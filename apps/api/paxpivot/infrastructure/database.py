@@ -127,6 +127,14 @@ terminals = Table(
         "(entrance_kind IS NULL) = (entrance_policy_version_id IS NULL)",
         name="entrance_all_or_nothing",
     ),
+    # A registered source URL is a page, never a credentialed URL (tokens live in query
+    # strings and fragments, and these values are served to clients).
+    CheckConstraint(
+        "evidence_source_url NOT LIKE '%?%' AND evidence_source_url NOT LIKE '%#%' AND "
+        "(entrance_source_url IS NULL OR (entrance_source_url NOT LIKE '%?%' AND "
+        "entrance_source_url NOT LIKE '%#%'))",
+        name="url_carries_no_credentials",
+    ),
 )
 
 sources = Table(
@@ -168,6 +176,7 @@ sources = Table(
         "review_state <> 'approved' OR (reviewer IS NOT NULL AND reviewed_at IS NOT NULL)",
         name="approval_reviewed",
     ),
+    CheckConstraint("url NOT LIKE '%?%' AND url NOT LIKE '%#%'", name="url_carries_no_credentials"),
 )
 
 source_observations = Table(
@@ -205,6 +214,10 @@ source_observations = Table(
     ),
     CheckConstraint("payload_ref IS NULL OR retrieval = 'succeeded'", name="payload_retrieved"),
     CheckConstraint("cardinality(confidence_reasons) > 0", name="reasons_present"),
+    CheckConstraint(
+        "source_url NOT LIKE '%?%' AND source_url NOT LIKE '%#%'",
+        name="url_carries_no_credentials",
+    ),
     Index("ix_source_observations_source_id_observed_at", "source_id", "observed_at"),
 )
 
@@ -229,6 +242,10 @@ terminal_facts = Table(
     CheckConstraint(
         "effective_from IS NULL OR effective_to IS NULL OR effective_to > effective_from",
         name="validity_window",
+    ),
+    CheckConstraint(
+        "source_url NOT LIKE '%?%' AND source_url NOT LIKE '%#%'",
+        name="url_carries_no_credentials",
     ),
     Index("ix_terminal_facts_terminal_id_kind_recorded_at", "terminal_id", "kind", "recorded_at"),
 )

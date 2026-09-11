@@ -84,9 +84,9 @@ export function TerminalDetailScreen({ model, initialTab }: Props) {
           ))}
         </Rows>
       ) : (
-        <p className="pp-sub">
-          No opportunities are published for this terminal right now.
-        </p>
+        // Model-supplied wording: a terminal whose check failed, or which was never checked,
+        // must never be described as publishing no opportunities.
+        <p className="pp-sub">{model.opportunitiesNote}</p>
       )}
       <p className="pp-meta">
         A published opportunity is not a reservation or a guaranteed seat.

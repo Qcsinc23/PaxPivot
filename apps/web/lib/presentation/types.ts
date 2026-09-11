@@ -8,16 +8,24 @@
  * builds the view model; ISO timestamps travel alongside for `<time>` semantics.
  */
 import type { Fact } from "./fact";
-import type { SourceStateCode, StatusTone } from "./source-state";
+import type { StatusTone } from "./source-state";
 
 export type { Fact } from "./fact";
 export type { SourceStateCode, StatusTone } from "./source-state";
 
 export type Href = string;
 
-/** Source evidence as shown on any card: authoritative code plus optional display age. */
+/**
+ * Source evidence as shown on any card: the authoritative code plus an optional display age.
+ *
+ * `state` is a plain string, not `SourceStateCode`, on purpose. The code arrives from the API
+ * and passes through untouched; `SourceStateBadge` maps it through `lexemeFor`, which renders a
+ * code the lexicon does not know as "Unknown state". Narrowing here would force an adapter to
+ * substitute some real state for an unrecognised one, which is exactly the fabrication the
+ * presentation boundary forbids.
+ */
 export type SourceEvidenceView = {
-  state: SourceStateCode;
+  state: string;
   /** e.g. "14m" — pre-formatted by the application; omitted when no read time exists. */
   ageText?: string;
   /** Full deterministic explanation (TASK-002 `explain_source`), shown on demand. */

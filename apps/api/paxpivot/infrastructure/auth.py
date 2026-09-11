@@ -29,7 +29,11 @@ class BearerTokenAuthenticator:
         self._token = token
 
     async def authenticate(self, credential: str | None) -> Result[Principal]:
-        if credential is None or not hmac.compare_digest(credential, self._token):
+        if credential is None:
+            return _unauthorized("auth.invalid_credential")
+        # Compare bytes: hmac.compare_digest raises TypeError on a non-ASCII str, which would
+        # turn an unauthenticated request into a 500 and skip the denial audit event.
+        if not hmac.compare_digest(credential.encode("utf-8"), self._token.encode("utf-8")):
             return _unauthorized("auth.invalid_credential")
         return Success(value=Principal(user_id=LOCAL_PRINCIPAL_ID))
 

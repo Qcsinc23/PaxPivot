@@ -44,6 +44,14 @@ class TerminalRepository(Protocol):
         """The newest open (effective_to is null) fact of each kind."""
         ...
 
+    def append_fact(self, fact: TerminalOperationalFact) -> None:
+        """Append a new immutable fact. Never updates or replaces an earlier one."""
+        ...
+
 
 class KillSwitchRepository(Protocol):
     def list_engaged(self) -> Sequence[KillSwitch]: ...
+
+    def engage(self, switch: KillSwitch) -> None:
+        """Record an engaged switch. Engaging never deletes history."""
+        ...
