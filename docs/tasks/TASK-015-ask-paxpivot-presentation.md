@@ -2,7 +2,7 @@
 
 ## Status
 
-`ready` — the foundation `AskAnswerView` contract merged in TASK-019. Read `docs/tasks/SCREEN_TASK_RULES.md` first.
+`review` — implemented on `build/TASK-015-ask-paxpivot` after TASK-019 merged; see Handoff.
 
 ## Assigned role
 
@@ -41,11 +41,11 @@ docs/tasks/TASK-015-ask-paxpivot-presentation.md
 
 ## Acceptance criteria (once unblocked)
 
-- [ ] Ask is reached from the floating action; the screen has a labelled close `IconButton` and no bottom-nav entry.
-- [ ] The answer card renders the verdict pill (`ASK_VERDICT_WORDING[kind]`) and title, the comparison rows (`.pp-table`, `data-emphasis` from the model, no emphasis decided in the screen), the explanation and the actions from the model; grounding renders `askGroundingText(...)` ("Based on 1 route search · 2 source records"); an `unknown` verdict shows "Unknown" verbatim (test with `fixtureAskAnswerUnknown`, whose title does not contain the word).
-- [ ] `lib/presentation/screens/ask.ts` defines `AskScreenModel = { status: "empty" | "ready" | "loading" | "error"; answer?: AskAnswerView; composerPlaceholder: string }` plus `emptyAsk`/`fixtureAsk`; the live `/ask` route renders `emptyAsk` (no synthetic answer).
-- [ ] Composer is present but disabled with a model-supplied placeholder until the tool contract exists.
-- [ ] Tests, axe, responsive and accessibility rules.
+- [x] Ask is reached from the floating action; the screen has a labelled close `IconButton` and no bottom-nav entry.
+- [x] The answer card renders the verdict pill (`ASK_VERDICT_WORDING[kind]`) and title, the comparison rows (`.pp-table`, `data-emphasis` from the model, no emphasis decided in the screen), the explanation and the actions from the model; grounding renders `askGroundingText(...)` ("Based on 1 route search · 2 source records"); an `unknown` verdict shows "Unknown" verbatim (test with `fixtureAskAnswerUnknown`, whose title does not contain the word).
+- [x] `lib/presentation/screens/ask.ts` defines `AskScreenModel = { status: "empty" | "ready" | "loading" | "error"; answer?: AskAnswerView; composerPlaceholder: string }` plus `emptyAsk`/`fixtureAsk`; the live `/ask` route renders `emptyAsk` (no synthetic answer).
+- [x] Composer is present but disabled with a model-supplied placeholder until the tool contract exists.
+- [x] Tests, axe, responsive and accessibility rules.
 
 ## Verification commands
 
@@ -73,4 +73,73 @@ make compose-check
 
 ## Handoff
 
-(fill in per template)
+**Branch:** `build/TASK-015-ask-paxpivot` from `main` @ `0601c28` (TASK-019 merge).
+
+**Commit:** Reported in the PR.
+
+**Files changed** (all owned paths):
+
+```text
+apps/web/lib/presentation/screens/ask.ts              NEW  AskScreenModel, emptyAsk, fixtureAsk,
+                                                           fixtureAskUnknown
+apps/web/components/screens/ask/AskScreen.tsx          NEW
+apps/web/app/ask/page.tsx                              MOD  replaces the scaffold stub
+apps/web/app/showcase/ask/page.tsx                     NEW  development-only
+apps/web/app/showcase/ask/unknown/page.tsx             NEW  development-only, unknown verdict
+apps/web/tests/screens/ask.test.tsx                    NEW  17 tests
+docs/tasks/TASK-015-ask-paxpivot-presentation.md
+```
+
+No file outside the owned paths was modified.
+
+**Interfaces added/changed:** `AskScreenModel`, `emptyAsk`, `fixtureAsk`, `fixtureAskUnknown`,
+`AskScreen({ model })`. No foundation type, component, token, dependency or API/schema contract
+changed — the TASK-019 `AskAnswerView` contract, `ASK_VERDICT_WORDING` and `askGroundingText` are
+consumed exactly as merged.
+
+**Migrations:** None.
+
+**Verification run:** after the final change, on the exact head:
+
+```text
+make format-check -> PASS      make test-integration -> PASS (pytest 3)
+make lint         -> PASS      make test             -> PASS
+make typecheck    -> PASS      make build            -> PASS
+make test-unit    -> PASS      make migrate          -> PASS
+                               make migrate-check    -> PASS
+                               make compose-check    -> PASS
+```
+
+Counts: pytest 156 unit + 3 integration; Vitest 17 files / 276 tests (17 new, all passing).
+
+**Live responsive probe** (Next dev, real Chromium) on `/ask`, `/showcase/ask` and
+`/showcase/ask/unknown` at 360 / 430 / 1280 px: no page-level sideways scroll and no overflowing
+element at any width; exactly one `h1`; no skipped heading level; the composer is present and
+disabled everywhere; Ask is not a bottom-nav destination; the comparison table scrolls inside its
+own box on narrow screens; the live route shows no table.
+
+**How the "unknown renders Unknown verbatim" rule is proved.** `fixtureAskAnswerUnknown.verdict
+.title` is asserted NOT to contain the word "Unknown", and the test then asserts the text
+"Unknown" is present while "Recommendation" and "Needs clarification" are absent. The pill
+therefore cannot be passing by accident of the title.
+
+**How "the screen decides no emphasis" is proved.** The test counts `td[data-emphasis]` cells in
+the rendered table and compares that count with the number of model cells whose emphasis is not
+`none`, then asserts every emphasised cell carries exactly `better` or `tie`. A screen that
+computed emphasis could not satisfy both halves.
+
+**Review findings corrected.** One accessibility defect of mine: the composer card carried
+`aria-label="Ask a question"` while the field's visible label had the same text, so the field had
+two accessible names and `getByLabelText` matched both. The card is now named "Question composer".
+
+**Known limitations / risks:** the composer, its submit button and the follow-up chips are
+present but not wired — asking a question needs the Ask tool contract, which is explicitly out of
+scope; the chips are rendered as disabled buttons rather than tappable chips so they do not
+imply an action they cannot perform. The composer's styling is token-valued inline CSS because
+this task owns no stylesheet and the foundation has no form-control class yet; a shared
+`pp-input` primitive would be the cleaner long-term home. Colour contrast remains review-verified
+(jsdom cannot compute it), as in TASK-006…TASK-016.
+
+**Next dependency:** none — this closes the last build task that was independent of the
+Sources + Terminals foundation.
+
