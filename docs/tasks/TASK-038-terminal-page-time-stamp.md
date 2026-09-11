@@ -54,6 +54,18 @@ make migrate-test
 
 Departure rows, seat states, opportunities (TASK-032, blocked on permission).
 
+## Review decisions (2026-09-11; 0 Critical / 2 Important → fixed)
+
+- The stamp is read only when `authorize_processing(PARSE)` passes, switches included, so an
+  engaged parse switch stops interpretation without discarding the retrieval.
+- A date-only stamp sets no `source_time` (reason `page_time_date_only`, extraction failed):
+  the UI must never show a clock the page did not print.
+- The first stamp on the page decides; a mangled one yields nothing rather than an older notice.
+  Months are full names, three-letter forms or "sept"; years 2020–2100; a time needs the page's
+  "at" or trailing "L".
+- The page's zone token ("EST") is ignored: "L" is the terminal's local clock in its IANA zone
+  (reason `page_time_local_clock`).
+
 ## Handoff
 
 (fill in after merge)

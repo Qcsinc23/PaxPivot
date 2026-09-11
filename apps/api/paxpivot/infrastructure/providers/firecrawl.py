@@ -159,7 +159,7 @@ class FirecrawlSourceProvider:
         observation = self._observation(registered, observed_at, page_status, digest, extra)
         if (
             registered.kind == SourceKind.TERMINAL_PAGE
-            and registered.policy.allows(ProcessingMode.PARSE)
+            and authorize_processing(registered, ProcessingMode.PARSE, self._switches).ok
             and observation.retrieval == RetrievalState.SUCCEEDED
             and isinstance(document, str)
         ):
@@ -197,9 +197,17 @@ class FirecrawlSourceProvider:
                     ),
                 }
             )
-        detail = (
-            ("page_time_parsed",) if stamp.has_time else ("page_time_parsed", "page_time_date_only")
-        )
+        if not stamp.has_time:
+            # A bare date is not an instant; the UI would show a clock the page never printed.
+            return observation.model_copy(
+                update={
+                    "extraction": ExtractionState.FAILED,
+                    "parser_version": PARSER_VERSION,
+                    "confidence_reasons": (*observation.confidence_reasons, "page_time_date_only"),
+                }
+            )
+        # The page's zone token (e.g. "EST") is ignored: "L" means the terminal's local clock,
+        # read in its IANA zone, so DST is honoured even when the template says EST.
         return observation.model_copy(
             update={
                 "provenance": observation.provenance.model_copy(
@@ -207,7 +215,7 @@ class FirecrawlSourceProvider:
                 ),
                 "extraction": ExtractionState.EXACT,
                 "parser_version": PARSER_VERSION,
-                "confidence_reasons": (*reasons, *detail),
+                "confidence_reasons": (*reasons, "page_time_parsed", "page_time_local_clock"),
             }
         )
 

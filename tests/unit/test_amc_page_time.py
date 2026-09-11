@@ -24,5 +24,14 @@ def test_a_bare_date_is_flagged_and_nothing_else_is_a_stamp() -> None:
     assert parse_page_time("<p>No stamp here. Departures at 0600.</p>") is None
     assert parse_page_time("Current as of 31 FEB 2026 at 0100") is None  # impossible date
     assert parse_page_time("Current as of 11 Foo 2026") is None
-    # A stamp inside script/markup noise still parses; a schedule row never does.
+    assert parse_page_time("Current as of 3 Junk 2026") is None  # a prefix is not a month
+    assert parse_page_time("Current as of 11 SEP 3000 at 0000") is None  # implausible year
+    # The first stamp decides: a mangled header never falls through to an older notice.
+    assert parse_page_time("Current as of 11 SEP 2026 at 2430 ... Current as of 1 JAN 2020") is None
+    # A trailing count is not a clock; "Sept." with a comma still reads.
+    counted = parse_page_time("Current as of 11 SEP 2026 2100 pax")
+    assert counted and not counted.has_time
+    sept = parse_page_time("Current as of 11 Sept. 2026, at 0350")
+    assert sept and sept.local == datetime(2026, 9, 11, 3, 50) and sept.has_time
+    # A schedule row never matches.
     assert parse_page_time("<td>0600</td><td>RAMSTEIN</td>") is None

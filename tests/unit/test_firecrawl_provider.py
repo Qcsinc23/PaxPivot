@@ -364,6 +364,39 @@ def test_parse_approved_terminal_page_reads_its_stamp_into_source_time() -> None
     assert "page_time_parsed" in obs.confidence_reasons
     assert "metadata_only" not in obs.confidence_reasons
     assert obs.content_hash is not None  # the hash path is unchanged
+    # A date-only stamp is not an instant: no source_time, and the pipeline still accepts it.
+    dated = FirecrawlSourceProvider(
+        "k",
+        {src.identity.source_id: src},
+        transport=transport(body="<p>Current as of 3 Oct 2026</p>"),
+        terminal_timezones={src.terminal_id: "America/New_York"},  # type: ignore[dict-item]
+    )
+    obs = asyncio.run(dated.observe(src.identity)).value  # type: ignore[union-attr]
+    assert obs.extraction == ExtractionState.FAILED and obs.provenance.source_time is None
+    assert "page_time_date_only" in obs.confidence_reasons
+    # An engaged parse switch stops the stamp read without losing the retrieval.
+    from paxpivot.domain.source import KillSwitch, KillSwitchScope
+
+    switch = KillSwitch(
+        switch_id=uuid4(),
+        scope=KillSwitchScope.MODE,
+        key="parse",
+        reason="synthetic_incident",
+        engaged_at=NOW,
+        released_at=None,
+    )
+    fc = source("stamped-fc", terminal="a", adapter="firecrawl")
+    switched = FirecrawlSourceProvider(
+        "k",
+        {fc.identity.source_id: fc},
+        transport=transport(body=STAMPED),
+        switches=[switch],
+        terminal_timezones={fc.terminal_id: "America/New_York"},  # type: ignore[dict-item]
+    )
+    obs = asyncio.run(switched.observe(fc.identity)).value  # type: ignore[union-attr]
+    assert obs.extraction == ExtractionState.NOT_ATTEMPTED and obs.provenance.source_time is None
+    recorded = asyncio.run(record_observation(fc, switched, FakeObservations([]), [switch]))
+    assert recorded.ok and recorded.value.state == SourceState.FRESH
 
 
 def test_missing_stamp_or_zone_is_a_failed_extraction_never_a_guess() -> None:
