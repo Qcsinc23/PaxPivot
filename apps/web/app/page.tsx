@@ -1,14 +1,10 @@
-import { AppHeader } from "@/components/ui/AppHeader";
-import { EmptyState } from "@/components/ui/States";
+import { PlanScreen } from "@/components/screens/plan/PlanScreen";
+import { emptyPlan } from "@/lib/presentation/screens/plan";
 
+/**
+ * Live Plan route. No trip-request API contract exists yet, so this renders the honest empty
+ * model: no synthetic trips, terminals or source states are presented as if they were real.
+ */
 export default function PlanPage() {
-  return (
-    <>
-      <AppHeader title="Plan" />
-      <EmptyState
-        title="Where to?"
-        body="Journey planning is not available yet. Trip requests arrive with the Plan task."
-      />
-    </>
-  );
+  return <PlanScreen model={emptyPlan} />;
 }
