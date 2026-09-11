@@ -2,10 +2,19 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import RouteError from "@/app/error";
 import NotFound from "@/app/not-found";
+import * as advancedRoute from "@/app/advanced/page";
+import * as detailRoute from "@/app/terminals/[terminalId]/page";
+import * as terminalsRoute from "@/app/terminals/page";
 import config, { SECURITY_HEADERS } from "@/next.config";
 import { expectNoAxeViolations } from "./a11y";
 
 describe("edge states", () => {
+  test("live routes are never prerendered at build time", () => {
+    for (const route of [terminalsRoute, detailRoute, advancedRoute]) {
+      expect(route.dynamic).toBe("force-dynamic");
+    }
+  });
+
   test("the error boundary is a failure on our side and hides the error text", async () => {
     const reset = vi.fn();
     const { container } = render(

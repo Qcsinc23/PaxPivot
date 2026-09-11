@@ -355,12 +355,13 @@ def database_ready(engine: Engine) -> bool:
     from alembic.runtime.migration import MigrationContext
 
     try:
+        head = migration_head()
         with read_snapshot(engine) as connection:
             connection.execute(text("SELECT 1"))
             current = set(MigrationContext.configure(connection).get_current_heads())
     except Exception:  # noqa: BLE001 — any failure is "unavailable"; details never leave here.
         return False
-    return current == migration_head()
+    return current == head
 
 
 @cache

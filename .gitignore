@@ -71,6 +71,3 @@ private-fixtures/
 
 *.tsbuildinfo
 .lavish/
-
-# Deployment secrets
-.env.production

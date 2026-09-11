@@ -38,9 +38,10 @@ migrate-test: services
 	$(PY) python -m paxpivot.tooling migrate-test
 seed: migrate
 	$(PY) python -m paxpivot.tooling seed
+PAXPIVOT_TAG ?= local
 build-images:
-	docker build -f apps/api/Dockerfile -t paxpivot-api:local .
-	docker build -f apps/web/Dockerfile -t paxpivot-web:local .
+	docker build -f apps/api/Dockerfile -t paxpivot-api:$(PAXPIVOT_TAG) .
+	docker build -f apps/web/Dockerfile -t paxpivot-web:$(PAXPIVOT_TAG) .
 # Destroys this checkout's local database volume; proves first-boot readiness (TASK-028).
 CYCLES ?= 20
 cold-start-check:

@@ -14,7 +14,8 @@ No worker/scheduler runs: nothing is scheduled until a source is approved (TASK-
 
 | Key | Rule |
 |---|---|
-| `PAXPIVOT_DOMAIN` | public hostname; DNS A/AAAA must point at the host before first start |
+| `PAXPIVOT_DOMAIN` | public hostname; DNS A/AAAA must point at the host before first start. Use a dedicated subdomain: the web tier sends HSTS with `includeSubDomains` for one year |
+| `PAXPIVOT_TAG` | image tag to run (default `local`); build with `make build-images PAXPIVOT_TAG=<git sha>` so a previous tag exists for rollback |
 | `POSTGRES_PASSWORD` | random, ≥ 32 chars |
 | `PAXPIVOT_API_TOKEN` | random, ≥ 32 chars; shared by `web` and `api` only |
 | `PAXPIVOT_SESSION_SECRET` | random, ≥ 32 chars |
@@ -26,7 +27,9 @@ Generate with `openssl rand -hex 32`. Rotating `PAXPIVOT_SESSION_SECRET` signs e
 
 1. `make check` and `make migrate-test` green on the commit being deployed.
 2. `make build-images` succeeds, and each image is smoke-tested: web `/login` → 200 with headers,
-   anonymous `/terminals` → 307; api `/health` → ok, `/ready` → 200 against a migrated database.
+   anonymous `/terminals` → 307, and a **signed-in** `/terminals` must not contain
+   "configuration problem" (live routes are `force-dynamic`, never prerendered); api `/health` → ok,
+   `/ready` → 200 against a migrated database.
 3. `docker compose --env-file .env.production -f compose.prod.yml config --quiet` is valid.
 4. Host: Docker Engine + Compose v2, ports 80/443 free, disk for the Postgres volume.
 5. A restore test of the previous backup has been performed on this host (see below).
@@ -34,7 +37,7 @@ Generate with `openssl rand -hex 32`. Rotating `PAXPIVOT_SESSION_SECRET` signs e
 ## First start / upgrade
 
 ```bash
-docker compose --env-file .env.production -f compose.prod.yml build
+make build-images PAXPIVOT_TAG=$(git rev-parse --short HEAD)   # then set PAXPIVOT_TAG in .env.production
 docker compose --env-file .env.production -f compose.prod.yml up -d --wait
 docker compose --env-file .env.production -f compose.prod.yml exec api python -m paxpivot.tooling seed
 curl -fsS https://$PAXPIVOT_DOMAIN/login >/dev/null   # 200: proxy + web + TLS up
@@ -60,8 +63,9 @@ Observations and terminal facts are append-only; a lost volume is lost history.
 
 ## Rollback
 
-`docker compose … up -d --wait` with the previous image tag. Migrations are forward-only in
-production; do not `alembic downgrade` on a database with observations (it drops tables).
+`PAXPIVOT_TAG=<previous sha> docker compose --env-file .env.production -f compose.prod.yml up -d --wait`
+(images are tagged per commit by `make build-images PAXPIVOT_TAG=<sha>`). Migrations are forward-only
+in production; do not `alembic downgrade` on a database with observations (it drops tables).
 
 ## Logs
 

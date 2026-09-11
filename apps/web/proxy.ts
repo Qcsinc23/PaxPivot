@@ -19,8 +19,8 @@ export async function proxy(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   }
-  // Next requires an absolute Location from the proxy; `request.url` carries the host the
-  // reverse proxy forwarded, so no host is guessed. Route handlers may answer relatively.
+  // Next requires an absolute Location from the proxy and relativises it when the host matches
+  // the request's own, so no external host is ever guessed. Route handlers answer relatively.
   const next = decision.next + request.nextUrl.search;
   const login = new URL(`/login?next=${encodeURIComponent(next)}`, request.url);
   return NextResponse.redirect(login, 307);

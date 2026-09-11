@@ -18,6 +18,9 @@ import type { TerminalNetworkScreenModel } from "@/lib/presentation/screens/term
  *   never as an empty registry;
  * * `unauthorized` / `unavailable` — a failure on our side.
  */
+// Live data is read per request; never prerendered at build time (where no API is configured).
+export const dynamic = "force-dynamic";
+
 export default async function TerminalsPage() {
   const result = await readApi<TerminalNetworkRead>("/api/v1/terminals");
   if (!result.ok) {

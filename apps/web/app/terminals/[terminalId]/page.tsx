@@ -19,6 +19,9 @@ type Props = { params: Promise<{ terminalId: string }> };
  * ("a failure on our side"); `not_configured` is a configuration error, never an empty
  * registry. No outcome renders fixture data.
  */
+// Live data is read per request; never prerendered at build time (where no API is configured).
+export const dynamic = "force-dynamic";
+
 export default async function TerminalDetailPage({ params }: Props) {
   const { terminalId } = await params;
   const result = await readApi<TerminalDetailRead>(

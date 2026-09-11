@@ -16,5 +16,5 @@ COPY deploy/api-entrypoint.sh /usr/local/bin/api-entrypoint
 ENV PATH="/srv/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PAXPIVOT_ALEMBIC_INI=/srv/apps/api/alembic.ini
 USER paxpivot
 EXPOSE 8000
-HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD python -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/ready',timeout=2).status==200 else 1)"
+HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=5 CMD python -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/ready',timeout=2).status==200 else 1)"
 ENTRYPOINT ["api-entrypoint"]

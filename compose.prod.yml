@@ -17,6 +17,7 @@ services:
       web:
         condition: service_started
   web:
+    image: paxpivot-web:${PAXPIVOT_TAG:-local}
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -30,6 +31,7 @@ services:
       api:
         condition: service_healthy
   api:
+    image: paxpivot-api:${PAXPIVOT_TAG:-local}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -38,7 +40,6 @@ services:
       DATABASE_URL: postgresql+psycopg://paxpivot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/paxpivot
       REDIS_URL: redis://redis:6379/0
       PAXPIVOT_API_TOKEN: ${PAXPIVOT_API_TOKEN:?set PAXPIVOT_API_TOKEN}
-      FORWARDED_ALLOW_IPS: "*"
     depends_on:
       postgres:
         condition: service_healthy

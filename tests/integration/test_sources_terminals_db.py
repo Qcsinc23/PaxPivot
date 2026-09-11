@@ -30,6 +30,7 @@ from paxpivot.infrastructure.bootstrap import (
     REFERENCE_TERMINALS,
     seed_reference_data,
 )
+from paxpivot.infrastructure.database import migration_head
 from paxpivot.infrastructure.repositories import (
     SqlKillSwitchRepository,
     SqlSourceObservationRepository,
@@ -418,7 +419,8 @@ def test_ready_reports_the_migrated_database(engine: Engine) -> None:
         finally:
             with engine.begin() as connection:
                 connection.execute(
-                    text("UPDATE alembic_version SET version_num = '0003_supersession_integrity'")
+                    text("UPDATE alembic_version SET version_num = :head"),
+                    {"head": next(iter(migration_head()))},
                 )
         assert client.get("/ready").json() == {"status": "ready"}
     finally:
