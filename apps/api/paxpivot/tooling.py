@@ -233,7 +233,9 @@ def check_sources() -> int:
     with db.transaction(engine) as connection:
         sources = SqlSourceRepository(connection)
         registry = {s.identity.source_id: s for s in sources.list_sources()}
-        provider = FirecrawlSourceProvider.from_env(registry)
+        provider = FirecrawlSourceProvider.from_env(
+            registry, switches=SqlKillSwitchRepository(connection).list_engaged()
+        )
         if provider is None:
             print("FIRECRAWL_API_KEY is not set; no source was retrieved.")
             return exit_code(None)
@@ -282,7 +284,7 @@ def capture_corpus_command(source_id: str) -> int:
     if source is None:
         print("Unknown source id.")
         return 2
-    provider = FirecrawlSourceProvider.from_env(registry)
+    provider = FirecrawlSourceProvider.from_env(registry, switches=switches)
     if provider is None:
         print("FIRECRAWL_API_KEY is not set; nothing captured.")
         return 2

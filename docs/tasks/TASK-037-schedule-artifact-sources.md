@@ -57,3 +57,14 @@ No parsing (TASK-032), no display of schedule content, no history.
 ## Handoff
 
 (fill in after merge)
+
+## Review decisions (2026-09-11)
+
+- An artifact's parent page is fetched only under the page's own authorization (review state
+  and engaged kill switches are passed into the provider); a paused or switched page is never
+  fetched on the artifact's behalf.
+- Discovery requires a `72 hour`/`72HR` filename, refuses path separators (encoded or not),
+  resolves relative links against the page, and matches the folder case-insensitively.
+- One provider instance caches each terminal page per run, so a run costs 4 page fetches + 4
+  PDF renders (Firecrawl bills PDFs per page); an empty or unrenderable PDF is recorded as
+  `fresh` with `content_hash_unavailable`, never as a hash of nothing.

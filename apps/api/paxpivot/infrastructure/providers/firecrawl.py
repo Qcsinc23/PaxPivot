@@ -23,16 +23,20 @@ import hashlib
 import html as html_module
 import os
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal
+from urllib.parse import unquote, urljoin
 from uuid import UUID, uuid4
 
 import httpx
 
 from paxpivot.application.result import ApplicationError, Failure, Result, Success
+from paxpivot.application.source_gate import authorize_processing
 from paxpivot.domain.source import (
     ExtractionState,
+    KillSwitch,
+    ProcessingMode,
     Provenance,
     RawPayloadPolicy,
     RetrievalState,
@@ -48,18 +52,25 @@ API_URL = "https://api.firecrawl.dev/v1/scrape"
 REQUEST_TIMEOUT_SECONDS = 60.0
 # TASK-037: the current 72-hour artifact is a dated file under the terminal's document folder,
 # linked from the terminal page. Discovery is a prefix match plus this filename pattern.
-ARTIFACT_FILENAME = re.compile(r"72", re.IGNORECASE)
-HREF = re.compile(r'href="([^"]+)"', re.IGNORECASE)
+ARTIFACT_FILENAME = re.compile(r"72\s*-?\s*(hr|hour)", re.IGNORECASE)
+HREF = re.compile(r"""href=["']([^"']+)["']""", re.IGNORECASE)
 
 
-def discover_artifact(page_html: str, folder: str) -> str | None:
-    """First link on the page under `folder` whose filename names the 72-hour schedule."""
+def discover_artifact(page_html: str, folder: str, *, page_url: str = "") -> str | None:
+    """First link on the page under `folder` whose filename names the 72-hour schedule.
+
+    Relative links resolve against the page; the folder match is on the resolved URL, so no
+    other host or folder can be chosen. A filename with a path separator (encoded or not) is
+    refused rather than resolved.
+    """
     for raw in HREF.findall(page_html):
-        href: str = html_module.unescape(raw)
-        if not href.startswith(folder):
+        href: str = urljoin(page_url, html_module.unescape(raw))
+        if not href.lower().startswith(folder.lower()):
             continue
-        filename = href[len(folder) :].split("?", 1)[0]
-        if "/" not in filename and ARTIFACT_FILENAME.search(filename):
+        filename = unquote(href[len(folder) :].split("?", 1)[0])
+        if "/" in filename or ".." in filename or "\\" in filename:
+            continue
+        if ARTIFACT_FILENAME.search(filename):
             return href
     return None
 
@@ -82,6 +93,7 @@ class FirecrawlSourceProvider:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        switches: Sequence[KillSwitch] = (),
     ) -> None:
         if not api_key:
             raise ValueError("Firecrawl API key must not be empty")
@@ -89,13 +101,22 @@ class FirecrawlSourceProvider:
         self._sources = sources
         self._transport = transport
         self._clock = clock
+        # Engaged kill switches: an artifact's parent page is fetched only under the same
+        # authorization the page itself would need (review state and switches).
+        self._switches = tuple(switches)
+        # One provider instance per run: a terminal page discovered from is fetched once.
+        self._page_cache: dict[str, Result[tuple[int, Any]]] = {}
 
     @classmethod
     def from_env(
-        cls, sources: Mapping[UUID, Source], env: Mapping[str, str] = os.environ
+        cls,
+        sources: Mapping[UUID, Source],
+        env: Mapping[str, str] = os.environ,
+        *,
+        switches: Sequence[KillSwitch] = (),
     ) -> "FirecrawlSourceProvider | None":
         key = env.get("FIRECRAWL_API_KEY")
-        return cls(key, sources) if key else None
+        return cls(key, sources, switches=switches) if key else None
 
     async def fetch_document(self, source: SourceIdentity) -> Result[tuple[int, str | None]]:
         """Page status and raw document for the labeled-corpus capture (TASK-031) only.
@@ -141,21 +162,23 @@ class FirecrawlSourceProvider:
                 for s in self._sources.values()
                 if s.kind == SourceKind.TERMINAL_PAGE
                 and s.terminal_id == source.terminal_id
-                and s.enabled
-                and s.policy.may_retrieve
+                and authorize_processing(s, ProcessingMode.RETRIEVE, self._switches).ok
             ),
             None,
         )
         if parent is None:
             return _failure("invalid_input", "source_provider.artifact_parent_missing", False)
-        page = await self._fetch(str(parent.identity.url), "rawHtml")
+        page_url = str(parent.identity.url)
+        if page_url not in self._page_cache:
+            self._page_cache[page_url] = await self._fetch(page_url, "rawHtml")
+        page = self._page_cache[page_url]
         if not page.ok:
             return page
         page_status, page_html = page.value
         if not (200 <= page_status < 300 and isinstance(page_html, str)):
             # The terminal page itself did not answer; that is its observation, not this one's.
             return _failure("unavailable", "source_provider.artifact_parent_unreachable", True)
-        href = discover_artifact(page_html, str(source.identity.url))
+        href = discover_artifact(page_html, str(source.identity.url), page_url=page_url)
         if href is None:
             return _failure("unavailable", "source_provider.artifact_not_linked", True)
         return await self._fetch(href, "markdown")
@@ -191,6 +214,8 @@ class FirecrawlSourceProvider:
             data = payload["data"]
             page_status = int(data["metadata"]["statusCode"])
             document = data.get(fmt)
+            if isinstance(document, str) and not document.strip():
+                document = None  # An unrenderable PDF or empty page has no content to hash.
         except (ValueError, KeyError, TypeError):
             return _failure("unavailable", "source_provider.firecrawl_malformed", True)
         return Success(value=(page_status, document))

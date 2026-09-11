@@ -713,6 +713,8 @@ def test_firecrawl_provider_records_fresh_metadata_through_the_runner(engine: En
         assert latest is not None and latest.state == SourceState.FRESH
         assert latest.source_time is None and latest.parser_version is None
     assert "BODY-MARKER-9f3a" not in health.model_dump_json()
+    assert "12 SEP" not in health.model_dump_json()  # the artifact text is hashed, never kept
     with engine.connect() as connection:
         stored = connection.execute(text("SELECT * FROM source_observations")).mappings().all()
     assert "BODY-MARKER-9f3a" not in repr([dict(r) for r in stored])
+    assert "12 SEP" not in repr([dict(r) for r in stored])

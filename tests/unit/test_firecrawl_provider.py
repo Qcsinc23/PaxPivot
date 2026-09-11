@@ -244,6 +244,16 @@ def test_discover_artifact_picks_the_first_72_hour_link_under_the_folder() -> No
     assert discover_artifact(PAGE, FOLDER) == FOLDER + "72HR%20SEP11.pdf?ver=x"
     assert discover_artifact('<a href="https://other.invalid/72HR.pdf">', FOLDER) is None
     assert discover_artifact(PAGE.replace("72HR", "30DAY"), FOLDER) is None
+    # Decoys: a Gram "72nd edition", an encoded traversal, a dot-dot; relative links resolve.
+    decoy = f'<a href="{FOLDER}AMC%20Gram%2072nd%20Edition.pdf">g</a>'
+    assert discover_artifact(decoy + PAGE, FOLDER) == FOLDER + "72HR%20SEP11.pdf?ver=x"
+    assert discover_artifact(f'<a href="{FOLDER}..%2FB%2F72HR.pdf">', FOLDER) is None
+    assert discover_artifact(f'<a href="{FOLDER}../B/72HR.pdf">', FOLDER) is None
+    relative = "<a href='/Portals/12/Terminal%20A/72%20Hour%20Schedule.pdf'>r</a>"
+    assert (
+        discover_artifact(relative, FOLDER, page_url="https://example.invalid/page/")
+        == FOLDER + "72%20Hour%20Schedule.pdf"
+    )
 
 
 def test_artifact_observation_fetches_the_page_then_the_discovered_pdf_as_markdown() -> None:
@@ -275,3 +285,54 @@ def test_artifact_without_a_link_or_parent_is_a_failure_not_an_observation() -> 
         )
     )
     assert not orphan.ok and orphan.error.message_key == "source_provider.artifact_parent_missing"
+
+
+def test_a_paused_or_switched_parent_page_is_never_fetched_for_its_artifact() -> None:
+    """Review: the artifact path must honour the page's own review state and switches."""
+    from paxpivot.domain.source import KillSwitch, KillSwitchScope, PolicyReviewState
+
+    page, artifact, t = artifact_pair()
+    paused = page.model_copy(
+        update={"policy": page.policy.model_copy(update={"review_state": PolicyReviewState.PAUSED})}
+    )
+    both = {paused.identity.source_id: paused, artifact.identity.source_id: artifact}
+    result = asyncio.run(FirecrawlSourceProvider("k", both, transport=t).observe(artifact.identity))
+    assert not result.ok and result.error.message_key == "source_provider.artifact_parent_missing"
+    switch = KillSwitch(
+        switch_id=uuid4(),
+        scope=KillSwitchScope.SOURCE,
+        key=str(page.identity.source_id),
+        reason="synthetic_incident",
+        engaged_at=NOW,
+        released_at=None,
+    )
+    both = {page.identity.source_id: page, artifact.identity.source_id: artifact}
+    p = FirecrawlSourceProvider("k", both, transport=t, switches=[switch])
+    result = asyncio.run(p.observe(artifact.identity))
+    assert not result.ok and result.error.message_key == "source_provider.artifact_parent_missing"
+    assert t.seen == []  # type: ignore[attr-defined]
+
+
+def test_an_unrenderable_pdf_is_fresh_without_a_hash_and_the_page_is_fetched_once() -> None:
+    page, artifact, t = artifact_pair()
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body["url"])
+        data: dict[str, object] = {"metadata": {"statusCode": 200}}
+        if body["formats"] == ["rawHtml"]:
+            data["rawHtml"] = PAGE
+        else:
+            data["markdown"] = "   "
+        return httpx.Response(200, json={"success": True, "data": data})
+
+    both = {page.identity.source_id: page, artifact.identity.source_id: artifact}
+    p = FirecrawlSourceProvider(
+        "k", both, transport=httpx.MockTransport(handler), clock=lambda: NOW
+    )
+    first = asyncio.run(p.observe(artifact.identity))
+    second = asyncio.run(p.observe(artifact.identity))
+    assert first.ok and first.value.content_hash is None
+    assert "content_hash_unavailable" in first.value.confidence_reasons
+    assert second.ok and calls.count(str(page.identity.url)) == 1
