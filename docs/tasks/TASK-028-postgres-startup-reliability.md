@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR; becomes `done` once merged (see Handoff).
+`done` — merged to `main` in 4774a20 (PR #30); post-merge Quality green; Handoff recorded below.
 
 ## Assigned role
 
@@ -106,7 +106,7 @@ make cold-start-check        # local only; destroys and recreates this checkout'
 
 **Branch:** `foundation/TASK-028-postgres-startup` from `main` @ `467cc61`.
 
-**Commit:** reported in the PR.
+**Commit:** 6b15018 (PR #30, merged as 4774a20).
 
 **Files changed:** the owned paths above.
 
@@ -115,7 +115,7 @@ make cold-start-check        # local only; destroys and recreates this checkout'
 
 **Migrations:** none.
 
-**Verification run:** recorded in the PR after the final change.
+**Verification run:** on 6b15018 after the final edit — format-check/lint/typecheck/test-unit (213; Vitest 325)/test-integration (34)/test/build/migrate/migrate-check/compose-check PASS; migrate-test PASS (19 CHECK rules); cold-start-check 20/20 (compose.yml as merged) and 3/3 re-run on the final head. Independent review: 0 Critical / 0 Important. CI Quality green on the head and the merge commit.
 
 **Known limitations / risks:** the probe is Linux/amd64-emulated PostGIS as in ADR-001; a
 future image change should re-run `make cold-start-check`. `cold-start-check` is not part of
