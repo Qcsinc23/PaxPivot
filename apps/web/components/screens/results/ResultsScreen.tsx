@@ -1,7 +1,7 @@
 "use client";
 
 import { SlidersHorizontal } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { CommercialBaselineCard } from "@/components/paxpivot/CommercialBaselineCard";
 import { MapSurface } from "@/components/paxpivot/MapSurface";
 import { ConflictNotice } from "@/components/paxpivot/notices/ConflictNotice";
@@ -11,49 +11,18 @@ import { LateCheckNotice } from "@/components/paxpivot/notices/LateCheckNotice";
 import { NotRankedNotice } from "@/components/paxpivot/notices/NotRankedNotice";
 import { RefreshNotice } from "@/components/paxpivot/notices/RefreshNotice";
 import { RouteCard } from "@/components/paxpivot/RouteCard";
+import { SplitLayout } from "@/components/screens/desktop/SplitLayout";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Card, CardEnd } from "@/components/ui/Card";
-import {
-  SegmentedControl,
-  type SegmentOption,
-} from "@/components/ui/SegmentedControl";
+import { ScreenSection } from "@/components/ui/ScreenSection";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
 import type { ResultsScreenModel } from "@/lib/presentation/screens/results";
-import {
-  SORT_MODE_LABELS,
-  type RankingSortMode,
-} from "@/lib/presentation/types";
+import { SORT_OPTIONS, type RankingSortMode } from "@/lib/presentation/types";
 import { WhyOrderSheet } from "./WhyOrderSheet";
 
-/** Sort options come from the foundation's labels; the screen never invents its own wording. */
-const SORT_OPTIONS: readonly SegmentOption<RankingSortMode>[] = (
-  Object.keys(SORT_MODE_LABELS) as RankingSortMode[]
-).map((value) => ({ value, label: SORT_MODE_LABELS[value] }));
-
 type Props = { model: ResultsScreenModel };
-
-/** Vertical rhythm between a section heading and its list, using foundation tokens only. */
-function ScreenSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  const id = useId();
-  return (
-    <section
-      aria-labelledby={id}
-      style={{ display: "grid", gap: "var(--space-3)" }}
-    >
-      <h2 id={id} className="pp-title">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 /**
  * Ranked results for one trip. Pure composition: the route list, the commercial baseline and
@@ -142,12 +111,12 @@ export function ResultsScreen({ model }: Props) {
     );
   }
 
-  return (
+  /*
+   * One tree for both compositions: the map is first in the document, so a phone reads
+   * map → notices → sort → cards; from 60rem up `SplitLayout` moves the map beside the list.
+   */
+  const list = (
     <>
-      {header}
-
-      <MapSurface map={model.map} />
-
       {notices}
 
       <Card as="div">
@@ -173,7 +142,7 @@ export function ResultsScreen({ model }: Props) {
 
       {model.routes.length > 0 ? (
         <ScreenSection title="Space-A routes">
-          <ul style={{ display: "grid", gap: "var(--space-3)" }}>
+          <ul aria-label="Space-A routes" className="pp-stack">
             {model.routes.map((route) => (
               <li key={route.id}>
                 <RouteCard route={route} headingLevel={3} />
@@ -190,6 +159,18 @@ export function ResultsScreen({ model }: Props) {
           Compare all
         </Button>
       </div>
+    </>
+  );
+
+  return (
+    <>
+      {header}
+
+      <SplitLayout
+        asideFirst
+        aside={<MapSurface map={model.map} />}
+        list={list}
+      />
 
       {whySheet}
     </>

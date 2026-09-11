@@ -1,4 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import RouteDetailPage from "@/app/trips/[tripId]/routes/[routeId]/page";
 import { RouteDetailScreen } from "@/components/screens/route-detail/RouteDetailScreen";
@@ -411,5 +414,52 @@ describe("accessibility", () => {
       await expectNoAxeViolations(container, ["region"]);
       unmount();
     }
+  });
+});
+
+describe("route sticky action lifecycle", () => {
+  test("marks the body only while Overview is the visible tab, and cleans up on unmount", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <RouteDetailScreen model={fixtureRouteDetail} />,
+    );
+
+    // Overview active: the route action is present and the Ask action is suppressed.
+    expect(
+      within(panel()).getByRole("group", { name: "Route actions" }),
+    ).toBeTruthy();
+    expect(document.body.dataset.stickyBar).toBe("true");
+
+    for (const name of ["Evidence", "Fallback", "History"]) {
+      await user.click(screen.getByRole("tab", { name }));
+      expect(screen.queryByRole("group", { name: "Route actions" })).toBeNull();
+      expect(document.body.dataset.stickyBar, name).toBeUndefined();
+    }
+
+    // Switching back restores the action and the suppression.
+    await user.click(screen.getByRole("tab", { name: "Overview" }));
+    expect(
+      within(panel()).getByRole("group", { name: "Route actions" }),
+    ).toBeTruthy();
+    expect(document.body.dataset.stickyBar).toBe("true");
+
+    unmount();
+    expect(document.body.dataset.stickyBar).toBeUndefined();
+  });
+
+  test("opening on another tab never marks the body", () => {
+    render(
+      <RouteDetailScreen model={fixtureRouteDetail} initialTab="history" />,
+    );
+    expect(document.body.dataset.stickyBar).toBeUndefined();
+    expect(screen.queryByRole("group", { name: "Route actions" })).toBeNull();
+  });
+
+  test("the body mark is what hides the floating Ask action", () => {
+    const css = readFileSync(
+      join(process.cwd(), "styles", "components.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/body\[data-sticky-bar\] \.pp-fab \{\s*display: none;/);
   });
 });

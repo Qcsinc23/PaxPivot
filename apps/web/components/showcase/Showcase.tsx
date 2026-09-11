@@ -50,10 +50,7 @@ import {
   fixtureTrip,
 } from "@/lib/presentation/fixtures";
 import { SOURCE_STATE_CODES } from "@/lib/presentation/source-state";
-import {
-  SORT_MODE_LABELS,
-  type RankingSortMode,
-} from "@/lib/presentation/types";
+import { SORT_OPTIONS, type RankingSortMode } from "@/lib/presentation/types";
 
 function Section({
   id,
@@ -77,13 +74,6 @@ function Section({
     </section>
   );
 }
-
-const SORT_OPTIONS = (Object.keys(SORT_MODE_LABELS) as RankingSortMode[]).map(
-  (value) => ({
-    value,
-    label: SORT_MODE_LABELS[value],
-  }),
-);
 
 /** Every foundation component driven by synthetic fixtures. Development only. */
 export function Showcase() {

@@ -20,6 +20,7 @@ import type {
   EvidenceRowView,
   Fact,
   FactView,
+  HandoffUnknownKind,
   HistoricalSummaryView,
   MapView,
   SourceEvidenceView,
@@ -77,6 +78,8 @@ export type TerminalDetailScreenModel = {
       title: string;
       detail: string;
       href: string;
+      /** What this provider leaves unconfirmed; omitted means availability and fare. */
+      unknown?: HandoffUnknownKind;
     }[];
   };
   evidence: {
@@ -199,14 +202,16 @@ export const fixtureTerminalDetail: TerminalDetailScreenModel = {
       {
         id: "handoff-1",
         title: "Rideshare to the gate",
-        detail: "Provider handoff, availability unknown",
+        detail: "Provider handoff",
         href: "https://example.invalid/ride",
+        unknown: "availability",
       },
       {
         id: "handoff-2",
         title: "Public transit",
         detail: "Timetable only",
         href: "https://example.invalid/transit",
+        unknown: "schedule",
       },
     ],
   },

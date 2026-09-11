@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR; becomes `done` once merged (see Handoff).
+`done` — merged to `main` in 3fda6c0; post-merge Quality green; Handoff recorded below.
 
 ## Assigned role
 
@@ -95,7 +95,7 @@ make compose-check
 
 **Branch:** `foundation/TASK-017-task-lifecycle` from `main` @ `49e4505`.
 
-**Commit:** reported in the PR.
+**Commit:** 69dcd44 (PR #18, merged as 3fda6c0).
 
 **Files changed:** the owned paths above.
 
@@ -103,7 +103,7 @@ make compose-check
 
 **Migrations:** none.
 
-**Verification run:** recorded in the PR after the final change.
+**Verification run:** `make format-check` PASS locally; CI `Quality` (make check + make migrate-test) PASS on 69dcd44 and on the merge commit.
 
 **Known limitations / risks:** status is a coordination signal, not proof; Git history wins.
 

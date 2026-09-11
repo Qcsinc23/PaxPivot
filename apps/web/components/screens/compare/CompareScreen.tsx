@@ -1,5 +1,4 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 import { RouteHeadlinePill } from "@/components/paxpivot/RouteCard";
 import { SourceStateBadge } from "@/components/paxpivot/SourceStateBadge";
 import { AppHeader } from "@/components/ui/AppHeader";
@@ -9,54 +8,7 @@ import { FactValue } from "@/components/ui/Facts";
 import { StatusPill } from "@/components/ui/Pill";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
 import { StickyActionBar } from "@/components/ui/StickyActionBar";
-import type {
-  CompareEmphasis,
-  CompareScreenModel,
-} from "@/lib/presentation/screens/compare";
-
-/*
- * Table styling lives here as token-valued inline styles: this task owns no stylesheet, and
- * adding a class to the foundation's components.css would be a shared-contract change. The
- * rem-based minimum keeps the columns readable and lets the wrapper scroll on narrow screens
- * rather than squeezing the fields into unreadable columns.
- */
-const TABLE: CSSProperties = {
-  width: "100%",
-  minWidth: "32rem",
-  borderCollapse: "collapse",
-  fontSize: "0.8125rem",
-};
-
-const CELL: CSSProperties = {
-  padding: "var(--space-2)",
-  borderBottom: "1px solid var(--color-divider)",
-  textAlign: "left",
-  verticalAlign: "top",
-};
-
-const CAPTION: CSSProperties = {
-  textAlign: "left",
-  paddingBottom: "var(--space-2)",
-  fontSize: "0.75rem",
-  color: "var(--color-neutral-700)",
-};
-
-const OPTION_TITLE: CSSProperties = {
-  display: "block",
-  marginTop: "var(--space-1)",
-  fontWeight: 600,
-};
-
-/**
- * Only the application's `emphasis` is expressed. "better" is bold, "tie" is muted but stays at
- * full opacity and above 4.5:1; the cell text always carries the value on its own. The screen
- * never promotes or demotes a cell — least of all one whose value is unknown.
- */
-function emphasisStyle(emphasis: CompareEmphasis): CSSProperties {
-  if (emphasis === "better") return { fontWeight: 700 };
-  if (emphasis === "tie") return { color: "var(--color-neutral-700)" };
-  return {};
-}
+import type { CompareScreenModel } from "@/lib/presentation/screens/compare";
 
 type Props = { model: CompareScreenModel };
 
@@ -107,27 +59,22 @@ export function CompareScreen({ model }: Props) {
       <AppHeader title="Compare routes" back={{ href: "/trips" }} />
 
       <Card as="div">
-        {/*
-          `contain: paint` keeps the table's scrollable overflow inside this box. Without it the
-          engine still folds part of the overflowing table into the document's scroll width, so
-          the page itself slides sideways on a narrow screen.
-        */}
-        <div style={{ overflowX: "auto", contain: "paint" }}>
-          <table style={TABLE}>
-            <caption style={CAPTION}>{model.title}</caption>
+        <div className="pp-table-wrap">
+          <table className="pp-table">
+            <caption>{model.title}</caption>
             <thead>
               <tr>
-                <th scope="col" style={CELL}>
+                <th scope="col">
                   <span className="sr-only">Field</span>
                 </th>
                 {model.options.map((option) => (
-                  <th key={option.id} scope="col" style={CELL}>
+                  <th key={option.id} scope="col">
                     {option.headline === "safest_overall" ? (
                       <StatusPill tone="best">Safest overall</StatusPill>
                     ) : (
                       <RouteHeadlinePill headline={option.headline} />
                     )}
-                    <Link href={option.href} style={OPTION_TITLE}>
+                    <Link href={option.href} className="pp-table__title">
                       {option.title}
                     </Link>
                   </th>
@@ -137,13 +84,13 @@ export function CompareScreen({ model }: Props) {
             <tbody>
               {model.rows.map((row) => (
                 <tr key={row.id}>
-                  <th scope="row" style={{ ...CELL, fontWeight: 600 }}>
-                    {row.label}
-                  </th>
+                  <th scope="row">{row.label}</th>
                   {row.cells.map((cell, index) => (
                     <td
                       key={`${row.id}-${index}`}
-                      style={{ ...CELL, ...emphasisStyle(cell.emphasis) }}
+                      data-emphasis={
+                        cell.emphasis === "none" ? undefined : cell.emphasis
+                      }
                     >
                       <FactValue fact={cell.value} className="" />
                       {cell.evidence ? (

@@ -1,43 +1,16 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
 import { SourceStateBadge } from "@/components/paxpivot/SourceStateBadge";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { Card } from "@/components/ui/Card";
 import { FactValue } from "@/components/ui/Facts";
 import { StatusPill, type PillTone } from "@/components/ui/Pill";
+import { ScreenSection } from "@/components/ui/ScreenSection";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
 import { sourceCountText } from "@/lib/presentation/notices";
 import type {
   SourceApproval,
   SourceHealthScreenModel,
 } from "@/lib/presentation/screens/advanced";
-
-/*
- * Table styling as token-valued inline styles, matching TASK-010: this task owns only
- * `screens.css`, and that file is limited to the wide-layout classes.
- */
-const TABLE: CSSProperties = {
-  width: "100%",
-  minWidth: "46rem",
-  borderCollapse: "collapse",
-  fontSize: "0.8125rem",
-};
-
-const CELL: CSSProperties = {
-  padding: "var(--space-2)",
-  borderBottom: "1px solid var(--color-divider)",
-  textAlign: "left",
-  verticalAlign: "top",
-};
-
-const CAPTION: CSSProperties = {
-  textAlign: "left",
-  paddingBottom: "var(--space-2)",
-  fontSize: "0.75rem",
-  color: "var(--color-neutral-700)",
-};
-
-const SCROLL: CSSProperties = { overflowX: "auto", contain: "paint" };
 
 /** Whether the source-processing policy allows this source to be read. Text, never colour alone. */
 const APPROVAL: Readonly<
@@ -126,15 +99,13 @@ export function SourceHealthScreen({ model }: Props) {
       ) : null}
 
       <Card as="div">
-        <div style={SCROLL}>
-          <table style={TABLE}>
-            <caption style={CAPTION}>
-              Source checks and their current state
-            </caption>
+        <div className="pp-table-wrap">
+          <table className="pp-table pp-table--wide">
+            <caption>Source checks and their current state</caption>
             <thead>
               <tr>
                 {COLUMNS.map((column) => (
-                  <th key={column} scope="col" style={CELL}>
+                  <th key={column} scope="col">
                     {column}
                   </th>
                 ))}
@@ -145,32 +116,27 @@ export function SourceHealthScreen({ model }: Props) {
                 const approval = APPROVAL[row.approval];
                 return (
                   <tr key={row.id}>
-                    <th scope="row" style={{ ...CELL, fontWeight: 600 }}>
+                    <th scope="row">
                       <Link href={row.openHref}>{row.name}</Link>
-                      <span
-                        style={{
-                          display: "block",
-                          marginTop: "var(--space-1)",
-                        }}
-                      >
+                      <span className="pp-table__title">
                         <StatusPill tone={approval.tone}>
                           {approval.text}
                         </StatusPill>
                       </span>
                     </th>
-                    <td style={CELL}>
+                    <td>
                       <SourceStateBadge evidence={row.evidence} />
                     </td>
-                    <td style={CELL}>
+                    <td>
                       <FactValue fact={row.pageTime} className="" />
                     </td>
-                    <td style={CELL}>
+                    <td>
                       <FactValue fact={row.readAt} className="" />
                     </td>
-                    <td style={CELL}>
+                    <td>
                       <FactValue fact={row.cadence} className="" />
                     </td>
-                    <td style={CELL}>
+                    <td>
                       <FactValue fact={row.reader} className="" />
                     </td>
                   </tr>
@@ -182,12 +148,8 @@ export function SourceHealthScreen({ model }: Props) {
       </Card>
 
       {model.notices.length > 0 ? (
-        <section style={{ display: "grid", gap: "var(--space-3)" }}>
-          <h2 className="pp-title">Needs attention</h2>
-          <ul
-            aria-label="Source notices"
-            style={{ display: "grid", gap: "var(--space-3)" }}
-          >
+        <ScreenSection title="Needs attention">
+          <ul aria-label="Source notices" className="pp-stack">
             {model.notices.map((notice) => (
               <li key={notice.id}>
                 <Card as="article" tone="muted">
@@ -197,7 +159,7 @@ export function SourceHealthScreen({ model }: Props) {
               </li>
             ))}
           </ul>
-        </section>
+        </ScreenSection>
       ) : null}
     </>
   );

@@ -6,10 +6,8 @@ import { FactStrip } from "@/components/ui/Facts";
 import { StatusPill } from "@/components/ui/Pill";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
 import { known } from "@/lib/presentation/fact";
-import {
-  ELIGIBILITY_WORDING,
-  type EligibilityDetailScreenModel,
-} from "@/lib/presentation/screens/profile";
+import { ELIGIBILITY_WORDING } from "@/lib/presentation/eligibility";
+import type { EligibilityDetailScreenModel } from "@/lib/presentation/screens/profile";
 
 type Props = { model: EligibilityDetailScreenModel };
 

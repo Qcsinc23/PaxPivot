@@ -14,6 +14,12 @@
   .pp-split {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+
+  /* Results: the map is first in the document (mobile order) and moves to the right column
+     from 60rem up, so one tree serves both compositions without viewport detection. */
+  .pp-split--aside-first > :first-child {
+    order: 1;
+  }
 }
 
 /* Desktop top bar: the search affordance, the sort chips and the Ask action on one line. */

@@ -8,10 +8,10 @@ import { Progress } from "@/components/ui/Progress";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
 import { UNKNOWN_TEXT } from "@/lib/presentation/fact";
 import {
-  eligibilitySummaryText,
   ELIGIBILITY_WORDING,
-  type ProfileScreenModel,
-} from "@/lib/presentation/screens/profile";
+  eligibilitySummaryText,
+} from "@/lib/presentation/eligibility";
+import type { ProfileScreenModel } from "@/lib/presentation/screens/profile";
 
 type Props = { model: ProfileScreenModel };
 

@@ -103,13 +103,16 @@ export function TerminalDetailScreen({ model, initialTab }: Props) {
             <Row
               key={handoff.id}
               title={handoff.title}
-              detail={handoff.detail}
+              detail={
+                <>
+                  {handoff.detail} · <HandoffLabel kind={handoff.unknown} />
+                </>
+              }
               href={handoff.href}
             />
           ))}
         </Rows>
       ) : null}
-      <HandoffLabel />
     </>
   );
 

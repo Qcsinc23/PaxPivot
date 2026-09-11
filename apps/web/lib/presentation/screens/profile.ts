@@ -16,46 +16,6 @@ import type {
   ReadinessItemView,
 } from "@/lib/presentation/types";
 
-/** Traveler-facing wording for the application's eligibility state (never a category code). */
-export const ELIGIBILITY_WORDING: Readonly<
-  Record<
-    EligibilitySummaryView["state"],
-    { text: string; tone: "verified" | "caution" | "unknown"; srText: string }
-  >
-> = {
-  eligible: {
-    text: "Eligible",
-    tone: "verified",
-    srText:
-      "your party can request Space-A travel; a seat is still not guaranteed",
-  },
-  ineligible: {
-    text: "Not eligible",
-    tone: "caution",
-    srText: "this request does not qualify under the current policy",
-  },
-  unknown: {
-    text: "Eligibility unknown",
-    tone: "unknown",
-    srText: "not enough information to decide yet",
-  },
-  outside_supported_scope: {
-    text: "Outside supported scope",
-    tone: "unknown",
-    srText: "this case is not covered yet",
-  },
-};
-
-/** "Eligible · 2 travelers" — formatting only; the state and count are the application's. */
-export function eligibilitySummaryText(
-  eligibility: EligibilitySummaryView,
-): string {
-  const travelers = `${eligibility.travelerCount} ${
-    eligibility.travelerCount === 1 ? "traveler" : "travelers"
-  }`;
-  return `${ELIGIBILITY_WORDING[eligibility.state].text} · ${travelers}`;
-}
-
 export type PartyMemberView = {
   id: string;
   name: string;

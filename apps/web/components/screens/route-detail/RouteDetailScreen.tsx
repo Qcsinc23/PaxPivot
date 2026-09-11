@@ -1,4 +1,7 @@
+"use client";
+
 import { Share2 } from "lucide-react";
+import { useState } from "react";
 import { CommercialBaselineCard } from "@/components/paxpivot/CommercialBaselineCard";
 import { EvidenceAge } from "@/components/paxpivot/EvidenceAge";
 import { EvidenceRows } from "@/components/paxpivot/EvidenceRows";
@@ -11,6 +14,7 @@ import { AppHeader } from "@/components/ui/AppHeader";
 import { Button, IconButton } from "@/components/ui/Button";
 import { Card, CardActions, CardHeader, Row, Rows } from "@/components/ui/Card";
 import { StatGrid } from "@/components/ui/Facts";
+import { ScreenSection } from "@/components/ui/ScreenSection";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
 import { StickyActionBar } from "@/components/ui/StickyActionBar";
 import { Tabs } from "@/components/ui/Tabs";
@@ -18,12 +22,24 @@ import type { RouteDetailScreenModel } from "@/lib/presentation/screens/route-de
 
 type Props = { model: RouteDetailScreenModel; initialTab?: string };
 
+const TAB_IDS = ["overview", "evidence", "fallback", "history"] as const;
+type TabId = (typeof TAB_IDS)[number];
+
+function isTabId(id: string | undefined): id is TabId {
+  return TAB_IDS.includes(id as TabId);
+}
+
 /**
  * One route in full: Overview, Evidence, Fallback and History. There is no Journey tab because
  * Overview already carries the complete timeline. Every value, label and ordering decision
  * arrives from the model; the screen evaluates nothing and stores nothing.
  */
 export function RouteDetailScreen({ model, initialTab }: Props) {
+  // Mirrors the Tabs selection so the sticky action exists only while Overview is shown.
+  // `Tabs` keeps hidden panels mounted, and a mounted StickyActionBar hides the Ask action.
+  const [activeTab, setActiveTab] = useState<TabId>(
+    isTabId(initialTab) ? initialTab : "overview",
+  );
   const header = (title: string) => (
     <AppHeader
       title={title}
@@ -94,14 +110,18 @@ export function RouteDetailScreen({ model, initialTab }: Props) {
         ) : null}
       </Card>
       <JourneyTimeline legs={model.legs} />
-      <StickyActionBar label="Route actions">
-        {model.actions.watchHref ? (
-          <Button href={model.actions.watchHref} variant="secondary">
-            Watch
+      {activeTab === "overview" ? (
+        <StickyActionBar label="Route actions">
+          {model.actions.watchHref ? (
+            <Button href={model.actions.watchHref} variant="secondary">
+              Watch
+            </Button>
+          ) : null}
+          <Button href={model.actions.prepareHref}>
+            Prepare for this route
           </Button>
-        ) : null}
-        <Button href={model.actions.prepareHref}>Prepare for this route</Button>
-      </StickyActionBar>
+        </StickyActionBar>
+      ) : null}
     </>
   );
 
@@ -138,8 +158,7 @@ export function RouteDetailScreen({ model, initialTab }: Props) {
         />
       ) : null}
       {model.fallback.others.length > 0 ? (
-        <section style={{ display: "grid", gap: "var(--space-3)" }}>
-          <h2 className="pp-title">Other ways out</h2>
+        <ScreenSection title="Other ways out">
           <Rows aria-label="Other ways out">
             {model.fallback.others.map((other) => (
               <Row
@@ -150,7 +169,7 @@ export function RouteDetailScreen({ model, initialTab }: Props) {
               />
             ))}
           </Rows>
-        </section>
+        </ScreenSection>
       ) : null}
     </>
   );
@@ -162,7 +181,8 @@ export function RouteDetailScreen({ model, initialTab }: Props) {
       {header(model.title)}
       <Tabs
         label="Route detail sections"
-        defaultTab={initialTab}
+        defaultTab={activeTab}
+        onChange={(id) => setActiveTab(isTabId(id) ? id : "overview")}
         tabs={[
           { id: "overview", label: "Overview", panel: overview },
           { id: "evidence", label: "Evidence", panel: evidence },

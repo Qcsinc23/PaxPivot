@@ -9,7 +9,13 @@ import { Progress } from "@/components/ui/Progress";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Sheet } from "@/components/ui/Sheet";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/States";
+import { ScreenSection } from "@/components/ui/ScreenSection";
 import { StickyActionBar } from "@/components/ui/StickyActionBar";
+import {
+  HANDOFF_LABEL,
+  HandoffLabel,
+  handoffLabelText,
+} from "@/components/paxpivot/Handoff";
 import { Tabs } from "@/components/ui/Tabs";
 import { expectNoAxeViolations } from "./a11y";
 
@@ -189,5 +195,52 @@ describe("state primitives", () => {
     const bar = screen.getByRole("progressbar", { name: "Sources checked" });
     expect(bar.getAttribute("aria-valuenow")).toBe("4");
     expect(bar.getAttribute("aria-valuemax")).toBe("7");
+  });
+});
+
+describe("ScreenSection", () => {
+  test("is a region named by its own h2", () => {
+    render(
+      <ScreenSection title="Nearby terminals">
+        <p>body</p>
+      </ScreenSection>,
+    );
+    const region = screen.getByRole("region", { name: "Nearby terminals" });
+    expect(region.tagName).toBe("SECTION");
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Nearby terminals" }),
+    ).toBeTruthy();
+    expect(region.textContent).toContain("body");
+  });
+});
+
+describe("HandoffLabel", () => {
+  test("defaults to the generic availability-and-fare wording", () => {
+    render(<HandoffLabel />);
+    expect(screen.getByText(HANDOFF_LABEL)).toBeTruthy();
+    expect(HANDOFF_LABEL).toBe("Live handoff · availability and fare unknown");
+  });
+
+  test("states only what the application said is unconfirmed", () => {
+    expect(handoffLabelText("availability")).toBe(
+      "Live handoff · availability unknown",
+    );
+    expect(handoffLabelText("fare")).toBe("Live handoff · fare unknown");
+    expect(handoffLabelText("schedule")).toBe(
+      "Live handoff · schedule unknown",
+    );
+    expect(handoffLabelText("provider_details")).toBe(
+      "Live handoff · provider details unknown",
+    );
+    // Every variant keeps the mandatory handoff prefix (GND-003) and the word unknown.
+    for (const kind of [
+      "availability_and_fare",
+      "availability",
+      "fare",
+      "schedule",
+      "provider_details",
+    ] as const) {
+      expect(handoffLabelText(kind)).toMatch(/^Live handoff · .* unknown$/);
+    }
   });
 });
