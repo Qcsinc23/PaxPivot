@@ -4,7 +4,8 @@
 
 ## Status
 
-`ready | in_progress | blocked | review | done`
+`blocked | ready | in_progress | review | done` — lifecycle and the definition of `done` are in
+`docs/agent/WORKFLOW.md` §7. When `done`, record the merge commit: `` `done` — merged to `main` in <sha> ``.
 
 ## Assigned role
 

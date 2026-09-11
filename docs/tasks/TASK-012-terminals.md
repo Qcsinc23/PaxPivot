@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented on `build/TASK-012-terminals`; see Handoff.
+`done` — merged to `main` in 54ca75e; post-merge Quality green; Handoff recorded below (lifecycle: docs/agent/WORKFLOW.md §7).
 
 ## Assigned role
 
