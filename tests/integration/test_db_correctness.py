@@ -245,7 +245,7 @@ def test_check_parity_holds_and_detects_a_removed_constraint(engine: Engine) -> 
     with engine.connect() as c:
         report = verify_check_parity(c)
         c.rollback()
-    assert report.constraints_verified == 23 == len(report.verified)
+    assert report.constraints_verified == 24 == len(report.verified)
     # Mutation: drop one safety-critical CHECK inside a transaction that is rolled back.
     with (
         engine.connect() as c,

@@ -154,6 +154,9 @@ class FirecrawlSourceProvider:
     async def _fetch_registered(self, source: Source) -> Result[tuple[int, Any]]:
         """A terminal page is fetched as HTML; a schedule artifact is discovered on its terminal
         page first, then fetched as text (Firecrawl renders the PDF to markdown)."""
+        if not authorize_processing(source, ProcessingMode.RETRIEVE, self._switches).ok:
+            # Callers gate first; this keeps a direct call from ever fetching a refused source.
+            return _failure("invalid_input", "source_provider.not_authorized", False)
         if source.kind != SourceKind.SCHEDULE_ARTIFACT:
             return await self._fetch(str(source.identity.url), "rawHtml")
         parent = next(

@@ -686,8 +686,12 @@ def test_firecrawl_provider_records_fresh_metadata_through_the_runner(engine: En
     with db.transaction(engine) as connection:
         sources = SqlSourceRepository(connection)
         registry = {s.identity.source_id: s for s in sources.list_sources()}
-        approved = [s for s in registry.values() if s.adapter_id == "firecrawl" and s.enabled]
-        assert len(approved) == 8  # four terminal pages (TASK-023) + four artifacts (TASK-037)
+        approved = [
+            s
+            for s in registry.values()
+            if s.adapter_id == "firecrawl" and s.enabled and s.policy.may_retrieve
+        ]
+        assert len(approved) == 4  # the four terminal pages; artifacts are user-opened only
         provider = FirecrawlSourceProvider(
             "k-synthetic", registry, transport=httpx.MockTransport(handler)
         )
@@ -701,6 +705,8 @@ def test_firecrawl_provider_records_fresh_metadata_through_the_runner(engine: En
         )
     recorded = {o.source_id for o in run.recorded}
     assert recorded == {s.identity.source_id for s in approved}
+    skipped = {o.source_id for o in run.skipped}
+    assert {s.identity.source_id for s in SCHEDULE_ARTIFACT_SOURCES} <= skipped  # user-opened only
     with db.read_snapshot(engine) as connection:
         health = list_source_health(
             SqlSourceRepository(connection),

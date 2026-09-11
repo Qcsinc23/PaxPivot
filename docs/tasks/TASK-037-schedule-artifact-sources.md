@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — product-owner decision 2026-09-11: "approve the PDFs as schedule artifacts and go with option 1".
+`done` — merged in PR #43 (da424f5, post-merge CI green) and the option-1 follow-up PR; artifacts are registered but user-opened only after the marking finding below.
 
 ## Assigned role
 
@@ -54,9 +54,39 @@ make migrate-test
 
 No parsing (TASK-032), no display of schedule content, no history.
 
+## Marking finding and product-owner decision (2026-09-11)
+
+The first captures showed that the Joint Base Andrews 72-hour slide deck is stamped CUI and
+that the Andrews and Dover documents carry a notice restricting the information to determining
+Space-A availability and forbidding retransmission. PRD §16.2 and the register's "notice/marking
+state" make this a stop. The retrieved text was deleted from the host, the container and the
+working directory; the three hash-only observations hold no content. The product owner chose
+option 1: the artifacts stay registered (so the terminal page can point travelers at the
+official document) under `schedule-artifact-user-open-v2`: restricted, never retrieved, parsed,
+hashed or displayed by PaxPivot. Re-seeding tightens any `schedule-artifact-parse-v1` row to
+this policy and never loosens a pause.
+
+## Review fixes on the option-1 follow-up (0 Critical / 1 Important → fixed)
+
+- A restricted source contributes no evidence to terminal reads (summary headline and the
+  per-source row show nothing); operators keep the history on source health. The three
+  hash-only observations recorded under v1 are retained as history lawful under that version:
+  a SHA-256 is not content, and `Provenance.policy_version_id` records which policy applied.
+- Domain validator and CHECK `ck_sources_restricted_allows_nothing` (migration 0005): a
+  restricted register row allows nothing and retains nothing, so the register cannot contradict
+  the gate. Gate keys `source.restricted` / `source.paused` distinguish a decision from a pending
+  review. The provider refuses any source its own gate refuses, even on a direct call.
+- Seeding never rewrites a paused row, even to tighten it; a person re-applies the restriction.
+- Firecrawl's own logs and caches for the four renders are outside PaxPivot's control; request
+  deletion through the account if the owner wants that closed.
+
 ## Handoff
 
-(fill in after merge)
+- **Merged:** PR #43 (discovery, capture, hash-only observation) and the option-1 follow-up.
+- **Live:** artifact register rows restricted; `check-sources` skips them (`skipped` outcome).
+- **Not done:** no schedule parsing; TASK-032 is blocked until AMC/terminal permission exists
+  (option 2). The terminal page's own "current as of" stamp is the honest next signal
+  (proposed TASK-038: page metadata parse under `terminal-page-parse-v2`).
 
 ## Review decisions (2026-09-11)
 

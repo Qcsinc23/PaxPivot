@@ -35,6 +35,7 @@ from paxpivot.application.source_explanation import explain_source
 from paxpivot.application.source_gate import engaged_switch
 from paxpivot.domain.source import (
     KillSwitch,
+    PolicyReviewState,
     ProcessingMode,
     Source,
     SourceKind,
@@ -57,6 +58,10 @@ def evidence_read(observation: SourceObservation) -> SourceEvidenceRead:
     )
 
 
+def _restricted(source: Source) -> bool:
+    return source.policy.review_state == PolicyReviewState.RESTRICTED
+
+
 def newest(observations: Sequence[SourceObservation]) -> SourceObservation | None:
     return max(observations, key=lambda o: o.provenance.observed_at, default=None)
 
@@ -66,7 +71,13 @@ def terminal_summary(
     sources: Sequence[Source],
     latest: Mapping[UUID, SourceObservation],
 ) -> TerminalSummaryRead:
-    observed = [latest[s.identity.source_id] for s in sources if s.identity.source_id in latest]
+    # A restricted source is user-opened only: whatever was observed before the restriction is
+    # history for operators (source health), never evidence on a terminal.
+    observed = [
+        latest[s.identity.source_id]
+        for s in sources
+        if s.identity.source_id in latest and not _restricted(s)
+    ]
     official = next((s for s in sources if s.kind == SourceKind.TERMINAL_PAGE), None)
     headline = newest(observed)
     return TerminalSummaryRead(
@@ -165,7 +176,7 @@ def get_terminal_detail(
                     review_state=s.policy.review_state,
                     latest=(
                         evidence_read(latest[s.identity.source_id])
-                        if s.identity.source_id in latest
+                        if s.identity.source_id in latest and not _restricted(s)
                         else None
                     ),
                 )

@@ -170,3 +170,23 @@ def test_facts_from_a_source_that_may_not_be_displayed_are_withheld() -> None:
         now=NOW,
     )
     assert missing.ok and missing.value.facts == ()
+
+
+def test_a_restricted_source_contributes_no_evidence_to_a_terminal() -> None:
+    """TASK-037 option 1: whatever was observed before a restriction is not terminal evidence."""
+    from paxpivot.application.read_services import get_terminal_detail
+    from support_sources import RESTRICTED, SOURCE_A, TERMINAL_A, observation
+
+    restricted = SOURCE_A.model_copy(update={"policy": RESTRICTED})
+    terminals, sources = FakeTerminals(), FakeSources([restricted])
+    observations = FakeObservations(
+        [observation(restricted, "restricted-latest", state=SourceState.FRESH, observed_at=NOW)]
+    )
+    detail = get_terminal_detail(TERMINAL_A.terminal_id, terminals, sources, observations)
+    assert detail.ok
+    assert detail.value.summary.latest is None
+    row = next(s for s in detail.value.sources if s.source_id == restricted.identity.source_id)
+    assert row.review_state == "restricted" and row.latest is None
+    # Operators still see the history on source health.
+    health = list_source_health(sources, observations, FakeSwitches(), now=NOW)
+    assert health.rows[0].latest is not None

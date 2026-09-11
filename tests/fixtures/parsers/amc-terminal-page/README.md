@@ -20,7 +20,7 @@ delete them. This directory holds only this README and synthetic fixtures.
   commits only the report and synthetic fixtures.
 
 **Schedule artifacts (TASK-037).** The terminal HTML pages contain no departure rows; the
-72-hour schedules are linked PDFs. `capture-corpus <artifact source id>` discovers the current
-file on the terminal page and writes its text rendering as `<sha256>.md` beside the labels
-template. Label the rows from the `.md`; the HTML captures stay in the corpus as evidence that
-the page itself lists nothing.
+72-hour schedules are linked PDFs that carry CUI markings and a retransmission notice. They are
+registered as restricted, user-opened-only sources: `capture-corpus` refuses them and nothing
+from them may be labeled, stored or committed. The HTML captures stay as evidence that the page
+itself lists nothing.

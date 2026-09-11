@@ -2,7 +2,7 @@
 
 ## Status
 
-`blocked` — retargeted 2026-09-11: the terminal HTML pages carry no departure rows, so the parser input is the 72-hour schedule artifact rendered as text (TASK-037), not the page. Blocked on ≥10 labeled artifact captures.
+`blocked` — retargeted 2026-09-11: the terminal HTML pages carry no departure rows, so the parser input is the 72-hour schedule artifact rendered as text (TASK-037), not the page. Blocked: the 72-hour artifacts are CUI/notice-marked and restricted to user-opened use (TASK-037, product-owner option 1, 2026-09-11). No parser may be built until written permission exists.
 
 ## Assigned role
 

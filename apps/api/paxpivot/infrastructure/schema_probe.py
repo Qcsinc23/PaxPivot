@@ -349,6 +349,15 @@ def rules(source_id: Any, terminal_id: Any) -> tuple[Rule, ...]:
             ],
         ),
         Rule(
+            "ck_sources_restricted_allows_nothing",
+            db.sources,
+            lambda: [source_row(review_state="restricted", raw_payload="denied")],
+            lambda: [
+                source_row(review_state="restricted", raw_payload="hash_only"),
+                source_row(review_state="restricted", raw_payload="denied", may_retrieve=True),
+            ],
+        ),
+        Rule(
             "ck_sources_snapshot_retention",
             db.sources,
             lambda: [source_row(raw_payload="snapshot", snapshot_retention_days=30)],
