@@ -7,7 +7,10 @@ function toIso(value: FormDataEntryValue | null): string | null {
   const text = String(value ?? "");
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(text)) return null;
   const date = new Date(`${text}Z`);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  if (Number.isNaN(date.getTime())) return null;
+  // V8 rolls an impossible day (Feb 31) forward; a value that does not round-trip is rejected.
+  if (!date.toISOString().startsWith(text.slice(0, 16))) return null;
+  return date.toISOString();
 }
 
 /** POST form → `POST /api/v1/trips` → 303 to the new trip. The API makes the final decision. */

@@ -51,7 +51,7 @@ export function NewTripForm({ terminals, error }: Props) {
           className="pp-input"
         />
         <label className="pp-label" htmlFor="window_start">
-          Earliest departure
+          Earliest departure (UTC)
         </label>
         <input
           id="window_start"
@@ -61,7 +61,7 @@ export function NewTripForm({ terminals, error }: Props) {
           className="pp-input"
         />
         <label className="pp-label" htmlFor="window_end">
-          Latest departure
+          Latest departure (UTC)
         </label>
         <input
           id="window_end"
@@ -83,7 +83,7 @@ export function NewTripForm({ terminals, error }: Props) {
           required
           className="pp-input"
         />
-        {error && ERROR_TEXT[error] ? (
+        {error && Object.hasOwn(ERROR_TEXT, error) ? (
           <p className="pp-sub" role="alert">
             {ERROR_TEXT[error]}
           </p>

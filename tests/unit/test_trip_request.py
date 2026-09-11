@@ -1,5 +1,6 @@
 """TASK-034: trip requests are validated at the boundary and carry no derived claims."""
 
+import os
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -125,3 +126,41 @@ def test_api_routes_are_gated_and_round_trip() -> None:
         assert unknown.json() == {"detail": {"message_key": "trip.unknown_origin_terminal"}}
     finally:
         app.dependency_overrides.clear()
+
+
+def test_an_insert_refused_by_the_database_is_a_422_and_logs_no_request_text(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """ADV-034-01: the FK race maps to 422; the traveler's words never reach a log line."""
+    from sqlalchemy.exc import IntegrityError
+
+    class RefusingTrips(FakeTrips):
+        def add(self, trip: object) -> None:
+            raise IntegrityError(
+                "INSERT INTO trip_requests", {"destination_text": "SECRET"}, Exception("fk")
+            )
+
+    app.dependency_overrides[get_authenticator] = lambda: BearerTokenAuthenticator(TOKEN)
+    app.dependency_overrides[get_write_repositories] = lambda: WriteRepositories(
+        terminals=FakeTerminals(),
+        trips=RefusingTrips(),  # type: ignore[arg-type]
+    )
+    try:
+        client = TestClient(app)
+        body = new_request(destination_text="SECRET destination").model_dump(mode="json")
+        with caplog.at_level("DEBUG"):
+            response = client.post(
+                "/api/v1/trips", json=body, headers={"Authorization": f"Bearer {TOKEN}"}
+            )
+        assert response.status_code == 422
+        assert response.json() == {"detail": {"message_key": "trip.unknown_origin_terminal"}}
+        assert "SECRET" not in caplog.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_the_engine_never_echoes_statement_parameters() -> None:
+    from paxpivot.infrastructure.database import engine_from_env
+
+    os.environ["DATABASE_URL"] = "postgresql+psycopg://u:p@localhost:1/x"
+    assert engine_from_env().hide_parameters is True

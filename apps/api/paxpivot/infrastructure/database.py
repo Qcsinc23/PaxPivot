@@ -384,4 +384,5 @@ def database_ready(engine: Engine) -> bool:
 @cache
 def engine_from_env() -> Engine:
     """Process-wide engine for the composition root; DATABASE_URL comes from the environment."""
-    return create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    # hide_parameters: a failed statement must never echo traveler free text into a log line.
+    return create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True, hide_parameters=True)

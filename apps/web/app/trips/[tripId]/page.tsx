@@ -18,10 +18,16 @@ export const dynamic = "force-dynamic";
 
 export default async function TripPage({ params }: Props) {
   const { tripId } = await params;
-  if (!/^[0-9a-f-]{36}$/i.test(tripId)) notFound();
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      tripId,
+    )
+  )
+    notFound();
   const result = await readApi<TripRead>(`/api/v1/trips/${tripId}`);
   if (!result.ok) {
-    if (result.reason === "not_found") notFound();
+    if (result.reason === "not_found" || result.reason === "invalid")
+      notFound();
     if (result.reason === "not_configured")
       return <NotConfigured title="Trip" />;
     return (

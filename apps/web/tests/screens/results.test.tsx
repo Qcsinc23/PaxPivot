@@ -309,6 +309,21 @@ describe("live /trips/[tripId] route", () => {
     expect(screen.queryByText("Best Space-A")).toBeNull();
     expect(screen.queryByText("Safest overall")).toBeNull();
   });
+
+  test("a malformed trip id is not found, never a failure on our side", async () => {
+    readApiMock.mockResolvedValue({ ok: false, reason: "invalid" });
+    await expect(
+      ResultsPage({ params: Promise.resolve({ tripId: "0".repeat(36) }) }),
+    ).rejects.toThrow("notFound");
+    expect(readApiMock).not.toHaveBeenCalled();
+    await expect(
+      ResultsPage({
+        params: Promise.resolve({
+          tripId: "6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7",
+        }),
+      }),
+    ).rejects.toThrow("notFound");
+  });
 });
 
 describe("accessibility", () => {

@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, Engine
+from sqlalchemy.exc import IntegrityError
 
 from paxpivot.application.ports.auth import Authenticator, Principal
 from paxpivot.application.ports.repositories import (
@@ -198,7 +199,14 @@ def create_trip(
     request: NewTripRequest,
     repos: Annotated[WriteRepositories, Depends(get_write_repositories)],
 ) -> TripRead:
-    result = create_trip_request(request, repos.terminals, repos.trips)
+    try:
+        result = create_trip_request(request, repos.terminals, repos.trips)
+    except IntegrityError:
+        # The origin terminal vanished between the check and the insert: the FK refused it.
+        # Raised without the statement so no request text reaches the log.
+        raise HTTPException(
+            status_code=422, detail={"message_key": "trip.unknown_origin_terminal"}
+        ) from None
     if not result.ok:
         raise HTTPException(status_code=422, detail={"message_key": result.error.message_key})
     return result.value

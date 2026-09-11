@@ -52,4 +52,63 @@ describe("trip request route (TASK-034)", () => {
     );
     expect(bad.headers.get("Location")).toBe("/?error=invalid");
   });
+
+  test("a created trip redirects to its page; an API 422 goes back as invalid", async () => {
+    process.env.PAXPIVOT_API_URL = "http://api.invalid";
+    process.env.PAXPIVOT_API_TOKEN =
+      "synthetic-token-with-at-least-32-characters";
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ trip_id: "6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7" }),
+          {
+            status: 201,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(new Response("{}", { status: 422 }));
+    vi.stubGlobal("fetch", fetchImpl);
+    try {
+      const form = new URLSearchParams({
+        origin_terminal_id: ORIGIN,
+        destination_text: "Somewhere",
+        window_start: "2026-10-01T06:00",
+        window_end: "2026-10-04T06:00",
+        party_size: "2",
+      });
+      const post = () =>
+        createTrip(
+          new Request("https://pilot.invalid/trips/new", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: form,
+          }),
+        );
+      const created = await post();
+      expect(created.status).toBe(303);
+      expect(created.headers.get("Location")).toBe(
+        "/trips/6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7",
+      );
+      const refused = await post();
+      expect(refused.headers.get("Location")).toBe("/?error=invalid");
+      // A date the engine would roll forward never reaches the API.
+      const rolled = await createTrip(
+        new Request("https://pilot.invalid/trips/new", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            ...Object.fromEntries(form),
+            window_start: "2026-02-31T00:00",
+          }),
+        }),
+      );
+      expect(rolled.headers.get("Location")).toBe("/?error=invalid");
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+      delete process.env.PAXPIVOT_API_URL;
+      delete process.env.PAXPIVOT_API_TOKEN;
+    }
+  });
 });

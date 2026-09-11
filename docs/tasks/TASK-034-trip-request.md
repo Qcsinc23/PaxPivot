@@ -82,3 +82,11 @@ No eligibility, no routes.
 - `datetime-local` values are treated as UTC for the pilot (single user, documented here);
   terminal-local windows are a later task.
 - Trips are not user-scoped; per-user auth is the gate before multi-user (ADV-005 boundary).
+
+## Review fixes (2026-09-11, adversarial review: 0 Critical / 1 Important → fixed)
+
+- Engine created with `hide_parameters=True`; an `IntegrityError` on the insert (origin terminal
+  removed between check and insert) maps to 422 without the statement, so request text never
+  reaches a log line (test asserts the log is clean).
+- Trip page requires a full UUID and treats an API `invalid` as not found; window inputs are
+  labelled UTC; error lookup uses own properties only; impossible calendar dates are rejected.
