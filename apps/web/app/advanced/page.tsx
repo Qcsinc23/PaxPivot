@@ -1,10 +1,38 @@
 import { SourceHealthScreen } from "@/components/screens/advanced/SourceHealthScreen";
-import { emptySourceHealth } from "@/lib/presentation/screens/advanced";
+import { readApi } from "@/lib/api/client";
+import type { SourceHealthRead } from "@/lib/api/contracts";
+import { toSourceHealthScreenModel } from "@/lib/presentation/adapters/source-health";
+import {
+  emptySourceHealth,
+  type SourceHealthScreenModel,
+} from "@/lib/presentation/screens/advanced";
 
 /**
- * Live Advanced route. No operations API contract exists yet, so this renders the honest empty
- * state and never a synthetic source registry.
+ * Live Advanced route: the operations view of the source registry. Reads
+ * `GET /api/v1/sources/health` on the server and adapts it — approval state, kill switches and the
+ * last check of every registered source are the application's findings, and this route only
+ * presents them. The token never leaves this process, and nothing here is an operator action:
+ * enabling, approving or engaging a switch is not reachable from this screen.
+ *
+ * Every outcome is its own state, and none of them is an absence claim:
+ *
+ * * `ok` — the registry, including an honest empty state when no source is registered;
+ * * `not_configured` — the API is not wired up for this deployment, so the screen says that
+ *   rather than implying there are no sources;
+ * * `unauthorized` / `unavailable` — a failure on our side.
  */
-export default function AdvancedPage() {
-  return <SourceHealthScreen model={emptySourceHealth} />;
+export default async function AdvancedPage() {
+  const result = await readApi<SourceHealthRead>("/api/v1/sources/health");
+  if (!result.ok) {
+    const model: SourceHealthScreenModel = {
+      ...emptySourceHealth,
+      status: result.reason === "not_configured" ? "empty" : "error",
+    };
+    return <SourceHealthScreen model={model} />;
+  }
+  return (
+    <SourceHealthScreen
+      model={toSourceHealthScreenModel(result.value, { now: new Date() })}
+    />
+  );
 }

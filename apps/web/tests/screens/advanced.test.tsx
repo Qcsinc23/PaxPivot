@@ -2,7 +2,6 @@ import { render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import AdvancedLivePage from "@/app/advanced/page";
 import ShowcaseDesktopCompositionPage from "@/app/showcase/advanced/desktop/page";
 import { SourceHealthScreen } from "@/components/screens/advanced/SourceHealthScreen";
 import { SplitLayout } from "@/components/screens/desktop/SplitLayout";
@@ -261,8 +260,10 @@ describe("Advanced is rail-only", () => {
       (destination) => destination.key === "advanced",
     );
     expect(advanced).toBeTruthy();
-    // That destination is the route this task builds.
-    render(<AdvancedLivePage />);
+    // That destination is the route this task builds. Rendered from a model rather than through
+    // the live page: the page now reads the API, so rendering it here would assert whatever the
+    // ambient environment happens to be rather than the rail wiring.
+    render(<SourceHealthScreen model={emptySourceHealth} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
       "Source health",
     );
@@ -296,15 +297,6 @@ describe("Advanced states and live route", () => {
     );
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByText(/failure on our side/)).toBeTruthy();
-  });
-
-  test("live /advanced renders the empty state and no synthetic sources", () => {
-    render(<AdvancedLivePage />);
-    expect(
-      screen.getByRole("heading", { name: "No sources are being checked yet" }),
-    ).toBeTruthy();
-    expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.queryByText(/Example /)).toBeNull();
   });
 });
 

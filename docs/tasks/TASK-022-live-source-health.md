@@ -2,7 +2,8 @@
 
 ## Status
 
-`ready` — dispatch after TASK-020 is merged to `main`. Independent of TASK-021 (no shared paths).
+`review` — TASK-020 is merged (`f430acb`); implemented and verified. Independent of TASK-021
+(no shared paths).
 
 ## Assigned role
 
@@ -103,4 +104,84 @@ See `docs/tasks/SCREEN_TASK_RULES.md`.
 
 ## Handoff
 
-(fill in per template)
+**Branch:** `build/TASK-022-live-source-health` from `main` @ `c12ba3c` (TASK-021 merge).
+
+**Files changed:** the owned page and test paths, the owned task file, and one block of live-route
+assertions in `apps/web/tests/screens/advanced.test.tsx` (see "Deviation").
+
+**Interfaces added/changed:** none. `toSourceHealthScreenModel` and `emptySourceHealth` were used
+as they are; no contract, adapter, component or screen model changed.
+
+**Migrations:** none.
+
+**Outcome mapping implemented**
+
+| `readApi` result | model | what the user sees |
+| --- | --- | --- |
+| `ok` | adapter output | the registry; zero sources is a factual empty state |
+| `not_configured` | `emptySourceHealth` | the honest "not available yet" state |
+| `unauthorized` | `status: "error"` | "a failure on our side" |
+| `unavailable` | `status: "error"` | "a failure on our side" |
+
+**States preserved, proven against the committed JSON example** (`source-health.json`, which
+carries one source of every review state): `Needs review`, `Restricted`, `Approved`, `Paused`; a
+kill-switched source reads **`Stopped`**; three never-observed sources read **`Not checked yet`** in
+both the state column and the time columns. Assertions are scoped to the table body, because the
+summary band above it counts states across sources and legitimately repeats a label.
+
+**Verification run:** after the final edit, on this branch rebased onto `main` @ `c12ba3c`:
+
+```text
+make format-check     -> PASS   make build         -> PASS
+make lint             -> PASS   make migrate       -> PASS
+make typecheck        -> PASS   make migrate-check -> PASS
+make test-unit        -> PASS   make compose-check -> PASS
+make test-integration -> PASS   make test           -> PASS
+```
+
+Counts: pytest 190 unit + 13 integration; Vitest 21 files / 319 tests (was 20/309 — the new
+`tests/screens/advanced-live.test.tsx` adds 11, the removed stale block took 1).
+
+**Live probe against the seeded database** (`make dev` with `PAXPIVOT_API_TOKEN` set on both
+processes, `make seed` applied):
+
+```text
+GET /api/v1/sources/health  -> 200; 1 row, never_observed=1, counts=[]
+                               AMC Travel Site (terminal directory)
+                               review_state=needs_review, kill_switched=false, latest=null
+/advanced                   -> 200; seeded name shown; pills exactly
+                               ["Needs review", "Not checked yet"]; no movement wording;
+                               no fixture text
+```
+
+Kill-switch path, probed for real rather than only from a fixture: engaging a source-scope switch on
+the seeded source made `/advanced` render `["Needs review", "Not checked yet", "Stopped"]` — the
+review state and the never-checked history were both preserved while processing was stopped. The
+probe switch was then released (`released_at` set, the append-only-preserving way) and the label set
+returned to `["Needs review", "Not checked yet"]`, with zero switches left engaged.
+
+Token OPSEC: `grep -rl PAXPIVOT_API_TOKEN apps/web/.next/static` is **empty** after `make build`.
+
+**Deviation (recorded).** `apps/web/tests/screens/advanced.test.tsx` is outside this task's owned
+paths. It rendered the live page unmocked in two places: the rail-reachability check (now satisfied
+by rendering `SourceHealthScreen` from `emptySourceHealth`, which is what that check actually
+asserts — where the route sits in the rail) and a live-route block asserting the old empty state,
+which the owned `advanced-live.test.tsx` now covers properly for every outcome. Net coverage
+increased (11 new tests).
+
+**Resolved ambiguity (product-owner decision).** Criterion 1 maps `not_configured` to
+`emptySourceHealth`; the criterion-4 probe says "token unset → error state". The same contradiction
+exists in TASK-021. Put to the product owner, who confirmed criterion 1 stands: `not_configured`
+renders the empty state. The underlying intent of the probe still holds — with the token unset,
+`/advanced` shows no seeded source and no table, so an unreachable API never appears as a factual
+"no sources" listing. Recorded here so the criterion text can be corrected in a later docs pass.
+
+**Pre-existing repo quirk observed (not introduced here).** `make dev` rewrites the tracked
+`apps/web/next-env.d.ts` to `./.next/dev/types/...`; `make typecheck` / `make build` restore it to
+`./.next/types/...`. Running the live probe therefore leaves that file modified until a typecheck or
+build runs. Left as-is; it is outside this task's owned paths.
+
+**Known limitations / risks:** as TASK-021 — the `not_configured` empty state is not visually
+distinct from a genuinely empty registry, which is the accepted consequence of the decision above.
+
+**Next dependency:** TASK-024 (build, ready).
