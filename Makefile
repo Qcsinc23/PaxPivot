@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 PY := uv run --frozen
-.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed dev check
+.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed cold-start-check dev check
 setup:
 	pnpm install --frozen-lockfile
 	uv sync --frozen
@@ -38,6 +38,10 @@ migrate-test: services
 	$(PY) python -m paxpivot.tooling migrate-test
 seed: migrate
 	$(PY) python -m paxpivot.tooling seed
+# Destroys this checkout's local database volume; proves first-boot readiness (TASK-028).
+CYCLES ?= 20
+cold-start-check:
+	$(PY) python -m paxpivot.tooling cold-start-check $(CYCLES)
 dev:
 	$(PY) python -m paxpivot.tooling dev
 check: format-check lint typecheck test build migrate migrate-check compose-check

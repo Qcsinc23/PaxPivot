@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR; becomes `done` once merged (see Handoff).
+`done` — merged to `main` in 467cc61 (PR #29); post-merge Quality green; Handoff recorded below.
 
 ## Assigned role
 
@@ -113,7 +113,7 @@ make compose-check
 
 **Branch:** `foundation/TASK-027-config-auth-boundary` from `main` @ `594938b`.
 
-**Commit:** reported in the PR.
+**Commit:** 0c66c86 (PR #29, merged as 467cc61).
 
 **Files changed:** the owned paths above.
 
@@ -122,7 +122,7 @@ make compose-check
 
 **Migrations:** none.
 
-**Verification run:** recorded in the PR after the final change.
+**Verification run:** on 0c66c86 after the final edit — format-check/lint/typecheck/test-unit (213; Vitest 325)/test-integration (34)/test/build/migrate/migrate-check/compose-check PASS; `.next/static` free of secret names; live `next start` probe: anonymous → 307 /login, sign-in → 303 + HttpOnly/Secure cookie, signed → 200, wrong passphrase → 303 /login?error=1, unconfigured production → 503. Three adversarial review passes; final: 0 Critical / 0 Important. CI Quality green on the head and the merge commit.
 
 **Known limitations / risks:** single shared passphrase (pilot-only, ADR-005); session
 revocation is secret rotation; brute-force mitigation is passphrase length + reverse-proxy
