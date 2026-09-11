@@ -175,6 +175,27 @@ make test-integration -> PASS make migrate-test   -> PASS
 make test           -> PASS
 ```
 
+**Verification run (completion pass, rebased onto `main` @ `99ab982`):**
+
+```text
+make format-check     -> PASS   make build         -> PASS
+make lint             -> PASS   make migrate       -> PASS
+make typecheck        -> PASS   make migrate-check -> PASS
+make test-unit        -> PASS   make compose-check -> PASS
+make test-integration -> PASS   make migrate-test  -> PASS
+make test             -> PASS
+```
+
+Counts: pytest 190 unit + 13 integration (up from 184 + 8); Vitest 19 files / 295 tests; mypy
+clean on 39 files. The 6 new unit and 5 new integration tests cover the five resolved findings.
+
+**Mutation proof.** Each behavioural fix was reverted in place, its test re-run, and the fix
+restored: removing the registry identity check fails 3 tests; removing the attribution check fails
+1; replacing `transaction()` with a bare `yield` fails 1 (the rollback test). Supersession has no
+equivalent mutation, because — as recorded in ADR-004 — under this rank order no filter can change
+rank 1; its two tests pin the behaviour rather than a branch, and are what must fail first if the
+rank order changes.
+
 Counts: pytest 184 unit + 8 integration; Vitest 18 files / 278 tests; mypy clean on 39 files.
 An independent fresh-database probe (24 checks) also passes: seed inserts-then-idempotent,
 append-only triggers reject UPDATE and DELETE **on rows that exist**, unknown `source_time`
