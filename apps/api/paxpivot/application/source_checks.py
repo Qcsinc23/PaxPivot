@@ -34,6 +34,8 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
+from pydantic import AwareDatetime
+
 from paxpivot.application.ports.repositories import (
     KillSwitchRepository,
     SourceObservationRepository,
@@ -60,7 +62,7 @@ class SourceCheckOutcome(Contract):
 
 
 class SourceCheckRun(Contract):
-    started_at: datetime
+    started_at: AwareDatetime  # Timezone-aware, like every other timestamp contract.
     outcomes: tuple[SourceCheckOutcome, ...]
 
     @property
@@ -149,6 +151,8 @@ async def run_source_checks(
     and each source's outcome is independent of the others. Appending is all this does to history —
     running it twice appends again and never updates.
     """
+    if now is not None and (now.tzinfo is None or now.tzinfo.utcoffset(now) is None):
+        raise ValueError("now must be a timezone-aware datetime")
     started_at = now or datetime.now(UTC)
     switches = kill_switches.list_engaged()
     outcomes: list[SourceCheckOutcome] = []
