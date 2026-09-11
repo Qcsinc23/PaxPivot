@@ -219,7 +219,7 @@ def check_sources() -> int:
     """
     import asyncio
 
-    from paxpivot.application.source_checks import run_source_checks
+    from paxpivot.application.source_checks import exit_code, run_source_checks
     from paxpivot.infrastructure import database as db
     from paxpivot.infrastructure.providers.firecrawl import FirecrawlSourceProvider
     from paxpivot.infrastructure.repositories import (
@@ -236,7 +236,7 @@ def check_sources() -> int:
         provider = FirecrawlSourceProvider.from_env(registry)
         if provider is None:
             print("FIRECRAWL_API_KEY is not set; no source was retrieved.")
-            return 2
+            return exit_code(None)
         run = asyncio.run(
             run_source_checks(
                 sources,
@@ -252,7 +252,7 @@ def check_sources() -> int:
         f"Source checks: recorded={len(run.recorded)} skipped={len(run.skipped)} "
         f"rejected={len(run.rejected)} provider_failures={len(run.provider_failures)}"
     )
-    return 3 if run.provider_failures else 0
+    return exit_code(run)
 
 
 def seed() -> None:
