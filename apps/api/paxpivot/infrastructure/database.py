@@ -280,6 +280,23 @@ processing_switches = Table(
     CheckConstraint("released_at IS NULL OR released_at >= engaged_at", name="release_after"),
 )
 
+trip_requests = Table(
+    "trip_requests",
+    metadata,
+    Column("trip_id", Uuid, primary_key=True),
+    Column("origin_terminal_id", Uuid, ForeignKey("terminals.terminal_id"), nullable=False),
+    Column("destination_text", Text, nullable=False),
+    Column("window_start", _tz(), nullable=False),
+    Column("window_end", _tz(), nullable=False),
+    Column("party_size", Integer, nullable=False),
+    Column("created_at", _tz(), nullable=False),
+    CheckConstraint("window_end > window_start", name="window_order"),
+    CheckConstraint("window_end - window_start <= interval '30 days'", name="window_span"),
+    CheckConstraint("party_size BETWEEN 1 AND 9", name="party_size"),
+    CheckConstraint("length(btrim(destination_text)) > 0", name="destination_present"),
+    Index("ix_trip_requests_created_at", "created_at"),
+)
+
 # Tables whose rows may never be updated or deleted (enforced by trigger in migration 0002).
 APPEND_ONLY_TABLES = ("source_observations", "terminal_facts")
 
@@ -367,4 +384,5 @@ def database_ready(engine: Engine) -> bool:
 @cache
 def engine_from_env() -> Engine:
     """Process-wide engine for the composition root; DATABASE_URL comes from the environment."""
-    return create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    # hide_parameters: a failed statement must never echo traveler free text into a log line.
+    return create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True, hide_parameters=True)

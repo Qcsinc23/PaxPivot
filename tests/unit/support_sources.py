@@ -30,6 +30,7 @@ from paxpivot.domain.terminal import (
     TerminalOperationalFact,
     VerifiedEntrance,
 )
+from paxpivot.domain.trip import TripRequest
 from pydantic import HttpUrl
 
 NOW = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
@@ -339,3 +340,17 @@ def provenance_with_url(src: Source, url: str, observed_at: datetime | None = No
         provider_id=ADAPTER_ID,
         policy_version_id=src.policy.policy_version_id,
     )
+
+
+class FakeTrips:
+    def __init__(self, items: Sequence["TripRequest"] = ()) -> None:
+        self.items = list(items)
+
+    def list_trips(self) -> Sequence["TripRequest"]:
+        return sorted(self.items, key=lambda t: (t.created_at, t.trip_id), reverse=True)
+
+    def get_trip(self, trip_id: UUID) -> "TripRequest | None":
+        return next((t for t in self.items if t.trip_id == trip_id), None)
+
+    def add(self, trip: "TripRequest") -> None:
+        self.items.append(trip)

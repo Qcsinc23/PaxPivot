@@ -1,8 +1,11 @@
 import { render, screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import Home from "../app/page";
+import { readApi } from "../lib/api/client";
 import { AppShell, GUARANTEE_TEXT } from "../components/shell/AppShell";
 import { fixturePlan } from "../lib/presentation/screens/plan";
+
+vi.mock("../lib/api/client", () => ({ readApi: vi.fn() }));
 
 /** Every string a synthetic fixture carries, so the live route can be proven free of them. */
 function fixtureStrings(value: unknown, out: string[] = []): string[] {
@@ -16,24 +19,26 @@ function fixtureStrings(value: unknown, out: string[] = []): string[] {
 
 /**
  * Foundation invariant, independent of any screen's copy: the shell renders, the live Plan route
- * renders its honest empty state (no synthetic fixture text, no form or search), and journey
- * planning is not presented as operational before an application contract feeds it.
+ * offers only a trip request form (no synthetic fixture text), and route search is not presented
+ * as operational before an application contract feeds it.
  */
-test("the shell and the live Plan route are honest before wiring", () => {
+test("the shell and the live Plan route are honest before route search", async () => {
+  vi.mocked(readApi).mockResolvedValue({
+    ok: true,
+    value: { generated_at: "2026-09-11T12:00:00Z", terminals: [] },
+  });
   const { container } = render(
-    <AppShell>
-      <Home />
-    </AppShell>,
+    <AppShell>{await Home({ searchParams: Promise.resolve({}) })}</AppShell>,
   );
+  expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
 
   expect(screen.getByRole("main")).toBeTruthy();
-  expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
   expect(screen.getByRole("contentinfo").textContent).toBe(GUARANTEE_TEXT);
   expect(screen.getByRole("link", { name: "Ask PaxPivot" })).toBeTruthy();
 
-  // No trip request can be entered or submitted yet.
+  // With no registered terminal there is nothing to request from; no form is offered.
   expect(container.querySelector("form")).toBeNull();
-  expect(container.querySelector("input, textarea, select")).toBeNull();
+  expect(screen.getByText("No terminals yet")).toBeTruthy();
 
   // Nothing is presented as a planned journey: no trip, route or terminal cards.
   expect(container.querySelector("article")).toBeNull();

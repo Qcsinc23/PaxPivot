@@ -165,6 +165,19 @@ def fact_row(terminal_id: Any, source_id: Any, **overrides: Any) -> Row:
     return {**row, **overrides}
 
 
+def trip_row(terminal_id: Any, **overrides: Any) -> Row:
+    row: Row = {
+        "trip_id": uuid4(),
+        "origin_terminal_id": terminal_id,
+        "destination_text": "probe destination",
+        "window_start": NOW,
+        "window_end": datetime(2026, 1, 3, tzinfo=UTC),
+        "party_size": 2,
+        "created_at": NOW,
+    }
+    return {**row, **overrides}
+
+
 def switch_row(**overrides: Any) -> Row:
     row: Row = {
         "switch_id": uuid4(),
@@ -220,6 +233,9 @@ def rules(source_id: Any, terminal_id: Any) -> tuple[Rule, ...]:
 
     def fact(**o: Any) -> Row:
         return fact_row(terminal_id, source_id, **o)
+
+    def trip(**o: Any) -> Row:
+        return trip_row(terminal_id, **o)
 
     fresh = {"state": "fresh", "retrieval": "succeeded"}
     return (
@@ -355,6 +371,30 @@ def rules(source_id: Any, terminal_id: Any) -> tuple[Rule, ...]:
             db.terminals,
             lambda: [term(base_latitude=0.0, base_longitude=0.0)],
             lambda: [term(base_latitude=0.0), term(base_longitude=0.0)],
+        ),
+        Rule(
+            "ck_trip_requests_window_order",
+            db.trip_requests,
+            lambda: [trip()],
+            lambda: [trip(window_end=NOW), trip(window_end=datetime(2025, 12, 31, tzinfo=UTC))],
+        ),
+        Rule(
+            "ck_trip_requests_window_span",
+            db.trip_requests,
+            lambda: [trip(window_end=datetime(2026, 1, 31, tzinfo=UTC))],
+            lambda: [trip(window_end=datetime(2026, 2, 1, tzinfo=UTC))],
+        ),
+        Rule(
+            "ck_trip_requests_party_size",
+            db.trip_requests,
+            lambda: [trip(party_size=1), trip(party_size=9)],
+            lambda: [trip(party_size=0), trip(party_size=10)],
+        ),
+        Rule(
+            "ck_trip_requests_destination_present",
+            db.trip_requests,
+            lambda: [trip()],
+            lambda: [trip(destination_text="   ")],
         ),
         Rule(
             "ck_terminal_facts_validity_window",

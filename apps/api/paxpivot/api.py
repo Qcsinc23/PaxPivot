@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, Engine
+from sqlalchemy.exc import IntegrityError
 
 from paxpivot.application.ports.auth import Authenticator, Principal
 from paxpivot.application.ports.repositories import (
@@ -21,6 +22,7 @@ from paxpivot.application.ports.repositories import (
     ObservationReader,
     SourceReader,
     TerminalReader,
+    TripReader,
 )
 from paxpivot.application.read_models import (
     SourceHealthRead,
@@ -32,15 +34,29 @@ from paxpivot.application.read_services import (
     list_source_health,
     list_terminal_network,
 )
+from paxpivot.application.trip_service import (
+    TripListRead,
+    TripRead,
+    create_trip_request,
+    get_trip_request,
+    list_trip_requests,
+)
 from paxpivot.domain.base import Contract
+from paxpivot.domain.trip import NewTripRequest
 from paxpivot.infrastructure.audit import audit_event
 from paxpivot.infrastructure.auth import authenticator_from_env
-from paxpivot.infrastructure.database import database_ready, engine_from_env, read_snapshot
+from paxpivot.infrastructure.database import (
+    database_ready,
+    engine_from_env,
+    read_snapshot,
+    transaction,
+)
 from paxpivot.infrastructure.repositories import (
     SqlKillSwitchRepository,
     SqlSourceObservationRepository,
     SqlSourceRepository,
     SqlTerminalRepository,
+    SqlTripRepository,
 )
 
 logger = logging.getLogger("paxpivot.api")
@@ -86,6 +102,7 @@ class Repositories:
     sources: SourceReader
     observations: ObservationReader
     kill_switches: KillSwitchReader
+    trips: TripReader
 
 
 def get_repositories(
@@ -96,6 +113,27 @@ def get_repositories(
         sources=SqlSourceRepository(connection),
         observations=SqlSourceObservationRepository(connection),
         kill_switches=SqlKillSwitchRepository(connection),
+        trips=SqlTripRepository(connection),
+    )
+
+
+def get_write_connection(engine: Annotated[Engine, Depends(get_engine)]) -> Iterator[Connection]:
+    """One write transaction per mutating request: commit on success, roll back on error."""
+    with transaction(engine) as connection:
+        yield connection
+
+
+@dataclass(frozen=True)
+class WriteRepositories:
+    terminals: TerminalReader
+    trips: SqlTripRepository
+
+
+def get_write_repositories(
+    connection: Annotated[Connection, Depends(get_write_connection)],
+) -> WriteRepositories:
+    return WriteRepositories(
+        terminals=SqlTerminalRepository(connection), trips=SqlTripRepository(connection)
     )
 
 
@@ -141,6 +179,37 @@ def terminal_detail(terminal_id: UUID, repos: Repos) -> TerminalDetailRead:
 @app.get("/api/v1/sources/health", response_model=SourceHealthRead, dependencies=[Authorized])
 def source_health(repos: Repos) -> SourceHealthRead:
     return list_source_health(repos.sources, repos.observations, repos.kill_switches)
+
+
+@app.get("/api/v1/trips", response_model=TripListRead, dependencies=[Authorized])
+def trips(repos: Repos) -> TripListRead:
+    return list_trip_requests(repos.trips, repos.terminals)
+
+
+@app.get("/api/v1/trips/{trip_id}", response_model=TripRead, dependencies=[Authorized])
+def trip(trip_id: UUID, repos: Repos) -> TripRead:
+    result = get_trip_request(trip_id, repos.trips, repos.terminals)
+    if not result.ok:
+        raise HTTPException(status_code=404, detail={"message_key": result.error.message_key})
+    return result.value
+
+
+@app.post("/api/v1/trips", response_model=TripRead, status_code=201, dependencies=[Authorized])
+def create_trip(
+    request: NewTripRequest,
+    repos: Annotated[WriteRepositories, Depends(get_write_repositories)],
+) -> TripRead:
+    try:
+        result = create_trip_request(request, repos.terminals, repos.trips)
+    except IntegrityError:
+        # The origin terminal vanished between the check and the insert: the FK refused it.
+        # Raised without the statement so no request text reaches the log.
+        raise HTTPException(
+            status_code=422, detail={"message_key": "trip.unknown_origin_terminal"}
+        ) from None
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={"message_key": result.error.message_key})
+    return result.value
 
 
 class ReadyResponse(Contract):

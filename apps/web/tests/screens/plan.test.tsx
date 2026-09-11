@@ -1,12 +1,22 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import PlanPage from "@/app/page";
+import { readApi } from "@/lib/api/client";
 import { PlanScreen } from "@/components/screens/plan/PlanScreen";
 import { unknown } from "@/lib/presentation/fact";
 import { emptyPlan, fixturePlan } from "@/lib/presentation/screens/plan";
 import type { PlanScreenModel } from "@/lib/presentation/screens/plan";
 import { expectNoAxeViolations } from "../a11y";
+
+/** The live route is a server component; it reads only through this module. */
+vi.mock("@/lib/api/client", () => ({ readApi: vi.fn() }));
+
+const readApiMock = vi.mocked(readApi);
+
+beforeEach(() => {
+  readApiMock.mockReset();
+});
 
 /** Text a sighted user sees: direct text nodes only, so sr-only reasons are excluded. */
 function visibleText(node: Element | null | undefined): string {
@@ -289,20 +299,47 @@ describe("PlanScreen states", () => {
 });
 
 describe("live / route", () => {
-  test("renders the honest empty model and leaks no fixture data", () => {
-    render(<PlanPage />);
+  test("renders the trip request form from the live terminals and leaks no fixture data", async () => {
+    readApiMock.mockResolvedValue({
+      ok: true,
+      value: {
+        generated_at: "2026-09-11T12:00:00Z",
+        terminals: [
+          {
+            terminal_id: "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a",
+            name: "Registered Terminal",
+            installation: null,
+            timezone: "UTC",
+            operational_state: "open",
+            entrance: null,
+            entrance_kind: null,
+            official_url: null,
+            latest: null,
+          },
+        ],
+      },
+    });
+    render(await PlanPage({ searchParams: Promise.resolve({}) }));
 
+    expect(readApiMock).toHaveBeenCalledWith("/api/v1/terminals");
     expect(
-      screen.getByRole("heading", { name: "Nothing planned yet" }),
+      screen.getByRole("option", { name: "Registered Terminal" }),
     ).toBeTruthy();
-    // The live route keeps the scaffold's honesty guarantee that planning is not available.
     expect(
-      screen.getByText(/Journey planning is not available yet/),
+      screen.getByRole("button", { name: "Save trip request" }),
     ).toBeTruthy();
+    // The request form makes no claim about routes, eligibility or sources.
     expect(screen.queryByRole("heading", { name: "Watching" })).toBeNull();
     expect(screen.queryByText(/Example/)).toBeNull();
     expect(screen.queryByText("Eligible · 2 travelers")).toBeNull();
     expect(screen.queryByText("Sources updated")).toBeNull();
+  });
+
+  test("a configuration or API failure is an error, never an empty plan", async () => {
+    readApiMock.mockResolvedValue({ ok: false, reason: "unavailable" });
+    render(await PlanPage({ searchParams: Promise.resolve({}) }));
+    expect(screen.getByText("We could not load the terminals")).toBeTruthy();
+    expect(document.querySelector("form")).toBeNull();
   });
 });
 

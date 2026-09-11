@@ -486,3 +486,40 @@ def test_seed_leaves_paused_and_unknown_policy_versions_alone(engine: Engine) ->
         ("incident-2026-10", "approved", False),
         ("terminal-page-metadata-v1", "paused", False),
     ]
+
+
+def test_trip_requests_persist_and_the_api_creates_them_in_one_transaction(engine: Engine) -> None:
+    """TASK-034: a request is stored with its checks, listed newest first, and read back."""
+    from datetime import timedelta
+
+    from paxpivot.infrastructure.bootstrap import REFERENCE_TERMINALS
+
+    app.dependency_overrides[get_engine] = lambda: engine
+    app.dependency_overrides[get_authenticator] = lambda: BearerTokenAuthenticator(TOKEN)
+    try:
+        client = TestClient(app)
+        headers = {"Authorization": f"Bearer {TOKEN}"}
+        start = datetime(2026, 10, 1, tzinfo=UTC)
+        body = {
+            "origin_terminal_id": str(REFERENCE_TERMINALS[0].terminal_id),
+            "destination_text": "Synthetic destination",
+            "window_start": start.isoformat(),
+            "window_end": (start + timedelta(days=3)).isoformat(),
+            "party_size": 2,
+        }
+        created = client.post("/api/v1/trips", json=body, headers=headers)
+        assert created.status_code == 201, created.text
+        trip_id = created.json()["trip_id"]
+        listed = client.get("/api/v1/trips", headers=headers).json()["trips"]
+        assert listed[0]["trip_id"] == trip_id
+        assert listed[0]["origin_terminal_name"] == REFERENCE_TERMINALS[0].name
+        assert client.get(f"/api/v1/trips/{trip_id}", headers=headers).status_code == 200
+        # Boundary rules also hold at the database (probe covers them); the API refuses first.
+        assert (
+            client.post(
+                "/api/v1/trips", json={**body, "party_size": 12}, headers=headers
+            ).status_code
+            == 422
+        )
+    finally:
+        app.dependency_overrides.clear()
