@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR (#32); becomes `done` once merged (see Handoff).
+`done` — merged to `main` in 214b5f9 (PR #32); post-merge Quality green; Handoff recorded below.
 
 ## Assigned role
 
@@ -86,8 +86,8 @@ docker compose --env-file /dev/null -f compose.prod.yml config --quiet   # with 
 ## Handoff
 
 **Branch:** `audit/improvements-2026-09-11` from `main` @ `c286e6e`.
-**Commit:** reported in the PR.  **Migrations:** none.
-**Verification run:** recorded in the PR after the final change.
+**Commit:** a934eef (PR #32, merged as 214b5f9).  **Migrations:** none.
+**Verification run:** on dcc8664 (final code change) — format-check/lint/typecheck/test-unit (214; Vitest 329)/test-integration (35)/test/build/migrate/migrate-check/compose-check PASS; migrate-test PASS (19 CHECK rules); build-images PASS; web and api images smoke-tested. Two adversarial review passes; final: 0 Critical / 0 Important. CI Quality green on the head and the merge commit.
 **Known limitations / risks:** images built locally only (not in CI, to keep the gate fast);
 Caddy obtains certificates from Let's Encrypt at first start, which needs DNS in place.
 **Next dependency:** product-owner decisions in AUDIT.md §6.
