@@ -182,6 +182,33 @@ def empty_database_check() -> None:
         )
 
 
+def cold_start_check(cycles: int) -> None:
+    """Prove Compose readiness: after `up --wait`, the first connection must succeed at once.
+
+    Each cycle wipes the local volume (first-boot path, where the race lived), starts the
+    services, then immediately runs `SELECT 1` and a temporary-database create/migrate/drop with
+    no retry anywhere. Local development only: it destroys this checkout's database.
+    """
+    if cycles < 1:
+        raise ValueError("cycles must be at least 1")
+    config = configure()
+    for cycle in range(1, cycles + 1):
+        # Compose output stays visible: on the failure path it is the only diagnostic.
+        subprocess.run(["docker", "compose", "down", "--volumes"], cwd=ROOT, check=True)
+        started = time.monotonic()
+        subprocess.run(["docker", "compose", "up", "-d", "--wait"], cwd=ROOT, check=True)
+        waited = time.monotonic() - started
+        engine = create_engine(os.environ["DATABASE_URL"])
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        engine.dispose()
+        with temporary_database():
+            pass
+        print(f"cycle {cycle}/{cycles}: --wait {waited:.1f}s, SELECT 1 and temporary database OK")
+    command.upgrade(config, "head")  # Leave the checkout database migrated, as `make dev` would.
+    print(f"Cold start check: {cycles}/{cycles} cycles connected immediately after --wait")
+
+
 def seed() -> None:
     from paxpivot.infrastructure.bootstrap import seed_reference_data
 
@@ -241,6 +268,8 @@ if __name__ == "__main__":
         empty_database_check()
     elif action == "seed":
         seed()
+    elif action == "cold-start-check":
+        cold_start_check(int(sys.argv[2]) if len(sys.argv) > 2 else 20)
     elif action == "dev":
         dev()
     else:

@@ -11,11 +11,19 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:?Run make setup first}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    # Probe over TCP and run a real query (TASK-028). The image's first boot starts a temporary
+    # server on the Unix socket only, runs init scripts, then restarts on TCP; `pg_isready`
+    # without `-h` answers "ready" from that temporary server and `--wait` returned before the
+    # real server was up. A TCP probe can only succeed against the final server.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U paxpivot -d paxpivot"]
-      interval: 3s
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -U paxpivot -d paxpivot && psql -h 127.0.0.1 -U paxpivot -d paxpivot -Atc 'SELECT 1'",
+        ]
+      interval: 2s
       timeout: 3s
-      retries: 30
+      retries: 45
   redis:
     image: redis:7.4.8-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]

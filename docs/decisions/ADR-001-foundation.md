@@ -78,3 +78,13 @@ make migrate-test. Merge foundation to main before dependent task implementation
 make check plus make migrate-test prove contract validation, fake substitution, default-deny
 auth, frontend smoke/build, API process boot, empty-database baseline, rollback/reapply,
 and drift detection. CI runs these same commands.
+
+## Amendments
+
+- **2026-09-11, TASK-028.** The Compose Postgres healthcheck probes over TCP and runs a real
+  query. Root cause of the intermittent "server closed the connection unexpectedly" right after
+  `docker compose up --wait` (reproduced 17/20 cold starts): the official entrypoint's first boot
+  runs a temporary server listening on the Unix socket only while init scripts (PostGIS) run,
+  then restarts on TCP; `pg_isready` without `-h` answered "ready" from the temporary server.
+  With `-h 127.0.0.1` plus `SELECT 1`, 20/20 cold starts connect immediately.
+  `make cold-start-check` reproduces the proof (local only; wipes the checkout's volume).
