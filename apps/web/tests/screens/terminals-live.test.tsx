@@ -108,17 +108,24 @@ describe("live /terminals", () => {
     expect(labels.some((text) => /\b0\b/.test(text))).toBe(false);
   });
 
-  test("not_configured renders the honest empty state, not fixture data", async () => {
+  test("not_configured is a configuration error, never an empty registry", async () => {
     readApiMock.mockResolvedValue({ ok: false, reason: "not_configured" });
-    render(await TerminalsPage());
-
+    const { container } = render(await TerminalsPage());
+    expect(screen.getByRole("alert").textContent).toContain(
+      "configuration problem, not evidence that no terminals or sources exist",
+    );
     expect(
-      screen.getByRole("heading", { name: "No terminals yet" }),
+      screen.getByText("PaxPivot data is not available right now."),
     ).toBeTruthy();
-    // An unwired API is not an error, and it is emphatically not a "no terminals" world claim
-    // dressed up with data.
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByText(/Example Terminal/)).toBeNull();
+    // No absence claim is made as a heading: those belong to a successful empty response only.
+    expect(
+      screen.queryByRole("heading", {
+        name: /No terminals|No sources|No terminal to show|not being checked/i,
+      }),
+    ).toBeNull();
+    expect(container.querySelector("article")).toBeNull();
+    // Nothing operational leaks: no URL, token or variable name.
+    expect(container.textContent).not.toMatch(/PAXPIVOT_|http|token/i);
   });
 
   test.each(["unauthorized", "unavailable"] as const)(
@@ -197,15 +204,24 @@ describe("live /terminals/[terminalId]", () => {
     expect(notFoundCalls).toHaveLength(1);
   });
 
-  test("not_configured renders the honest empty state, not fixture data", async () => {
+  test("not_configured is a configuration error, never an empty registry", async () => {
     readApiMock.mockResolvedValue({ ok: false, reason: "not_configured" });
-    render(await TerminalDetailPage(params("any")));
-
+    const { container } = render(await TerminalDetailPage(params("any")));
+    expect(screen.getByRole("alert").textContent).toContain(
+      "configuration problem, not evidence that no terminals or sources exist",
+    );
     expect(
-      screen.getByRole("heading", { name: "No terminal to show yet" }),
+      screen.getByText("PaxPivot data is not available right now."),
     ).toBeTruthy();
-    expect(screen.queryByText(/failure on our side/)).toBeNull();
-    expect(screen.queryByText("Example Terminal a")).toBeNull();
+    // No absence claim is made as a heading: those belong to a successful empty response only.
+    expect(
+      screen.queryByRole("heading", {
+        name: /No terminals|No sources|No terminal to show|not being checked/i,
+      }),
+    ).toBeNull();
+    expect(container.querySelector("article")).toBeNull();
+    // Nothing operational leaks: no URL, token or variable name.
+    expect(container.textContent).not.toMatch(/PAXPIVOT_|http|token/i);
   });
 
   test.each(["unauthorized", "unavailable"] as const)(

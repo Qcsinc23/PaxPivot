@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — this PR; becomes `done` once merged (see Handoff).
+`done` — merged to `main` in 594938b (PR #28); post-merge Quality green; Handoff recorded below.
 
 ## Assigned role
 
@@ -119,7 +119,7 @@ make migrate-test
 
 **Branch:** `foundation/TASK-026-db-correctness` from `main` @ `56be156`.
 
-**Commit:** reported in the PR.
+**Commit:** 14dccc8 (PR #28, merged as 594938b).
 
 **Files changed:** the owned paths above. Also `tests/integration/test_local_env_isolation.py`:
 it shelled out to `docker compose config` with the inherited environment, so once any earlier test
@@ -131,7 +131,7 @@ subprocess environment (a latent ordering bug surfaced by the new module's alpha
 
 **Migrations:** `0003_supersession_integrity` (single head).
 
-**Verification run:** recorded in the PR after the final change.
+**Verification run:** on 14dccc8 after the final edit — format-check/lint/typecheck/test-unit (213; Vitest 319)/test-integration (34)/test/build/migrate/migrate-check/compose-check PASS; migrate-test PASS (19 CHECK rules); mutation probes A1/A2/A3 each fail when their guard is removed. Independent adversarial review: 0 Critical / 0 Important (5 Minor, all applied). CI Quality green on the head and on the merge commit.
 
 **Known limitations / risks:** the parity probe is a fixed table of the 0002/0003 rules and must
 be extended by the migration that adds a new CHECK; `alembic check` still owns structure.
