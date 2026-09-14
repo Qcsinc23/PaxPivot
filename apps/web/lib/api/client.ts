@@ -15,6 +15,11 @@ export type ApiResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: ApiFailure };
 
+export type WriteOptions = ReadOptions & {
+  /** Defaults to `POST`; pass `PUT` for a whole-resource replace (e.g. `/api/v1/profile`). */
+  method?: "POST" | "PUT";
+};
+
 export type ReadOptions = {
   fetchImpl?: typeof fetch;
   env?: Record<string, string | undefined>;
@@ -24,21 +29,24 @@ export async function readApi<T>(
   path: string,
   options: ReadOptions = {},
 ): Promise<ApiResult<T>> {
-  return callApi<T>(path, undefined, options);
+  return callApi<T>(path, undefined, undefined, options);
 }
 
-/** Server-only JSON POST. `invalid` is the API refusing the request body (422). */
+/** Server-only JSON POST (or PUT via `options.method`). `invalid` is the API refusing the
+ * request body (422). */
 export async function writeApi<T>(
   path: string,
   body: unknown,
-  options: ReadOptions = {},
+  options: WriteOptions = {},
 ): Promise<ApiResult<T>> {
-  return callApi<T>(path, body, options);
+  const { method, ...rest } = options;
+  return callApi<T>(path, body, method, rest);
 }
 
 async function callApi<T>(
   path: string,
   body: unknown,
+  method: "POST" | "PUT" | undefined,
   { fetchImpl = fetch, env = process.env }: ReadOptions,
 ): Promise<ApiResult<T>> {
   if (typeof window !== "undefined") {
@@ -52,7 +60,7 @@ async function callApi<T>(
   let response: Response;
   try {
     response = await fetchImpl(new URL(path, base), {
-      method: body === undefined ? "GET" : "POST",
+      method: body === undefined ? "GET" : (method ?? "POST"),
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: "application/json",

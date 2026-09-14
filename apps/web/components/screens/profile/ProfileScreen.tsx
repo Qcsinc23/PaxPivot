@@ -12,6 +12,7 @@ import {
   eligibilitySummaryText,
 } from "@/lib/presentation/eligibility";
 import type { ProfileScreenModel } from "@/lib/presentation/screens/profile";
+import { PartyForm } from "./PartyForm";
 
 type Props = { model: ProfileScreenModel };
 
@@ -48,8 +49,9 @@ export function ProfileScreen({ model }: Props) {
         <EmptyState
           title="No profile yet"
           body="Add your party and we will show what applies to you."
-          action={<Button href={model.advancedHref}>Get started</Button>}
+          action={<Button href="#party-form">Get started</Button>}
         />
+        <PartyForm model={model.partyForm} />
       </>
     );
   }
@@ -109,6 +111,8 @@ export function ProfileScreen({ model }: Props) {
           </Button>
         ) : null}
       </Card>
+
+      <PartyForm model={model.partyForm} />
 
       <Card as="div">
         <h2 className="pp-title">Before you go</h2>
