@@ -1,0 +1,7 @@
+# Daily pg_dump at 03:15 UTC with 30-day retention, tracked in the repo so it survives a
+# reinstall. Installed with:
+#   install -m 0644 deploy/cron/paxpivot-* /etc/cron.d/
+#   chmod +x /opt/paxpivot/deploy/run-checks.sh /opt/paxpivot/deploy/backup.sh
+# deploy/backup.sh logs its own success/failure line to backups/backup.log; the redirect below is
+# a safety net that also captures anything the script prints before that.
+15 3 * * * root cd /opt/paxpivot && ./deploy/backup.sh >>/opt/paxpivot/backups/backup.log 2>&1
