@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — PR open; see Handoff.
+`done` — merged to `main` in f02c4be (PR #47); final fresh review 0 Critical / 0 Important; status normalized in TASK-040.
 
 ## Assigned role
 
@@ -179,17 +179,32 @@ hit test at document end (elementsFromPoint over the whole control, 4 px grid, 2
 - *Minor (declined):* desktop reserves do not add `env(safe-area-inset-bottom)`; no desktop rule
   in the stylesheet does, and the desktop layout has no bottom navigation to clear.
 
-After the fix, at the document end:
+After the sticky-bar fix (fc326c2), at the document end:
 
 ```text
 /showcase/route-detail 390  -> main padding 96 px, disclaimer margin 68 px, disclaimer 3 px above the bar, sticky bar above it, no overflow
 /showcase/compare      390  -> disclaimer 3 px above the bar
 /showcase/route-detail 1280 -> main padding 36 px, disclaimer margin 0, disclaimer fully visible
 /showcase/terminals 390/1280 (control shown) -> unchanged: only pp-shell__body under the control
-shell.test.tsx              -> 9 passed; prettier clean
 ```
 
-**Known limitations / risks:** CSS-only; the regression test reads the stylesheet text, so it
-pins the reserve rules, and the hit test is the behavioural proof.
+After the `/ask` fix (37dbb1a), at the document end:
+
+```text
+/ask 390             -> body[data-no-fab] set, no control, main padding 96 px, disclaimer margin 68 px, disclaimer clears the bar, no overflow
+/ask 1280            -> main padding 36 px, disclaimer margin 0
+/showcase/terminals  -> control shown (44 px), no mark, 144 px reserve, disclaimer above the control
+client navigation    -> /ask → Terminals (same document): mark cleared, control shown, 144 px; Ask control → /ask: mark set, 96 px
+shell.test.tsx + ask.test.tsx -> 27 passed (shell 10); prettier and ESLint clean
+```
+
+**Final review (fresh, on 37dbb1a):** 0 Critical / 0 Important / 1 Minor (this verification block was
+stale; updated here in TASK-040). The reviewer mutation-tested the body mark and both selectors:
+removing any one fails `shell.test.tsx`.
+
+**Known limitations / risks:** the regression test reads the stylesheet text, so it pins the reserve
+rules; the hit tests and browser measurements are the behavioural proof. The body marks are set in
+effects, so the very first paint of `/ask` or a sticky-bar page can briefly carry the larger reserve
+(extra space only, never an overlap).
 
 **Next dependency:** none.
