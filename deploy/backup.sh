@@ -4,6 +4,11 @@
 # stuck cron entry can't silently stop pruning independently of the dump step.
 set -eu
 
+# Dumps contain trip data on a shared host; create them (and the log) owner-only. This only
+# governs files this script creates — /opt/paxpivot/backups itself and any dumps that already
+# exist from before this change still need their own one-time chmod (see docs/DEPLOYMENT.md).
+umask 077
+
 cd /opt/paxpivot
 
 backup_dir="/opt/paxpivot/backups"

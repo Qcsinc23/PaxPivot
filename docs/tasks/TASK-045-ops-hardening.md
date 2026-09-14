@@ -43,7 +43,7 @@ this task also corrects.
 
 ```text
 compose.prod.yml
-deploy/** (deploy/run-checks.sh, deploy/backup.sh, deploy/cron/paxpivot-checks, deploy/cron/paxpivot-backup — new; deploy/compose.traefik.yml, deploy/api-entrypoint.sh, deploy/Caddyfile unchanged)
+deploy/** (deploy/run-checks.sh, deploy/backup.sh, deploy/prune-images.sh, deploy/cron/paxpivot-checks, deploy/cron/paxpivot-backup — new; deploy/compose.traefik.yml, deploy/api-entrypoint.sh, deploy/Caddyfile unchanged)
 .env.example
 docs/DEPLOYMENT.md
 docs/tasks/TASK-045-ops-hardening.md
@@ -78,6 +78,7 @@ compose.prod.yml::services.{web,api}.cap_drop / security_opt                 (ne
 compose.prod.yml::services.{postgres,redis}.cap_drop / cap_add / security_opt (new)
 deploy/run-checks.sh   (new script; not imported by application code, invoked by cron only)
 deploy/backup.sh       (new script; not imported by application code, invoked by cron only)
+deploy/prune-images.sh (new script; not imported by application code, invoked manually per the upgrade runbook)
 deploy/cron/paxpivot-checks, deploy/cron/paxpivot-backup   (new; installed verbatim to /etc/cron.d/)
 .env.example::PAXPIVOT_HEARTBEAT_URL   (new, optional, documentation only)
 ```
@@ -164,7 +165,29 @@ effect (e.g. a `cd` failure).
 
 `deploy/backup.sh` takes the same `pg_dump -U paxpivot -Fc paxpivot` into the same dated filename
 pattern, logs a success or failure line (with the exit code) to `backup.log`, removes a partial
-dump file on failure, and keeps the 30-day retention (`find … -mtime +30 -delete`).
+dump file on failure, and keeps the 30-day retention (`find … -mtime +30 -delete`). Dumps hold
+trip data on a shared host, so the script sets `umask 077` before creating the dump and the log
+(fixed after fresh review 1; see the Handoff's "Round 2" for verification of the resulting file
+mode and the one-time `chmod` needed for the backups directory and any pre-existing dumps).
+
+**Image pruning (`deploy/prune-images.sh`, added after fresh review 1).** The upgrade runbook in
+`docs/DEPLOYMENT.md` needs to drop old `paxpivot-{api,web}` images after a successful deploy,
+keeping only the tag just deployed and the previous one. The first version of this was an inline
+`docs/DEPLOYMENT.md` shell snippet that trusted the same shell's `$TAG`/`$PREVIOUS_TAG` variables
+set earlier in the runbook; fresh review 1 found that if the block is ever run alone (a new shell,
+a dropped session, re-running just that block), both variables are empty, and GNU grep's
+`-v -E "^(|)$"` then matches every non-empty tag — the invert (`-v`) keeps everything, so every
+`paxpivot-{api,web}` image is deleted, including the one currently running and the rollback
+target. BSD grep on macOS does not reproduce this (which is why local testing during the first
+round missed it). Rather than patch the regex, this is now a tracked, shellcheck'd script that
+never builds that pattern at all: it re-reads the currently deployed tag from `.env.production`
+itself (so it does not depend on any shell variable surviving from an earlier step), takes the
+previous tag as a required argument, and **aborts with a message and exits 1** if either is empty,
+instead of silently proceeding with an empty match-everything pattern. It also skips any tag still
+used by a running container (`docker ps --format '{{.Image}}'`) as an extra guard, matching the
+review's "ideally also refuse to remove the tag of any running container" suggestion. Tag
+comparison uses a POSIX `case` statement on quoted variables (glob-disabled by quoting, so it is
+an exact literal match, not a regex/glob), not `grep`, so the original bug class cannot recur here.
 
 ## ADR decision
 
@@ -194,6 +217,18 @@ the same file.
       TASK-043 claim, and the image-pruning command), the monthly restore drill, and heartbeat
       setup.
 - [x] No unrelated files changed (`git diff --stat origin/main` limited to the owned paths).
+- [x] (Added after fresh review 1) A heartbeat ping failure never turns a successful
+      `check-sources` run into a reported failure, and never logs the heartbeat URL.
+- [x] (Added after fresh review 1) The image-pruning step is self-contained and safe to run
+      standalone: empty inputs abort instead of pruning, and a running container's tag is never
+      removed.
+- [x] (Added after fresh review 1) Backup dumps and the backup log are created owner-only
+      (`umask 077`), with the pre-existing directory/files' one-time fix documented.
+- [x] (Added after fresh review 1) Both cron files set an explicit `PATH`.
+- [x] (Added after fresh review 1) The heartbeat URL parser tolerates surrounding quotes and a
+      trailing CR.
+- [x] (Added after fresh review 1) The restore-drill command in `docs/DEPLOYMENT.md` is
+      copy-paste runnable (full `docker compose … exec` prefix).
 
 ## Required tests
 
@@ -227,7 +262,7 @@ docker exec task045-api-1 python -c "import urllib.request;print(urllib.request.
 docker exec task045-web-1 node -e "fetch('http://127.0.0.1:3000/login').then(r=>console.log(r.status))"
 docker inspect task045-{web,api,postgres,redis}-1 --format '{{.HostConfig.CapDrop}} {{.HostConfig.CapAdd}} {{.HostConfig.SecurityOpt}} {{.HostConfig.Memory}} {{.HostConfig.NanoCpus}} {{.HostConfig.LogConfig}}'
 
-docker run --rm -v $PWD/deploy:/mnt:ro koalaman/shellcheck:stable /mnt/run-checks.sh /mnt/backup.sh
+docker run --rm -v $PWD/deploy:/mnt:ro koalaman/shellcheck:stable /mnt/run-checks.sh /mnt/backup.sh /mnt/prune-images.sh
 
 # deploy/run-checks.sh logic (paths/compose-file-set adapted for local testing; see Handoff)
 # against a local `python -m http.server`-based fake heartbeat listener.
@@ -385,6 +420,106 @@ git diff --stat origin/main -> compose.prod.yml, deploy/run-checks.sh, deploy/ba
 All local Docker artifacts (task045-* containers, the task045 project network/volume, images
 paxpivot-{api,web}:task045, the scratch .env.production and heartbeat-listener process) were
 removed after verification; nothing was left running or tagged locally.
+```
+
+**Round 2 (2026-09-14, fresh review 1 on PR #57, head `efcf557`; 0 Critical / 3 Important /
+3 Minor — the rest of the PR was independently reverified and found correct: upgrade path from
+both an unhardened and a fresh volume, `docker inspect` matching the compose file, no permission
+errors, `restart` staying healthy, the (then-inline) prune command's repo-scoping being safe
+against decoy repos, a failed backup removing its partial dump and never pruning, restore working,
+shellcheck clean, cron file names/modes/schedules, task scope, and the docs drift guard):**
+
+1. **IMPORTANT — heartbeat curl failure reported as a false check-sources failure
+   (`deploy/run-checks.sh`).** Under `set -eu`, `curl -fsS ...` failing (e.g. an unreachable
+   heartbeat URL) exited the whole script with curl's own status even though `check-sources` had
+   already succeeded — the reviewer observed exit 7 from an unreachable URL. Fixed by making the
+   ping best-effort: `curl_status=0; curl ... || curl_status=$?`, then only *logging* a line
+   (`heartbeat ping failed (curl exit N)`, no URL) when `curl_status` is non-zero, and always
+   `exit`ing with `check-sources`' own `$status`. (A first attempt used
+   `if ! curl ...; then curl_status=$?; ...; fi` — wrong, because inside that `then` branch `$?` is
+   the exit status of the negated test, not curl's; it always read back `0`. Caught by testing
+   against an actually-unreachable port before shipping the fix, not by inspection alone.)
+2. **IMPORTANT — image-pruning block breaks with empty tags (`docs/DEPLOYMENT.md`).** Replaced the
+   inline snippet with the tracked, shellcheck'd `deploy/prune-images.sh` (see "Design" above for
+   why): it re-derives the current tag from `.env.production`, requires the previous tag as an
+   argument, aborts with a message on either being empty, and skips any tag still in use by a
+   running container.
+3. **IMPORTANT — backup dumps world/group-readable (`deploy/backup.sh`).** Added `umask 077`
+   before any file is created; documented `chmod 700 /opt/paxpivot/backups` and a one-time
+   `chmod 600` for dumps written before this change.
+4. **MINOR — cron `PATH` (`deploy/cron/paxpivot-*`).** Added
+   `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` to both files.
+5. **MINOR — heartbeat URL quoting/CRLF (`deploy/run-checks.sh`).** After the `grep`/`cut`, the
+   value is piped through `tr -d '\r'` and then a `case` strips one matching pair of surrounding
+   `"..."` or `'...'` quotes.
+6. **MINOR — restore-drill command not copy-paste runnable (`docs/DEPLOYMENT.md`).** Gave the
+   row-count `psql` example the full
+   `docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml exec -T postgres`
+   prefix.
+
+Re-verification (same local stack approach as Round 1: images rebuilt as `paxpivot-{api,web}:task045r`,
+project `-p task045r`, scratch env, adapted script copies with `/opt/paxpivot` → the worktree path
+and `.env.production` → a scratch file, run against real containers):
+
+```text
+docker compose --env-file <scratch> -f compose.prod.yml -f deploy/compose.traefik.yml \
+  config --quiet -> PASS (unchanged by these fixes; re-run to confirm no regression)
+
+shellcheck -S style deploy/run-checks.sh deploy/backup.sh deploy/prune-images.sh \
+  deploy/api-entrypoint.sh -> 0 findings, exit 0
+
+deploy/run-checks.sh, six scenarios against the local stack + a local `python -m http.server`
+heartbeat listener on 127.0.0.1:8901:
+  a. Unreachable heartbeat URL (http://127.0.0.1:1/..., nothing listens on port 1), check-sources
+     succeeds -> exit 0; checks.log gained
+     "heartbeat ping failed (curl exit 7)" (curl's real exit code, e.g. 7 = "couldn't connect");
+     no URL appears in the log; no ping recorded by the listener.
+  b. Heartbeat URL wrapped in double quotes with a trailing CR
+     (`PAXPIVOT_HEARTBEAT_URL="http://127.0.0.1:8901/ping-quoted"` + `\r\n`, confirmed present in
+     the file via `xxd`) -> exit 0; listener recorded a hit on /ping-quoted.
+  c. Heartbeat URL wrapped in single quotes, no CR -> exit 0; listener recorded a hit on
+     /ping-singlequoted.
+  d. Empty heartbeat URL (regression) -> exit 0; no hit recorded.
+  e. Plain unquoted URL, reachable (regression) -> exit 0; listener recorded a hit on
+     /ping-success.
+  f. Stubbed check-sources failure (`sh -c "echo simulated-check-sources-failure; exit 7"`,
+     regression) -> exit 7 (propagated); no hit recorded.
+
+deploy/backup.sh: ran against the seeded local stack. Created dump file mode: `-rw-------` (600,
+confirmed via `ls -la`); backup.log mode also `-rw-------` (600) after a fresh creation. Restored
+the post-umask-fix dump with `pg_restore` into a scratch database:
+`restore_test.sources` count = 9 (matching the live, seeded database) — dump content and restore
+path both unaffected by the umask change, only the file mode differs from Round 1.
+
+deploy/prune-images.sh: tested inside `ubuntu:24.04` (GNU grep 3.11, confirmed via
+`grep --version`; `/bin/sh` is dash) with a fake `docker` shell script standing in for the real
+CLI (`docker images <repo> --format ...` / `docker ps --format ...` / `docker rmi <image>` each
+backed by a fixture file, so the test exercises the script's own control flow rather than a real
+Docker daemon) and dummy tags chosen to include decoys sharing a prefix with the real tags
+(`abc123`, `abc123x`, `xabc123`) to prove the `case` match is exact, not a glob/prefix match:
+  A. `PAXPIVOT_TAG=` (empty) in `.env.production`, no argument -> exit 1,
+     "PAXPIVOT_TAG is not set in /opt/paxpivot/.env.production; refusing to prune"; nothing
+     removed.
+  B. `PAXPIVOT_TAG=abc123` set, no argument -> exit 1, "usage: ... <previous-tag>; refusing to
+     prune with no previous tag given"; nothing removed.
+  B2. Same, called with an explicit empty-string argument (`""`) -> same abort; nothing removed.
+  C. `PAXPIVOT_TAG=abc123`, previous tag `def456` (also the tag of a fixture "running" web
+     container) -> exit 0; removed exactly
+     `paxpivot-api:{abc123x,xabc123,task045r}` and `paxpivot-web:{ghi789,task045r}`; kept exactly
+     `abc123` and `def456` for both repos; the decoys `abc123x`/`xabc123` were correctly NOT kept
+     despite sharing a prefix with `abc123`.
+  D. Same tags, but the fixture "running" container instead uses a THIRD tag (`xabc123`, neither
+     current nor previous) -> that tag was skipped with
+     "skipping paxpivot-api:xabc123 (currently running)" and did not appear in the removed list,
+     proving the running-container guard is independent of the current/previous check.
+
+make check -> PASS (exit 0; same command set as Round 1)
+git status --porcelain / git diff --stat origin/main -> unchanged file set from Round 1, plus the
+  new deploy/prune-images.sh (still within deploy/**)
+
+All Round 2 local Docker artifacts (task045r-* containers, project network/volume, images
+paxpivot-{api,web}:task045r, the ubuntu:24.04 test container runs, the fake-docker/prune-test
+fixtures, the heartbeat listener process, and every scratch file) were removed after verification.
 ```
 
 **Known limitations / risks:**

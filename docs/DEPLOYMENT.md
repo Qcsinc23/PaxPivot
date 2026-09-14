@@ -54,7 +54,7 @@ whenever `deploy/cron/paxpivot-*` or the scripts they call change — both are s
 
 ```bash
 cd /opt/paxpivot
-chmod +x deploy/run-checks.sh deploy/backup.sh
+chmod +x deploy/run-checks.sh deploy/backup.sh deploy/prune-images.sh
 install -m 0644 deploy/cron/paxpivot-checks deploy/cron/paxpivot-backup /etc/cron.d/
 ```
 
@@ -101,14 +101,18 @@ reaches 200 — a single 404 or 502 immediately after `--wait` returns is the ex
 race on this host, not a bad deploy.
 
 Once the poll above reaches 200, drop old images, keeping only the tag just deployed and the
-previous one (about a dozen otherwise accumulate on this host):
+previous one (about a dozen otherwise accumulate on this host), with the tracked script:
 
 ```bash
-for repo in paxpivot-api paxpivot-web; do
-  docker images "$repo" --format '{{.Tag}}' | grep -v -E "^(${TAG}|${PREVIOUS_TAG})$" \
-    | xargs -r -I{} docker rmi "$repo:{}"
-done
+./deploy/prune-images.sh "$PREVIOUS_TAG"
 ```
+
+`deploy/prune-images.sh` is self-contained rather than trusting shell variables left over from
+earlier in this runbook: it re-reads the currently deployed tag from `.env.production` itself and
+refuses to prune anything if that, or the `<previous-tag>` argument you give it, is empty — so
+running it alone in a fresh shell (`$TAG`/`$PREVIOUS_TAG` unset) aborts instead of matching every
+tag and deleting the running and rollback images. It also skips any tag still used by a running
+container.
 
 Avoid switching tags within a few minutes of a scheduled check (00:00, 06:00, 12:00, 18:00 UTC),
 so a restart never costs a check run.
@@ -173,7 +177,16 @@ The daily dump is automatic (`/etc/cron.d/paxpivot-backup`, tracked as
 `deploy/cron/paxpivot-backup`; installed per "First start / upgrade" above). It runs
 `deploy/backup.sh` at 03:15 UTC, which writes `/opt/paxpivot/backups/paxpivot-YYYY-MM-DD.dump` via
 `pg_dump -Fc`, logs a success or failure line to `/opt/paxpivot/backups/backup.log`, and prunes
-dumps older than 30 days. A manual dump and a restore test into a scratch database:
+dumps older than 30 days. Dumps contain trip data, so `deploy/backup.sh` sets `umask 077` before
+creating the dump and the log — the directory itself and any pre-existing dumps need their own
+one-time fix:
+
+```bash
+chmod 700 /opt/paxpivot/backups
+chmod 600 /opt/paxpivot/backups/paxpivot-*.dump   # one-time, for dumps written before this change
+```
+
+A manual dump and a restore test into a scratch database:
 
 ```bash
 ./deploy/backup.sh   # writes today's dump and a result line in backup.log, same as the cron job
@@ -189,9 +202,15 @@ off-host copy exists, a lost host is lost backups too (D-5, still open).
 
 **Monthly restore drill:** once a month, run the restore half of the commands above against the
 most recent automatic dump in `/opt/paxpivot/backups/` (not a fresh manual one) and spot-check a
-row count in `restore_test` before dropping it, e.g.
-`psql -U paxpivot -d restore_test -Atc "SELECT count(*) FROM sources;"` should be close to the
-live count. A dump that restores cleanly with data present is the only real proof backups work;
+row count in `restore_test` before dropping it, e.g.:
+
+```bash
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
+  exec -T postgres psql -U paxpivot -d restore_test -Atc "SELECT count(*) FROM sources;"
+```
+
+should be close to the live count. A dump that restores cleanly with data present is the only real
+proof backups work;
 this is the same check TASK-045's local verification ran (seed data → dump → restore → matching
 counts) applied to a real host backup.
 
