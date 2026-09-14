@@ -209,12 +209,13 @@ are unaffected in their happy path — see the same-origin/size test coverage ab
 
 Fill in before merge.
 
-**Branch:** `foundation/TASK-046-web-request-hardening`, rebased onto `main` @ `abf7010`
-(TASK-053 merged after this branch was cut; unrelated — commercial handoff feature under
-`apps/web/app/trips/[tripId]`, not touched by this task).
+**Branch:** `foundation/TASK-046-web-request-hardening`, rebased onto `main` @ `0fffce8`
+(TASK-053 and TASK-045 merged after this branch was cut; unrelated — commercial handoff under
+`apps/web/app/trips/[tripId]` and ops/container hardening under `deploy/`/`compose.prod.yml`,
+neither touched by this task).
 
-**Commit:** `089c973`, `37ae122`, `0256dd9`, `c348135`, `de46b50`, `d960bc4`, `97fa9d8`,
-`6597ab9` (PR: see title above).
+**Commit:** `794345b`, `3bf57bd`, `7b133ff`, `8bf1b2a`, `f66c64c`, `72f4957`, `6867b4a`,
+`9b2a0ec`, `7592286` (PR: see title above).
 
 **Files changed:** the owned paths above.
 
@@ -224,12 +225,15 @@ existing logic.
 
 **Migrations:** none.
 
-**Verification run:** on `6597ab9`, `make check` (format-check, lint, typecheck, test-unit —
-283 Python + 424 Vitest, test-integration — 40, build, migrate, migrate-check, compose-check)
-exited 0. `pnpm exec vitest run` in `apps/web`: 30 files, 424 tests passed (the Vitest count
-grew from 377 across two review rounds plus TASK-053's own tests arriving via rebase),
-including `request-guards.test.ts` (22, up from 18), `rate-limit.test.ts` (15, up from 11),
-`auth.test.ts` (11, up from 9) and `trips-route.test.ts` (7, unchanged).
+**Verification run:** on `9b2a0ec` (rebased onto `main` @ `0fffce8` as `7592286`, docs-only —
+same code), `make check` (format-check, lint, typecheck, test-unit — 283 Python + 424 Vitest,
+test-integration — 40, build, migrate, migrate-check, compose-check) exited 0.
+`pnpm exec vitest run` in `apps/web`: 30 files, 424 tests passed (the Vitest count grew from
+377 across two review rounds plus TASK-053's own tests arriving via rebase), including
+`request-guards.test.ts` (22, up from 18), `rate-limit.test.ts` (15, up from 11), `auth.test.ts`
+(11, up from 9) and `trips-route.test.ts` (7, unchanged). `tests/showcase.test.tsx` timed out
+once under full-suite load (the repo's documented axe/web flake) and passed cleanly alone and
+on the clean full-suite rerun; unrelated to this task, file untouched.
 
 **Mutation-testing evidence (review round 2):** applied, locally and temporarily, the exact
 mutation the reviewer described — `session/route.ts`'s `validPassphrase` computed as
@@ -239,7 +243,7 @@ mutation the reviewer described — `session/route.ts`'s `validPassphrase` compu
 TASK-046 review 2)"` — at the call-count assertion (`expected 233 to be 234`), with all other
 10 tests in the file still passing. Reverted the mutation immediately after (confirmed via
 `git diff` showing no change to `session/route.ts`) and re-ran the full suite green before
-committing the real fix (the test itself, added in `6597ab9`).
+committing the real fix (the test itself, added in `9b2a0ec`).
 
 **Known limitations / risks:** the rate limiter is per-process memory (`ponytail:` comment in
 `lib/auth/rate-limit.ts`) — correct for the pilot's single `web` replica, reset on restart, and
