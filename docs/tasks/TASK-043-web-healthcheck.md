@@ -315,10 +315,14 @@ Positive (criterion a) — the healthcheck exactly as Compose renders it, via co
     up -d --wait --no-build --no-deps web
   -> exit 0, wall time 5s (timed with `date +%s`). Container StartedAt 12:21:50.189Z; first probe
      Start 12:21:55.235Z (+5.05s) — healthy on that very first probe, no failures. `--no-deps`
-     started only `web`; `api` never ran, proving no API dependency. (The review's own "~10s"
-     estimate assumed the first probe fires a full `interval` after start; the observed first
-     probe fired roughly half an interval in — still the same order of magnitude, and the
-     mechanism the change intends: no more near-instant `--wait` return that hides a slow app.)
+     started only `web`; `api` never ran, proving no API dependency. (Fresh review 3: the +5.05s
+     is not "roughly half of `interval`" by coincidence — Docker Engine >= 25 applies an internal
+     default start interval of 5s during `start_period` even when `start_interval` is not
+     configured (moby `defaultStartInterval`, shipped in Engine 25.0.0, moby PR #40894). These
+     measurements were taken on Engine 29.3.1 (`docker version --format
+     '{{.Server.Version}}'`), so probes land about every 5s until `start_period` ends, then at
+     the configured `interval: 10s`. On an Engine < 25 the first probe comes after a full
+     `interval` (~10s) instead.)
   Torn down: `docker compose --env-file <scratch> -f compose.prod.yml -p task043 down --remove-orphans -v`.
 
 Steady cadence (criterion b) — same run, container left up, sampled again ~26s later:
@@ -333,15 +337,19 @@ Negative (criterion c) — same setup, the scratch override file (not committed)
   -> exit 1 ("container task043-web-1 is unhealthy"), wall time 51s. Container StartedAt
      12:22:58.195Z. docker inspect .State.Health: {"Status":"unhealthy","FailingStreak":3,
      "Log":[5 entries, all ExitCode 1]} at offsets +20.31s, +25.37s, +30.44s, +40.53s, +50.60s.
-     FailingStreak 3 (not 5) again shows only checks at/after the 30s `start_period` boundary
-     count toward `retries`: the +30.44s check (just past the boundary) is the first counted
-     failure, then +40.53s and +50.60s (each ~10.08s later, matching the steady `interval`) are
-     the 2nd and 3rd, crossing `retries: 3` and flipping to `unhealthy` at ~51s — consistent with
-     "the first counted failure lands at the start_period boundary, then (retries-1) more at the
-     steady interval" observed in round 2 at the larger scale. (The two earliest retained entries,
-     +20.31s/+25.37s, sit inside start_period and don't count; as before, Docker's health `Log`
-     keeps only the 5 most recent entries, so any earlier checks are not visible here — the clean,
-     unbroken 10s cadence is established separately and unambiguously by the positive run above.)
+     The first three (+20.31s, +25.37s, +30.44s — ~5.06s/5.07s apart) are Engine 25's internal
+     default 5s start-interval cadence during the 30s `start_period` (see the corrected mechanism
+     in the positive-case note above), not a coincidence. FailingStreak 3 (not 5) shows only
+     checks at/after the `start_period` boundary count toward `retries`: the +30.44s check (right
+     at that boundary, itself one of the 5s-cadence probes) is the first counted failure, then
+     +40.53s and +50.60s (each ~10.08s later, the configured `interval` once past `start_period`)
+     are the 2nd and 3rd, crossing `retries: 3` and flipping to `unhealthy` at ~51s — the same
+     "first counted failure at the start_period boundary, then (retries-1) more at the configured
+     interval" pattern observed in round 2 at the larger (60s/30s) scale, now correctly attributed
+     to Engine 25's default start cadence rather than a leftover `start_interval` artifact. Docker's
+     health `Log` keeps only the 5 most recent entries, so any checks before +20.31s are not
+     visible here — the clean, unbroken 10s steady cadence is established separately and
+     unambiguously by the positive run above.
   Torn down the same way afterward.
 
 Base-image check (unchanged from round 1/2): `docker run --rm node:24.15.0-slim sh -c 'which curl;
@@ -366,6 +374,34 @@ All local Docker verification artifacts (containers, the `task043` compose proje
 volume, image `paxpivot-web:task043`, the scratch `.env.production` and the scratch command-
 override compose file) were removed after verification; nothing was left running or tagged
 locally.
+
+**Round 4 (2026-09-14, fresh review 3: corrected the round-3 timing explanation only — docs-only,
+no code/config change):** review 3 confirmed everything else (rendered config, `up --wait` timing,
+`make check`, `make migrate-test`, scope, drift guard) and found one wording defect: round 3's
+Handoff attributed the `+5.05s` first-probe timing to "roughly half of `interval`" by coincidence.
+The real mechanism is Docker Engine >= 25's internal default start interval of 5s during
+`start_period` (moby `defaultStartInterval`, shipped in Engine 25.0.0, moby PR #40894), which
+applies even without `start_interval` configured — the local engine (29.3.1) has it, an
+Engine < 25 would not. Corrected both the positive-case and negative-case timing explanations
+above to name that mechanism instead of the coincidental one; no measurement changed, and
+`compose.prod.yml` was not touched (nothing about the actual healthcheck config was wrong, only
+the prose explaining an already-correct measurement). Checked the PR body and `docs/DEPLOYMENT.md`
+for the same "half an interval" phrasing: `DEPLOYMENT.md` never had it (its "every 10s" wording
+describes only the steady state, which review 3 confirmed is fine); the PR body had the raw
+`~5.05s` figure without the wrong-mechanism claim, and was extended with the same correct
+explanation for consistency. This being a docs-only change, `make check` and the Docker
+positive/negative tests were not rerun — only the drift guard, below, which does not depend on
+timing values.
+
+```text
+uv run --frozen pytest --confcutdir=tests tests/unit/test_docs_consistency.py -v
+  -> PASS (5 passed): test_every_registered_route_is_documented,
+     test_readme_reports_the_applied_migration_range, test_task_claims_match_the_task_contracts,
+     test_every_documented_make_target_exists, test_readme_referenced_paths_exist
+git diff --stat origin/main -> only compose.prod.yml, docs/DEPLOYMENT.md,
+  docs/plans/2026-09-14-reconciled-plan.md, docs/tasks/TASK-043-web-healthcheck.md (unchanged set;
+  this round only edited docs/tasks/TASK-043-web-healthcheck.md itself)
+```
 
 **Known limitations / risks:** a single `web` replica means a brief window while `--wait` is still
 blocking (container `starting`) is expected downtime for that restart — Traefik has no other
