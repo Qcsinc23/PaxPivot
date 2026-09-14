@@ -9,7 +9,13 @@ Read this section first. Everything below it is the plan as written before execu
 "uncommitted", "not started" or "PR open", this section is the current truth.
 
 **Decisions.** The product owner answered **D-8: yes** (agents commit, open PRs, merge per
-`docs/agent/MERGE_POLICY.md` and deploy for M1). D-1 through D-7 are still open.
+`docs/agent/MERGE_POLICY.md` and deploy for M1). On 2026-09-14 the owner also answered **D-1: (a)**
+— request written permission to process the 72-hour schedule artifacts, and meanwhile build the
+interim planner that never parses the artifacts — and **D-3: yes**, confirming the baseline pilot
+traveler class (Cat VI sponsor plus accompanying minor dependent). **D-2** stays open (no
+participant sessions have run), but on the same date the owner chose "where should I go to fly?"
+as route search's first job, ahead of a D-2 answer; this departs from the plan's original
+sequencing, where Path B was to follow M2. D-4 through D-7 are still open.
 
 | WP | Task | Result | Merged |
 |---|---|---|---|
@@ -17,6 +23,7 @@ Read this section first. Everything below it is the plan as written before execu
 | WP-03 | TASK-041 derived source staleness | done — review found the terminal page would have said "No opportunities are published" for stale evidence; fixed | 35d31c7 (PR #48) |
 | WP-04 | TASK-042 source reliability report | done — four review rounds found paused sources measured, unhashed and partly hashed sources passing detection, and the adapter-mismatch skip missing; all fixed, and check-sources' skip decision is now one shared function | 5ef033e (PR #49) |
 | WP-02 | TASK-040 documentation truth | done — merged last, so the documents describe merged and deployed behaviour; review found CONTRACTS.md cited a nonexistent `repositories(engine)` symbol and the drift guard's link check would falsely fail a valid `path.md#section` link; both fixed | 979abc2 (PR #50) |
+| — | TASK-043 web healthcheck | done — five review rounds settled on an engine-agnostic `interval`/`timeout`/`retries`/`start_period` healthcheck (an early `start_interval` design proved unsafe on Docker Engines older than 25) so `up --wait` now blocks until `web` actually answers `/login`; deploy still pending | 25f1264 (PR #52) |
 | WP-05 / 06 / 07 | heartbeat / off-host backup / unused Redis | not started — wait on D-4 / D-5 / D-6 | — |
 
 **Deployed.** `paxpivot-api:5ef033e` and `paxpivot-web:5ef033e` on the pilot VPS at 06:12 UTC on
