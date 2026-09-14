@@ -105,6 +105,19 @@ def test_without_content_hashes_change_detection_is_unmeasurable_and_cannot_pass
     assert result.verdict == Verdict.WATCH
 
 
+def test_partial_hash_coverage_is_unmeasurable_detection_and_cannot_pass() -> None:
+    # A policy that starts hashing mid-window: only the last reads carry a hash, and a single
+    # stray hash would otherwise look like "hashed, and nothing changed".
+    history = [
+        o if i >= 110 else o.model_copy(update={"content_hash": None})
+        for i, o in enumerate(checks(START - SIX_HOURS, change_every=1_000))
+    ]
+    result = reliability(history, CADENCE, START, NOW)
+    assert result.completion == 100.0 and not result.hashed
+    assert result.changes == 0 and result.detection_p95 is None
+    assert result.verdict == Verdict.WATCH
+
+
 def test_a_newly_registered_source_is_measured_from_its_first_check_and_cannot_pass() -> None:
     first = NOW - timedelta(days=3)
     result = reliability(checks(first), CADENCE, START, NOW)
@@ -127,14 +140,21 @@ def test_a_source_observed_before_the_window_but_silent_in_it_stops() -> None:
     assert result.verdict == Verdict.STOP
 
 
-def test_only_sources_the_pipeline_may_retrieve_are_measured() -> None:
-    """A paused, disabled, restricted or kill-switched source is not checked, so its silence is a
-    decision the report must never print as an outage (same gate as check-sources)."""
+def test_only_sources_a_check_run_would_read_are_measured() -> None:
+    """A paused, disabled, restricted, kill-switched or unwired source is never read by
+    check-sources, so its silence must never be printed as an outage or as "not yet observed"
+    (the report uses the run's own `skip_reason`)."""
+    from support_sources import ADAPTER_ID
+
     paused = source("terminal-paused", terminal="a", policy=PAUSED)
-    measured, not_measured = report_scope([*SOURCES, paused], FakeSwitches().list_engaged())
+    unwired = source("terminal-unwired", terminal="a", adapter="an-adapter-not-deployed")
+    measured, not_measured = report_scope(
+        [*SOURCES, paused, unwired], FakeSwitches().list_engaged(), ADAPTER_ID
+    )
     reasons = {s.identity.source_id: reason for s, reason in not_measured}
     assert SOURCE_A in measured
     assert reasons[paused.identity.source_id] == "source.paused"
     assert reasons[SOURCE_B.identity.source_id] == "source.kill_switch_engaged"
     assert reasons[SOURCE_D.identity.source_id] == "source.disabled"
+    assert reasons[unwired.identity.source_id] == "source_provider.identity_mismatch"
     assert not set(reasons) & {s.identity.source_id for s in measured}

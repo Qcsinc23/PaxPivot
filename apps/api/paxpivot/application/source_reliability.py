@@ -19,14 +19,8 @@ from itertools import pairwise
 from math import ceil
 
 from paxpivot.application.read_services import FRESHNESS_WINDOW
-from paxpivot.application.source_gate import authorize_processing
-from paxpivot.domain.source import (
-    KillSwitch,
-    ProcessingMode,
-    RetrievalState,
-    Source,
-    SourceObservation,
-)
+from paxpivot.application.source_checks import skip_reason
+from paxpivot.domain.source import KillSwitch, RetrievalState, Source, SourceObservation
 
 PASS_COMPLETION = 95.0
 STOP_COMPLETION = 90.0
@@ -50,29 +44,30 @@ class SourceReliability:
     completion: float | None  # percent of expected checks that read the source
     longest_gap: timedelta | None  # between successful reads, window edges included
     gaps_over_window: int
-    hashed: bool  # a successful read carried a content hash, so change detection is measurable
+    hashed: bool  # every successful read carried a content hash, so detection is measurable
     changes: int
     detection_p95: timedelta | None
     verdict: Verdict
 
 
 def report_scope(
-    sources: Sequence[Source], switches: Sequence[KillSwitch]
+    sources: Sequence[Source], switches: Sequence[KillSwitch], provider_id: str
 ) -> tuple[list[Source], list[tuple[Source, str]]]:
     """The sources the report measures, and every other source with the reason it is not.
 
-    A source is measured only while the pipeline itself may retrieve it — the same gate
-    check-sources applies. A disabled, paused, restricted or kill-switched source is not checked,
-    so its silence is a decision and must never be printed as an outage.
+    A source is measured only while a check-sources run with ``provider_id`` would read it
+    (`source_checks.skip_reason`, the same function the run uses). A disabled, paused,
+    restricted, kill-switched or unwired source is never read, so its silence is a decision or a
+    configuration fact and must never be printed as an outage or as "not yet observed".
     """
     measured: list[Source] = []
     not_measured: list[tuple[Source, str]] = []
     for source in sources:
-        decision = authorize_processing(source, ProcessingMode.RETRIEVE, switches)
-        if decision.ok:
+        reason = skip_reason(source, provider_id, switches)
+        if reason is None:
             measured.append(source)
         else:
-            not_measured.append((source, decision.error.message_key))
+            not_measured.append((source, reason))
     return measured, not_measured
 
 
@@ -86,15 +81,16 @@ def reliability(
 
     A source first observed inside the window is measured from that first observation and can
     at best WATCH, so a newly registered source is neither reported as an outage nor passed on a
-    window shorter than the one asked for. A source whose reads carry no content hash cannot show
-    how quickly a change was detected, so it can at best WATCH too.
+    window shorter than the one asked for. Change detection is measurable only when every
+    successful read in the window carried a content hash; a source with no or partial hash
+    coverage (for example one whose policy started hashing mid-window) can at best WATCH too.
     """
     history = sorted(observations, key=lambda o: o.provenance.observed_at)
     inside = [o for o in history if start <= o.provenance.observed_at <= now]
     clipped = bool(inside) and history[0].provenance.observed_at >= start
     begin = inside[0].provenance.observed_at if clipped else start
     reads = [o for o in inside if o.retrieval == RetrievalState.SUCCEEDED]
-    hashed = any(o.content_hash for o in reads)
+    hashed = bool(reads) and all(o.content_hash for o in reads)
 
     if cadence_minutes is None or not history:
         return SourceReliability(

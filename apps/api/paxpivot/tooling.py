@@ -311,16 +311,18 @@ def capture_corpus_command(source_id: str) -> int:
 def source_report(days: int) -> int:
     """The pilot's source-health gate over the last ``days``, per source (TASK-042). Read-only.
 
-    Measures only the sources the pipeline may currently retrieve (the gate check-sources
-    applies); every other source is listed as not measured, with the reason, because its silence
-    is a decision rather than an outage. Exit codes a person or scheduler can act on: 1 when any
-    measured source must stop, 2 when no measured source has an observation in the window,
-    0 otherwise (pass, watch or unknown).
+    Measures only the sources a check-sources run would read (the same `skip_reason` the run
+    uses, with the Firecrawl provider it runs); every other source is listed as not measured,
+    with the reason, because its silence is a decision or a configuration fact rather than an
+    outage. Exit codes a person or scheduler can act on: 1 when any measured source must stop,
+    2 when no measured source has an observation in the window, 0 otherwise (pass, watch or
+    unknown).
     """
     from datetime import UTC, datetime, timedelta
 
     from paxpivot.application.source_reliability import Verdict, reliability, report_scope
     from paxpivot.infrastructure import database as db
+    from paxpivot.infrastructure.providers.firecrawl import PROVIDER_ID
     from paxpivot.infrastructure.repositories import (
         SqlKillSwitchRepository,
         SqlSourceObservationRepository,
@@ -343,10 +345,12 @@ def source_report(days: int) -> int:
         in_scope, not_measured = report_scope(
             SqlSourceRepository(connection).list_sources(),
             SqlKillSwitchRepository(connection).list_engaged(),
+            PROVIDER_ID,
         )
+        # One extra row tells a history that is exactly at the limit from one that exceeds it.
         histories = {
             source.identity.source_id: observations.list_for_source(
-                source.identity.source_id, limit=history_limit
+                source.identity.source_id, limit=history_limit + 1
             )
             for source in in_scope
         }
@@ -367,7 +371,7 @@ def source_report(days: int) -> int:
             hours(result.detection_p95) if result.hashed else "unmeasurable (no content hashes)"
         )
         notes = [f"measured from its first check {result.start:%Y-%m-%d}"] if result.clipped else []
-        if len(history) == history_limit:
+        if len(history) > history_limit:
             notes.append(f"history truncated at {history_limit} observations")
         print(
             f"{result.verdict.value.upper():7} {source.name}: completion {completion} "

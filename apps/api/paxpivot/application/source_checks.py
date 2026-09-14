@@ -97,14 +97,21 @@ def _outcome(
     )
 
 
-def _identity_mismatch(source: Source, provider: SourceProvider) -> bool:
-    """Whether this provider is the adapter the source is registered against.
+def skip_reason(source: Source, provider_id: str, switches: Sequence[KillSwitch]) -> str | None:
+    """Why a run with this provider would not read the source, or None when it would.
 
-    Mirrors the identity check `record_observation` performs, so the run can classify a mismatch as
-    a skip *before* invoking anything. A source with no configured adapter is inert: nothing is
-    wired to it, so nothing may observe it.
+    The single definition of "this source gets checked", shared by `check_source` and the source
+    reliability report (TASK-042), so the report can never measure a source the run never reads.
+    The gate comes first (the same call `record_observation` makes); then the registered adapter
+    must be this provider. A source with no configured adapter is inert: nothing is wired to it,
+    so nothing may observe it.
     """
-    return source.adapter_id is None or provider.provider_id != source.adapter_id
+    authorization = authorize_processing(source, ProcessingMode.RETRIEVE, switches)
+    if not authorization.ok:
+        return authorization.error.message_key
+    if source.adapter_id is None or provider_id != source.adapter_id:
+        return "source_provider.identity_mismatch"
+    return None
 
 
 async def check_source(
@@ -114,15 +121,12 @@ async def check_source(
     switches: Sequence[KillSwitch],
 ) -> SourceCheckOutcome:
     """Run one source through the pipeline and classify the result. Never raises on a refusal."""
-    # The gate first, so a forbidden source is never even parsed by the provider. This is the same
-    # call `record_observation` makes, repeated here only to classify the refusal as a skip.
-    authorization = authorize_processing(source, ProcessingMode.RETRIEVE, switches)
-    if not authorization.ok:
-        return _outcome(source, "skipped", message_key=authorization.error.message_key)
-    if _identity_mismatch(source, provider):
-        # The configured adapter is not this provider, so there is nothing to ask. Reported as a
-        # skip because no retrieval was permitted, not because the provider misbehaved.
-        return _outcome(source, "skipped", message_key="source_provider.identity_mismatch")
+    # Refusals are classified before the provider is invoked: a forbidden source is never even
+    # parsed, and an adapter mismatch is a skip because no retrieval was permitted, not because
+    # the provider misbehaved.
+    reason = skip_reason(source, provider.provider_id, switches)
+    if reason is not None:
+        return _outcome(source, "skipped", message_key=reason)
 
     result = await record_observation(source, provider, observations, switches)
     if result.ok:
