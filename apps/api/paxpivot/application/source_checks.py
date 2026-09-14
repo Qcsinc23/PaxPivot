@@ -40,10 +40,11 @@ from paxpivot.application.ports.repositories import (
     KillSwitchRepository,
     SourceObservationRepository,
     SourceRepository,
+    TerminalRepository,
 )
-from paxpivot.application.ports.source_provider import SourceProvider
+from paxpivot.application.ports.source_provider import SourceProvider, TerminalFactProvider
 from paxpivot.application.source_gate import authorize_processing
-from paxpivot.application.source_pipeline import record_observation
+from paxpivot.application.source_pipeline import record_observation, record_terminal_facts
 from paxpivot.domain.base import Contract, Identifier
 from paxpivot.domain.source import KillSwitch, ProcessingMode, Source, SourceState
 
@@ -119,8 +120,19 @@ async def check_source(
     provider: SourceProvider,
     observations: SourceObservationRepository,
     switches: Sequence[KillSwitch],
+    *,
+    terminal_facts: TerminalRepository | None = None,
+    facts_provider: TerminalFactProvider | None = None,
 ) -> SourceCheckOutcome:
-    """Run one source through the pipeline and classify the result. Never raises on a refusal."""
+    """Run one source through the pipeline and classify the result. Never raises on a refusal.
+
+    ``terminal_facts``/``facts_provider`` are optional and keyword-only (TASK-048): passing
+    neither (the default) reproduces the exact prior behaviour, so every existing caller and
+    fixture is unaffected. Passing both records terminal operating facts alongside the
+    observation, for the same source, in the same run. A facts-recording failure never turns an
+    otherwise-successful observation into a non-"recorded" outcome: facts are additional
+    telemetry, not the check's own result.
+    """
     # Refusals are classified before the provider is invoked: a forbidden source is never even
     # parsed, and an adapter mismatch is a skip because no retrieval was permitted, not because
     # the provider misbehaved.
@@ -130,6 +142,14 @@ async def check_source(
 
     result = await record_observation(source, provider, observations, switches)
     if result.ok:
+        if terminal_facts is not None and facts_provider is not None:
+            await record_terminal_facts(
+                source,
+                facts_provider,
+                terminal_facts,
+                switches,
+                observed_at=result.value.provenance.observed_at,
+            )
         return _outcome(source, "recorded", state=result.value.state)
 
     # The gate already approved, so a `forbidden` or `invalid_input` code here came from
@@ -148,12 +168,16 @@ async def run_source_checks(
     provider: SourceProvider,
     *,
     now: datetime | None = None,
+    terminal_facts: TerminalRepository | None = None,
+    facts_provider: TerminalFactProvider | None = None,
 ) -> SourceCheckRun:
     """Check every registered source exactly once, in registry order.
 
     One pass, one provider, no concurrency and no retries: the same inputs produce the same run,
     and each source's outcome is independent of the others. Appending is all this does to history —
     running it twice appends again and never updates.
+
+    ``terminal_facts``/``facts_provider`` (TASK-048) are optional; see ``check_source``.
     """
     if now is not None and (now.tzinfo is None or now.tzinfo.utcoffset(now) is None):
         raise ValueError("now must be a timezone-aware datetime")
@@ -163,7 +187,16 @@ async def run_source_checks(
     # Sequential by construction: each source is checked only after the previous one settled, so
     # one source's outcome can never depend on another's in-flight state.
     for source in sources.list_sources():
-        outcomes.append(await check_source(source, provider, observations, switches))
+        outcomes.append(
+            await check_source(
+                source,
+                provider,
+                observations,
+                switches,
+                terminal_facts=terminal_facts,
+                facts_provider=facts_provider,
+            )
+        )
     return SourceCheckRun(started_at=started_at, outcomes=tuple(outcomes))
 
 

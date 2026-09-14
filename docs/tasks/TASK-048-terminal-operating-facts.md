@@ -61,7 +61,7 @@ terminal. Per fact kind:
 | `passenger_terminal_note` (name + street address) | present | present | present | present |
 | `uso_availability` | absent | present | present | absent |
 | `parking` | absent | absent | absent | present |
-| `access_note` | absent | absent | absent | present (a card-only/cash-not-accepted notice) |
+| `access_note` | absent | absent | present (a payment-method note near the Space-A fee) | present (a card-only/cash-not-accepted notice) |
 
 No page publishes a departure row, a roll-call time, or a check-in window on the HTML page itself
 (consistent with TASK-037's finding that departure schedules live only in the restricted 72-hour

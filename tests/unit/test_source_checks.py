@@ -13,6 +13,7 @@ from functools import partial
 from uuid import UUID, uuid4
 
 import pytest
+from paxpivot.application.parsers.amc_terminal_facts import ParsedFact
 from paxpivot.application.ports.source_provider import SourceProvider
 from paxpivot.application.result import ApplicationError, Failure, Result, Success
 from paxpivot.application.source_checks import SourceCheckRun, run_source_checks
@@ -28,6 +29,7 @@ from paxpivot.domain.source import (
     SourceProcessingPolicy,
     SourceState,
 )
+from paxpivot.domain.terminal import TerminalFactKind
 from support_sources import (
     ADAPTER_ID,
     APPROVED,
@@ -39,9 +41,11 @@ from support_sources import (
     SOURCE_B,
     SWITCHES,
     T0,
+    TERMINAL_A,
     FakeObservations,
     FakeSources,
     FakeSwitches,
+    FakeTerminals,
     observation,
     provenance_with_url,
     source,
@@ -455,6 +459,102 @@ def test_started_at_must_be_timezone_aware() -> None:
                 now=datetime(2026, 9, 11, 12, 0),
             )
         )
+
+
+# ── TASK-048: optional terminal-facts recording, threaded through the same run ──────────
+
+
+@dataclass
+class ScriptedFactsProvider:
+    """Returns one fixed facts result and counts how often it was asked."""
+
+    result: Result[tuple[ParsedFact, ...]]
+    provider_id: str = ADAPTER_ID
+    calls: int = 0
+
+    async def observe_facts(self, source: SourceIdentity) -> Result[tuple[ParsedFact, ...]]:
+        del source
+        self.calls += 1
+        return self.result
+
+
+def test_facts_are_recorded_alongside_the_observation_in_the_same_run() -> None:
+    provider = ScriptedProvider(Success(value=fresh(SOURCE_A)))
+    facts_provider = ScriptedFactsProvider(
+        Success(value=(ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),))
+    )
+    observations = FakeObservations([])
+    terminal_facts = FakeTerminals(items=[TERMINAL_A], facts=[])
+    result = asyncio.run(
+        run_source_checks(
+            FakeSources([SOURCE_A]),
+            observations,
+            FakeSwitches([]),
+            provider,
+            now=NOW,
+            terminal_facts=terminal_facts,
+            facts_provider=facts_provider,
+        )
+    )
+    (outcome,) = result.outcomes
+    assert outcome.outcome == "recorded"
+    assert facts_provider.calls == 1
+    assert len(terminal_facts.facts) == 1
+    assert terminal_facts.facts[0].kind == TerminalFactKind.COUNTER_HOURS
+    assert terminal_facts.facts[0].value == "0700-0000"
+    assert terminal_facts.facts[0].provenance.observed_at == NOW
+
+
+def test_a_facts_provider_failure_never_turns_a_recorded_observation_into_something_else() -> None:
+    """Facts are additional telemetry: a failure recording them must not change the outcome."""
+    provider = ScriptedProvider(Success(value=fresh(SOURCE_A)))
+    facts_provider = ScriptedFactsProvider(
+        Failure(
+            error=ApplicationError(
+                code="unavailable",
+                message_key="source_provider.firecrawl_unreachable",
+                retryable=True,
+            )
+        )
+    )
+    observations = FakeObservations([])
+    terminal_facts = FakeTerminals(items=[TERMINAL_A], facts=[])
+    result = asyncio.run(
+        run_source_checks(
+            FakeSources([SOURCE_A]),
+            observations,
+            FakeSwitches([]),
+            provider,
+            now=NOW,
+            terminal_facts=terminal_facts,
+            facts_provider=facts_provider,
+        )
+    )
+    (outcome,) = result.outcomes
+    assert outcome.outcome == "recorded" and outcome.state == SourceState.FRESH
+    assert terminal_facts.facts == []
+
+
+def test_a_skipped_source_never_reaches_facts_recording_either() -> None:
+    disabled = source("disabled", enabled=False)
+    provider = ScriptedProvider(Success(value=fresh(disabled)))
+    facts_provider = ScriptedFactsProvider(Success(value=()))
+    observations = FakeObservations([])
+    terminal_facts = FakeTerminals(items=[], facts=[])
+    result = asyncio.run(
+        run_source_checks(
+            FakeSources([disabled]),
+            observations,
+            FakeSwitches([]),
+            provider,
+            now=NOW,
+            terminal_facts=terminal_facts,
+            facts_provider=facts_provider,
+        )
+    )
+    (outcome,) = result.outcomes
+    assert outcome.outcome == "skipped"
+    assert facts_provider.calls == 0
 
 
 def test_exit_code_contract_for_schedulers() -> None:

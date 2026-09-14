@@ -33,6 +33,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 
 from paxpivot.application.parsers.amc_page_time import PARSER_VERSION, parse_page_time
+from paxpivot.application.parsers.amc_terminal_facts import ParsedFact, parse_terminal_facts
 from paxpivot.application.result import ApplicationError, Failure, Result, Success
 from paxpivot.application.source_gate import authorize_processing
 from paxpivot.domain.source import (
@@ -167,6 +168,31 @@ class FirecrawlSourceProvider:
         # Nothing below reads document: it is hashed and, for the stamp, pattern-matched only.
         return Success(value=observation)
 
+    async def observe_facts(self, source: SourceIdentity) -> Result[tuple[ParsedFact, ...]]:
+        """TASK-048: the terminal page's own operating facts (hours, phone, email, ...), parsed
+        from the same document ``observe`` already fetches this run — reused via the per-URL
+        cache in ``_fetch_registered``, so calling this right after ``observe`` for the same
+        source costs no second Firecrawl request. Metadata-only: never returns the document.
+
+        Gated on ``PARSE`` here too (not only by the pipeline's own check before calling this at
+        all), the same defense-in-depth ``observe`` already applies before reading the page-time
+        stamp: a direct call against an unauthorized source never returns parsed content.
+        """
+        registered = self._sources.get(source.source_id)
+        if registered is None or registered.identity != source:
+            return _failure("invalid_input", "source_provider.unknown_source", False)
+        if registered.kind != SourceKind.TERMINAL_PAGE:
+            return Success(value=())
+        if not authorize_processing(registered, ProcessingMode.PARSE, self._switches).ok:
+            return Success(value=())
+        fetched = await self._fetch_registered(registered)
+        if not fetched.ok:
+            return fetched
+        page_status, document = fetched.value
+        if not (200 <= page_status < 300 and isinstance(document, str)):
+            return Success(value=())  # No content to parse; the observation carries the failure.
+        return Success(value=tuple(parse_terminal_facts(document)))
+
     def _with_page_time(
         self, source: Source, observation: SourceObservation, document: str
     ) -> SourceObservation:
@@ -226,7 +252,14 @@ class FirecrawlSourceProvider:
             # Callers gate first; this keeps a direct call from ever fetching a refused source.
             return _failure("invalid_input", "source_provider.not_authorized", False)
         if source.kind != SourceKind.SCHEDULE_ARTIFACT:
-            return await self._fetch(str(source.identity.url), "rawHtml")
+            # Cached per run, by URL: ``observe`` and ``observe_facts`` (TASK-048) both read the
+            # same terminal page within one check, so pairing them costs one Firecrawl fetch, not
+            # two — the same "one provider instance per run" caching the artifact path already
+            # relies on below.
+            url = str(source.identity.url)
+            if url not in self._page_cache:
+                self._page_cache[url] = await self._fetch(url, "rawHtml")
+            return self._page_cache[url]
         parent = next(
             (
                 s

@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from paxpivot.application.parsers.amc_terminal_facts import ParsedFact
 from paxpivot.application.result import Result
 from paxpivot.domain.source import SourceIdentity, SourceObservation
 
@@ -26,3 +27,29 @@ class SourceProvider(Protocol):
     def provider_id(self) -> str: ...
 
     async def observe(self, source: SourceIdentity) -> Result[SourceObservation]: ...
+
+
+class TerminalFactProvider(Protocol):
+    """Additive, metadata-only port (TASK-048): parsed terminal operating facts, never a body.
+
+    Deliberately a *separate* Protocol from ``SourceProvider`` rather than a change to
+    ``observe``'s signature: a concrete adapter satisfies both by having both methods (Python's
+    structural typing does not require inheritance), so nothing else that already implements
+    ``SourceProvider`` — the ~8 fakes across the test suite plus ``FirecrawlSourceProvider`` —
+    needs a stub method it never uses. Callers that record facts pass the same provider instance
+    for both parameters.
+
+    Never returns a raw document: a ``ParsedFact`` is already a short, bounded, verbatim span
+    (``application/parsers/amc_terminal_facts.py``). The caller (``source_pipeline.py``) is
+    responsible for policy authorization, deduplication and persistence; this port only reports
+    what the page's own text supports for a given source, or an empty tuple when it supports
+    none, or when the source is not a terminal page at all.
+
+    ``provider_id`` mirrors ``SourceProvider.provider_id`` for the same reason: the pipeline
+    checks it against the registry's ``adapter_id`` before recording any fact.
+    """
+
+    @property
+    def provider_id(self) -> str: ...
+
+    async def observe_facts(self, source: SourceIdentity) -> Result[tuple[ParsedFact, ...]]: ...

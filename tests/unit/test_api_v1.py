@@ -23,6 +23,7 @@ from paxpivot.infrastructure.auth import (
 )
 from support_sources import (
     NOW,
+    SOURCE_A,
     TERMINAL_A,
     FakeObservations,
     FakeSources,
@@ -100,6 +101,13 @@ def test_terminal_routes_return_read_models(client: TestClient) -> None:
     assert detail.status_code == 200
     assert detail.json()["summary"]["entrance_kind"] == "passenger_terminal"
     assert "base_" not in detail.text and "payload_ref" not in detail.text
+    # TASK-048: a terminal operating fact round-trips through the read API with its provenance,
+    # the same fixture facts `support_sources.FACTS` seeds for TERMINAL_A.
+    facts_by_kind = {f["kind"]: f for f in detail.json()["facts"]}
+    assert facts_by_kind["counter_hours"]["value"] == "Synthetic hours: 06:00–22:00"
+    assert facts_by_kind["counter_hours"]["source_url"] == str(SOURCE_A.identity.url)
+    assert facts_by_kind["counter_hours"]["observed_at"] is not None
+    assert facts_by_kind["phone"]["value"] == "+1 000 000 0000 (synthetic)"
 
     missing = client.get(f"/api/v1/terminals/{uuid4()}", headers=AUTH)
     assert missing.status_code == 404

@@ -15,10 +15,12 @@ from paxpivot.domain.source import (
     RawPayloadPolicy,
     RetrievalState,
     Source,
+    SourceKind,
     SourceState,
 )
+from paxpivot.domain.terminal import TerminalFactKind
 from paxpivot.infrastructure.providers.firecrawl import API_URL, FirecrawlSourceProvider
-from support_sources import APPROVED, NOW, SOURCE_A, FakeObservations, source
+from support_sources import APPROVED, NEEDS_REVIEW, NOW, SOURCE_A, FakeObservations, source
 
 BODY = "<html><body>Synthetic page</body></html>"
 
@@ -417,8 +419,6 @@ def test_missing_stamp_or_zone_is_a_failed_extraction_never_a_guess() -> None:
     assert obs.extraction == ExtractionState.FAILED and obs.provenance.source_time is None
     assert "page_time_zone_unknown" in obs.confidence_reasons
     # A source whose policy forbids parsing is never parsed, stamp or not.
-    from support_sources import NEEDS_REVIEW
-
     unparsed = source("meta", terminal="a", policy=NEEDS_REVIEW)
     p = FirecrawlSourceProvider(
         "k",
@@ -428,3 +428,97 @@ def test_missing_stamp_or_zone_is_a_failed_extraction_never_a_guess() -> None:
     )
     obs = asyncio.run(p.observe(unparsed.identity)).value  # type: ignore[union-attr]
     assert obs.extraction == ExtractionState.NOT_ATTEMPTED and obs.provenance.source_time is None
+
+
+# ---- TASK-048: observe_facts reads operating facts from the same document, when authorized -----
+
+FACTS_PAGE = """
+<html><body>
+<h2><span class="title">Contact Information</span></h2>
+<div class="ModuleContent"><div class="Normal">
+<p><strong>Synthetic Terminal</strong><br>
+1 Example Way<br>
+Example City, EX&nbsp;00001<br>
+<br>
+<strong>Service Counter<br>
+Comm:&nbsp;</strong>555-0100<br>
+<strong>Email:</strong>&nbsp;<br>
+pax@us.af.mil<br>
+<br>
+<strong>Hours of operation:</strong>&nbsp;0700-0000</p>
+</div></div>
+</body></html>
+"""
+
+
+def test_observe_facts_reads_the_same_document_observe_already_fetched_once() -> None:
+    src = source("facts-a", terminal="a")
+    t = transport(body=FACTS_PAGE)
+    p = FirecrawlSourceProvider("k", {src.identity.source_id: src}, transport=t, clock=lambda: NOW)
+    observed = asyncio.run(p.observe(src.identity))
+    assert observed.ok and observed.value.state == SourceState.FRESH
+    facts = asyncio.run(p.observe_facts(src.identity))
+    assert facts.ok
+    kinds = {f.kind for f in facts.value}
+    assert kinds == {
+        TerminalFactKind.PASSENGER_TERMINAL_NOTE,
+        TerminalFactKind.PHONE,
+        TerminalFactKind.EMAIL,
+        TerminalFactKind.COUNTER_HOURS,
+    }
+    hours = next(f for f in facts.value if f.kind == TerminalFactKind.COUNTER_HOURS)
+    assert hours.value == "0700-0000"
+    # Reused from the per-run page cache: pairing observe() with observe_facts() for the same
+    # source costs exactly one Firecrawl request, not two.
+    assert len(t.seen) == 1  # type: ignore[attr-defined]
+
+
+def test_observe_facts_alone_still_fetches_and_parses() -> None:
+    src = source("facts-b", terminal="a")
+    p = FirecrawlSourceProvider(
+        "k", {src.identity.source_id: src}, transport=transport(body=FACTS_PAGE)
+    )
+    facts = asyncio.run(p.observe_facts(src.identity))
+    assert facts.ok and len(facts.value) == 4
+
+
+def test_observe_facts_on_a_non_terminal_page_source_is_empty_and_fetches_nothing() -> None:
+    directory = source("directory-a", kind=SourceKind.DIRECTORY_PAGE)
+    t = transport(body=FACTS_PAGE)
+    p = FirecrawlSourceProvider("k", {directory.identity.source_id: directory}, transport=t)
+    facts = asyncio.run(p.observe_facts(directory.identity))
+    assert facts.ok and facts.value == ()
+    assert t.seen == []  # type: ignore[attr-defined]
+
+
+def test_observe_facts_is_empty_when_the_page_is_unreachable_or_empty() -> None:
+    src = source("facts-c", terminal="a")
+    unreachable = FirecrawlSourceProvider(
+        "k", {src.identity.source_id: src}, transport=transport(page_status=404, body=None)
+    )
+    facts = asyncio.run(unreachable.observe_facts(src.identity))
+    assert facts.ok and facts.value == ()
+    empty_body = FirecrawlSourceProvider(
+        "k", {src.identity.source_id: src}, transport=transport(page_status=200, body=None)
+    )
+    facts = asyncio.run(empty_body.observe_facts(src.identity))
+    assert facts.ok and facts.value == ()
+
+
+def test_observe_facts_refuses_an_unknown_source_before_any_request() -> None:
+    src = source("facts-d", terminal="a")
+    t = transport(body=FACTS_PAGE)
+    stranger = source("stranger")
+    p = FirecrawlSourceProvider("k", {src.identity.source_id: src}, transport=t)
+    result = asyncio.run(p.observe_facts(stranger.identity))
+    assert not result.ok and result.error.message_key == "source_provider.unknown_source"
+    assert t.seen == []  # type: ignore[attr-defined]
+
+
+def test_observe_facts_never_parses_when_the_policy_forbids_it() -> None:
+    unparsed = source("facts-e", terminal="a", policy=NEEDS_REVIEW)
+    t = transport(body=FACTS_PAGE)
+    p = FirecrawlSourceProvider("k", {unparsed.identity.source_id: unparsed}, transport=t)
+    result = asyncio.run(p.observe_facts(unparsed.identity))
+    assert result.ok and result.value == ()
+    assert t.seen == []  # type: ignore[attr-defined]  # never fetched: refused before retrieval

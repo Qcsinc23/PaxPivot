@@ -5,10 +5,11 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from paxpivot.application.ports.repositories import SourceObservationRepository
-from paxpivot.application.ports.source_provider import SourceProvider
+from paxpivot.application.parsers.amc_terminal_facts import ParsedFact
+from paxpivot.application.ports.repositories import SourceObservationRepository, TerminalRepository
+from paxpivot.application.ports.source_provider import SourceProvider, TerminalFactProvider
 from paxpivot.application.result import ApplicationError, Failure, Result, Success
-from paxpivot.application.source_pipeline import record_observation
+from paxpivot.application.source_pipeline import record_observation, record_terminal_facts
 from paxpivot.domain.source import (
     ExtractionState,
     KillSwitch,
@@ -16,17 +17,24 @@ from paxpivot.domain.source import (
     RetrievalState,
     Source,
     SourceIdentity,
+    SourceKind,
     SourceObservation,
     SourceState,
 )
+from paxpivot.domain.terminal import TerminalFactKind, TerminalOperationalFact
 from support_sources import (
     ADAPTER_ID,
+    APPROVED,
     DIRECTORY,
     NEEDS_REVIEW,
     NOW,
+    RESTRICTED,
     SOURCE_A,
     T0,
+    TERMINAL_A,
     FakeObservations,
+    FakeTerminals,
+    fact,
     observation,
     provenance_with_url,
     source,
@@ -283,3 +291,176 @@ def test_provider_output_is_validated_against_registry_and_policy() -> None:
     result = run(approved, ScriptedProvider(Success(value=with_payload_ref)), repo3, [store_switch])
     assert not result.ok and result.error.message_key == "source.kill_switch_engaged"
     assert repo3.items == []
+
+
+# ---- record_terminal_facts (TASK-048) ----------------------------------------------------------
+
+
+class ScriptedFactsProvider:
+    """Returns exactly what it was given; records how many times it was called."""
+
+    def __init__(
+        self, result: Result[tuple[ParsedFact, ...]], *, provider_id: str = ADAPTER_ID
+    ) -> None:
+        self.result = result
+        self.calls = 0
+        self._provider_id = provider_id
+
+    @property
+    def provider_id(self) -> str:
+        return self._provider_id
+
+    async def observe_facts(self, source: SourceIdentity) -> Result[tuple[ParsedFact, ...]]:
+        self.calls += 1
+        return self.result
+
+
+def run_facts(
+    src: Source,
+    facts_provider: TerminalFactProvider,
+    terminal_facts: TerminalRepository,
+    switches: Sequence[KillSwitch] = (),
+    *,
+    observed_at: datetime = NOW,
+) -> Result[tuple[TerminalOperationalFact, ...]]:
+    return asyncio.run(
+        record_terminal_facts(
+            src, facts_provider, terminal_facts, switches, observed_at=observed_at
+        )
+    )
+
+
+def test_a_new_fact_is_appended_with_full_provenance() -> None:
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    parsed = ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000")
+    provider = ScriptedFactsProvider(Success(value=(parsed,)))
+    result = run_facts(SOURCE_A, provider, repo, observed_at=NOW)
+    assert result.ok and len(result.value) == 1
+    assert provider.calls == 1
+    appended = repo.facts[0]
+    assert appended.terminal_id == TERMINAL_A.terminal_id
+    assert appended.kind == TerminalFactKind.COUNTER_HOURS
+    assert appended.value == "0700-0000"
+    assert appended.provenance.source == SOURCE_A.identity
+    assert appended.provenance.observed_at == NOW
+    assert appended.provenance.source_time is None  # Never invented (TASK-038's own rule).
+    assert appended.provenance.provider_id == ADAPTER_ID
+    assert appended.provenance.policy_version_id == SOURCE_A.policy.policy_version_id
+    assert appended.recorded_at == NOW
+    assert appended.effective_from is None and appended.effective_to is None
+
+
+def test_a_repeated_check_with_the_same_value_appends_nothing() -> None:
+    existing = fact(TERMINAL_A, SOURCE_A, TerminalFactKind.COUNTER_HOURS, "0700-0000")
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[existing])
+    parsed = ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000")
+    provider = ScriptedFactsProvider(Success(value=(parsed,)))
+    result = run_facts(SOURCE_A, provider, repo)
+    assert result.ok and result.value == ()
+    assert repo.facts == [existing]  # Nothing new appended: the append-only table stays put.
+
+
+def test_a_changed_value_is_appended_and_the_old_fact_is_kept() -> None:
+    existing = fact(TERMINAL_A, SOURCE_A, TerminalFactKind.COUNTER_HOURS, "0700-0000")
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[existing])
+    parsed = ParsedFact(TerminalFactKind.COUNTER_HOURS, "0800-2359")
+    provider = ScriptedFactsProvider(Success(value=(parsed,)))
+    result = run_facts(SOURCE_A, provider, repo)
+    assert result.ok and len(result.value) == 1
+    assert result.value[0].value == "0800-2359"
+    assert existing in repo.facts and result.value[0] in repo.facts
+    assert len(repo.facts) == 2  # History is appended, never overwritten (append-only table).
+
+
+def test_facts_are_never_recorded_without_parse_authorization() -> None:
+    unreviewed = source("u", terminal="a", policy=NEEDS_REVIEW)  # may_parse is False
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    provider = ScriptedFactsProvider(
+        Success(value=(ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),))
+    )
+    result = run_facts(unreviewed, provider, repo)
+    assert result.ok and result.value == ()
+    assert provider.calls == 0 and repo.facts == []
+
+
+def test_facts_are_never_recorded_without_display_authorization() -> None:
+    parse_only = source(
+        "parse-only", terminal="a", policy=APPROVED.model_copy(update={"may_display": False})
+    )
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    provider = ScriptedFactsProvider(
+        Success(value=(ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),))
+    )
+    result = run_facts(parse_only, provider, repo)
+    assert result.ok and result.value == ()
+    assert provider.calls == 0 and repo.facts == []
+
+
+def test_a_restricted_source_never_gets_a_fact_appended() -> None:
+    restricted = source("restricted", terminal="a", policy=RESTRICTED)
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    provider = ScriptedFactsProvider(
+        Success(value=(ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),))
+    )
+    result = run_facts(restricted, provider, repo)
+    assert result.ok and result.value == ()
+    assert provider.calls == 0 and repo.facts == []
+
+
+def test_a_schedule_artifact_source_is_never_asked_for_facts() -> None:
+    artifact = source("artifact", kind=SourceKind.SCHEDULE_ARTIFACT, terminal="a")
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    provider = ScriptedFactsProvider(
+        Success(value=(ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),))
+    )
+    result = run_facts(artifact, provider, repo)
+    assert result.ok and result.value == ()
+    assert provider.calls == 0 and repo.facts == []
+
+
+def test_a_source_with_no_terminal_is_never_asked_for_facts() -> None:
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    provider = ScriptedFactsProvider(
+        Success(value=(ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),))
+    )
+    result = run_facts(DIRECTORY, provider, repo)
+    assert result.ok and result.value == ()
+    assert provider.calls == 0 and repo.facts == []
+
+
+def test_a_facts_provider_that_is_not_the_registered_adapter_is_never_invoked() -> None:
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    provider = ScriptedFactsProvider(
+        Success(value=(ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),)),
+        provider_id="some-other-adapter",
+    )
+    result = run_facts(SOURCE_A, provider, repo)
+    assert not result.ok and result.error.message_key == "source_provider.identity_mismatch"
+    assert provider.calls == 0 and repo.facts == []
+
+
+def test_a_provider_failure_passes_through_without_appending() -> None:
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[])
+    failure = Failure(
+        error=ApplicationError(
+            code="unavailable", message_key="source_provider.firecrawl_unreachable", retryable=True
+        )
+    )
+    provider = ScriptedFactsProvider(failure)
+    result = run_facts(SOURCE_A, provider, repo)
+    assert not result.ok and result.error.message_key == "source_provider.firecrawl_unreachable"
+    assert repo.facts == []
+
+
+def test_multiple_parsed_kinds_only_append_the_ones_that_are_new_or_changed() -> None:
+    existing_hours = fact(TERMINAL_A, SOURCE_A, TerminalFactKind.COUNTER_HOURS, "0700-0000")
+    repo = FakeTerminals(items=[TERMINAL_A], facts=[existing_hours])
+    parsed = (
+        ParsedFact(TerminalFactKind.COUNTER_HOURS, "0700-0000"),  # unchanged: not appended
+        ParsedFact(TerminalFactKind.PHONE, "Comm: 555-0100"),  # new: appended
+    )
+    provider = ScriptedFactsProvider(Success(value=parsed))
+    result = run_facts(SOURCE_A, provider, repo)
+    assert result.ok and len(result.value) == 1
+    assert result.value[0].kind == TerminalFactKind.PHONE
+    assert {f.kind for f in repo.facts} == {TerminalFactKind.COUNTER_HOURS, TerminalFactKind.PHONE}
