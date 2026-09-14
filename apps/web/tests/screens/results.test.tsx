@@ -512,7 +512,7 @@ describe("live /trips/[tripId] route", () => {
     expect(screen.queryByText("Safest overall")).toBeNull();
   });
 
-  test("never renders forbidden wording: flights, departures, seats, probability or a chance of anything", async () => {
+  test("renders the commercial flight handoff below terminals to check, built from the trip", async () => {
     mockRoutes({
       [`/api/v1/trips/${TRIP_ID}`]: { ok: true, value: trip(MDL_ID, mdl.name) },
       "/api/v1/terminals": {
@@ -544,7 +544,93 @@ describe("live /trips/[tripId] route", () => {
       await ResultsPage({ params: Promise.resolve({ tripId: TRIP_ID }) }),
     );
 
-    let text = container.textContent ?? "";
+    // `mockRoutes` throws on any unregistered path, so rendering succeeding here already proves
+    // the card made no API call of its own — it is built only from the trip read above.
+
+    const [terminalsPos, commercialPos] = positions(container, [
+      "Terminals to check",
+      "Commercial flight alternative",
+    ]);
+    expect(terminalsPos).toBeGreaterThanOrEqual(0);
+    expect(commercialPos!).toBeGreaterThan(terminalsPos!);
+
+    expect(
+      screen.getByText("Live handoff · availability and fare unknown"),
+    ).toBeTruthy();
+
+    const prefilled = screen.getByRole("link", {
+      name: "Open Google Flights search",
+    });
+    const query = new URL(
+      prefilled.getAttribute("href") ?? "",
+    ).searchParams.get("q");
+    // This fixture's origin terminal name has no curated entry, so no "from" clause is added.
+    expect(query).toBe(
+      "Flights to Somewhere on 2026-10-01 through 2026-10-04 for 2 travelers",
+    );
+
+    expect(
+      screen
+        .getByRole("link", { name: "Prefill wrong? Open a plain search" })
+        .getAttribute("href"),
+    ).toBe("https://www.google.com/travel/flights");
+  });
+
+  test("never renders forbidden wording outside the commercial section: flights, departures, seats, probability or a chance of anything", async () => {
+    mockRoutes({
+      [`/api/v1/trips/${TRIP_ID}`]: { ok: true, value: trip(MDL_ID, mdl.name) },
+      "/api/v1/terminals": {
+        ok: true,
+        value: {
+          generated_at: "2026-09-14T12:00:00Z",
+          terminals: [mdl, dover, bwi, andrews],
+        } satisfies TerminalNetworkRead,
+      },
+      [`/api/v1/terminals/${MDL_ID}`]: {
+        ok: true,
+        value: terminalDetail(mdl, MDL_SCHEDULE_URL),
+      },
+      [`/api/v1/terminals/${DOVER_ID}`]: {
+        ok: true,
+        value: terminalDetail(
+          dover,
+          "https://amc.example.mil/dover/72hr-folder/",
+        ),
+      },
+      [`/api/v1/terminals/${BWI_ID}`]: {
+        ok: true,
+        value: terminalDetail(bwi, "https://amc.example.mil/bwi/72hr-folder/"),
+      },
+      [`/api/v1/terminals/${ANDREWS_ID}`]: { ok: false, reason: "unavailable" },
+    });
+
+    const { container } = render(
+      await ResultsPage({ params: Promise.resolve({ tripId: TRIP_ID }) }),
+    );
+
+    // TASK-053 legitimately introduces "flights" in one clearly separate commercial section
+    // (Google Flights; "commercial flights" is an honestly named paid alternative, COM-001). That
+    // section's own text is carved out before the banned-word check runs, so the Space-A/terminals
+    // side of the page — and any future Space-A copy added to it — stays exactly as strictly
+    // guarded as before this task. See docs/tasks/TASK-053-commercial-handoff.md, "Forbidden
+    // wording", for why this is a scope change, not a weakening.
+    const commercialSection = screen.getByRole("region", {
+      name: "Commercial flight alternative",
+    });
+    const commercialText = commercialSection.textContent ?? "";
+    // The allowance is exercised, not merely unused: prove "flights" actually appears there.
+    expect(commercialText.toLowerCase()).toMatch(/\bflights?\b/);
+    // COM-002 forbids fare/price/booking wording beyond the caveats even inside the commercial
+    // section, so "departures", "seats", "no flights", "probability" and "chance of" are never
+    // legitimate anywhere on the page, that section included.
+    for (const banned of [/\bdepartures?\b/i, /\bseats?\b/i]) {
+      expect(commercialText).not.toMatch(banned);
+    }
+    for (const phrase of ["no flights", "probability", "chance of"]) {
+      expect(commercialText.toLowerCase()).not.toContain(phrase);
+    }
+
+    let text = (container.textContent ?? "").replace(commercialText, "");
     // Two known, reviewed, legitimate occurrences: this page's own honest disclaimer, and the
     // shared SourceStateBadge accessibility text for the "fresh" state (unchanged foundation
     // wording, TASK-006). Strip them before checking for a real violation.
@@ -564,7 +650,7 @@ describe("live /trips/[tripId] route", () => {
     }
   });
 
-  test("has no axe violations on the terminals-to-check list", async () => {
+  test("has no axe violations on the terminals-to-check list and the commercial handoff", async () => {
     mockRoutes({
       [`/api/v1/trips/${TRIP_ID}`]: { ok: true, value: trip(MDL_ID, mdl.name) },
       "/api/v1/terminals": {
