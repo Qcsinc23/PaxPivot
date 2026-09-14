@@ -14,7 +14,8 @@ First source-specific parser (PRD §9.2): `parse_schedule_artifact(text) -> Pars
 (published 72-hour departures: date/time, destination, seat state text, roll call, notes; each
 row with the text span it came from), `validate_critical_fields`, and an accuracy report against
 the labeled corpus. Add `schedule_observations` (append-only, FK to the source observation,
-parser version, row revision) via migration 0004. Automatic rows are stored with state
+parser version, row revision) via the next free migration revision (`0006` as of 2026-09-14;
+`0004` is now `trip_requests`). Automatic rows are stored with state
 `parser_review_required` until the corpus report shows ≥ 99 % exact critical fields and zero
 false rows (SRC-009); then `fresh`.
 
@@ -26,7 +27,7 @@ TASK-031, TASK-037 + at least 10 labeled artifact corpus files (`<sha>.md` + `.l
 
 ```text
 apps/api/paxpivot/domain/schedule.py, application/parsers/amc_terminal_page.py, application/parser_gate.py
-apps/api/paxpivot/infrastructure/database.py, repositories.py, migrations/versions/0004_schedule_observations.py
+apps/api/paxpivot/infrastructure/database.py, repositories.py, migrations/versions/<next free>_schedule_observations.py
 apps/api/paxpivot/application/source_pipeline.py (parse step behind PARSE authorization)
 tests/unit/test_amc_terminal_page_parser.py, tests/integration/test_schedule_observations_db.py
 docs/decisions/ADR-006-schedule-parsing.md, docs/tasks/TASK-032-jb-mdl-terminal-page-parser.md

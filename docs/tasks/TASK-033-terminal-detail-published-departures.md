@@ -2,7 +2,7 @@
 
 ## Status
 
-`blocked` — decisions delegated by the product owner (2026-09-11); see AUDIT.md §4/§6.
+`blocked` — depends only on TASK-032, which is blocked until written permission exists to process the restricted 72-hour schedule artifacts (TASK-037 option 1; decision D-1 in `docs/plans/2026-09-14-reconciled-plan.md`).
 
 ## Assigned role
 

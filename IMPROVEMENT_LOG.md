@@ -19,3 +19,17 @@ PR (#32), task contract `docs/tasks/TASK-029-production-readiness-quick-wins.md`
 |---|---|---|---|
 | QW-1 loop fix | `apps/web/components/screens/plan/PlanScreen.tsx`, `apps/web/tests/screens/plan.test.tsx` | empty Plan "Find routes" → `/trips` → "Plan a trip" → `/` loop → empty Plan links to the live `/terminals` and says the network and sources are live | plan suite pins no "Find routes" on the empty state and the `/terminals` link |
 | TASK-031…036 | `docs/tasks/TASK-03{1..6}-*.md` | no roadmap → decision-complete task contracts for parsing under the SRC-009 gate and the pilot-first planner | docs only |
+
+## Run 3 — milestone M1 "trustworthy source watch" (2026-09-14)
+
+Plan and current status: `docs/plans/2026-09-14-reconciled-plan.md`. The product owner answered D-8
+(agents commit, open PRs, merge per MERGE_POLICY and deploy). One task file and one PR per unit; each
+PR carries a fresh-review record with 0 Critical / 0 Important at merge.
+
+| Task | Files | Before → after | Verification |
+|---|---|---|---|
+| TASK-039 floating Ask clearance (PR #47, f02c4be) | `apps/web/styles/{tokens,components}.css`, `apps/web/components/shell/AskPaxPivotAction.tsx`, `apps/web/tests/shell.test.tsx` | the fixed Ask control rested on the last row and the disclaimer at the end of long pages → content reserves `--fab-height`; pages that hide the control (sticky action bar, `/ask`) keep a navigation-only reserve | regression test fails without the CSS; hit tests at 320–1280 px; client-side navigation checked; three review rounds |
+| TASK-041 derived staleness (PR #48, 35d31c7) | `apps/api/paxpivot/application/read_services.py`, `domain/source.py`, `apps/web/lib/presentation/adapters/terminals.ts`, tests | a stopped check kept showing "Fresh" → a positive observation older than 6.5 h reads `source_stale` at read time, and stale evidence is never worded as "none published" | 7-case boundary test, rendering web test, tests written first |
+| TASK-042 source reliability report (PR #49, 5ef033e) | `apps/api/paxpivot/application/{source_reliability,source_checks}.py`, `tooling.py`, `Makefile`, tests | the 30-day source-health gate could not be computed → `source-report` prints PASS / WATCH / STOP / UNKNOWN for every source a check run reads and SKIPPED with the reason for the rest | 14 cases; 10 seeded defects caught; four review rounds |
+| TASK-040 documentation truth | README, CONTRIBUTING, CLAUDE.md, AUDIT.md, `.env.example`, DEPLOYMENT, CONTRACTS, UI_FOUNDATION, ADR-004, task statuses, `docs/plans/`, `tests/unit/test_docs_consistency.py` | entry-point documents described the TASK-001 scaffold and `CLAUDE.md` was an unreadable symlink → documents match the code and the VPS, and README drift fails CI | guard passes; 7 injected drift kinds each caught by their own test |
+| Deploy | pilot VPS `/opt/paxpivot` | api + web 56cee3a → 5ef033e | `/ready` 200, public `/login` 200, signed-out `/terminals` 307, four terminal pages `fresh`, `source-report 30` exit 0 (all four WATCH: window not yet full) |

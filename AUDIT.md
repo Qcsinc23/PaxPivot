@@ -1,5 +1,9 @@
 # PaxPivot — Audit: "production ready, fully working" (2026-09-11, main @ 9524eed)
 
+> **Historical snapshot, superseded.** Counts, statuses and "does not exist" claims below are as of
+> 2026-09-11. Current state: [README](README.md); task status lives in each `docs/tasks/` file;
+> the current plan is [docs/plans/2026-09-14-reconciled-plan.md](docs/plans/2026-09-14-reconciled-plan.md).
+
 ## 1. Executive Summary
 
 **Health grade: B+ for what exists; the product is roughly 40% of the PRD.** Deployed, TLS,

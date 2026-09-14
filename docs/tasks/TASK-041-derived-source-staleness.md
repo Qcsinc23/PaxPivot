@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — PR open; see Handoff.
+`done` — merged to `main` in 35d31c7 (PR #48); fresh re-review 0 Critical / 0 Important; status normalized in TASK-040.
 
 ## Assigned role
 
@@ -95,7 +95,7 @@ No API shape, schema, migration, provider or web change. The web already renders
 ## Required tests
 
 ```text
-tests/unit/test_read_services.py::test_every_read_reports_the_effective_state_at_generated_at (6 cases)
+tests/unit/test_read_services.py::test_every_read_reports_the_effective_state_at_generated_at (7 cases)
 tests/integration/test_sources_terminals_db.py::test_observations_are_append_only_and_keep_unknowns
 tests/integration/test_source_checks_db.py (health_now reads at EPOCH)
 ```

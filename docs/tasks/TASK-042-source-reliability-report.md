@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — PR #49 open; see Handoff.
+`done` — merged to `main` in 5ef033e (PR #49); fourth fresh review 0 Critical / 0 Important / 0 Minor; status normalized in TASK-040.
 
 ## Assigned role
 
