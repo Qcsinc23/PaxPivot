@@ -33,7 +33,9 @@ jobs:
           cache-dependency-glob: uv.lock
       - run: make setup
       - run: make check
+      - run: make audit
       - run: make migrate-test
+      - run: make build-images-check
       - name: Ensure checks did not rewrite tracked files
         run: git diff --exit-code
       - name: Stop task-local services
