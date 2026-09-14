@@ -8,11 +8,12 @@ carry no raw source payloads, payload references or provider exception text.
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -20,10 +21,12 @@ from paxpivot.application.ports.auth import Authenticator, Principal
 from paxpivot.application.ports.repositories import (
     KillSwitchReader,
     ObservationReader,
+    ProfileReader,
     SourceReader,
     TerminalReader,
     TripReader,
 )
+from paxpivot.application.profile_service import ProfileRead, get_profile, replace_profile
 from paxpivot.application.read_models import (
     SourceHealthRead,
     TerminalDetailRead,
@@ -42,6 +45,7 @@ from paxpivot.application.trip_service import (
     list_trip_requests,
 )
 from paxpivot.domain.base import Contract
+from paxpivot.domain.profile import NewParty
 from paxpivot.domain.trip import NewTripRequest
 from paxpivot.infrastructure.audit import audit_event
 from paxpivot.infrastructure.auth import authenticator_from_env
@@ -53,6 +57,7 @@ from paxpivot.infrastructure.database import (
 )
 from paxpivot.infrastructure.repositories import (
     SqlKillSwitchRepository,
+    SqlProfileRepository,
     SqlSourceObservationRepository,
     SqlSourceRepository,
     SqlTerminalRepository,
@@ -103,6 +108,7 @@ class Repositories:
     observations: ObservationReader
     kill_switches: KillSwitchReader
     trips: TripReader
+    profile: ProfileReader
 
 
 def get_repositories(
@@ -114,6 +120,7 @@ def get_repositories(
         observations=SqlSourceObservationRepository(connection),
         kill_switches=SqlKillSwitchRepository(connection),
         trips=SqlTripRepository(connection),
+        profile=SqlProfileRepository(connection),
     )
 
 
@@ -127,13 +134,16 @@ def get_write_connection(engine: Annotated[Engine, Depends(get_engine)]) -> Iter
 class WriteRepositories:
     terminals: TerminalReader
     trips: SqlTripRepository
+    profile: SqlProfileRepository
 
 
 def get_write_repositories(
     connection: Annotated[Connection, Depends(get_write_connection)],
 ) -> WriteRepositories:
     return WriteRepositories(
-        terminals=SqlTerminalRepository(connection), trips=SqlTripRepository(connection)
+        terminals=SqlTerminalRepository(connection),
+        trips=SqlTripRepository(connection),
+        profile=SqlProfileRepository(connection),
     )
 
 
@@ -206,6 +216,35 @@ def create_trip(
         # Raised without the statement so no request text reaches the log.
         raise HTTPException(
             status_code=422, detail={"message_key": "trip.unknown_origin_terminal"}
+        ) from None
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={"message_key": result.error.message_key})
+    return result.value
+
+
+@app.get("/api/v1/profile", response_model=ProfileRead, dependencies=[Authorized])
+def profile(repos: Repos) -> ProfileRead:
+    return get_profile(repos.profile)
+
+
+@app.put("/api/v1/profile", response_model=ProfileRead, dependencies=[Authorized])
+def put_profile(
+    payload: dict[str, Any],
+    repos: Annotated[WriteRepositories, Depends(get_write_repositories)],
+) -> ProfileRead:
+    try:
+        new_party = NewParty.model_validate(payload)
+    except ValidationError:
+        raise HTTPException(
+            status_code=422, detail={"message_key": "profile.invalid_party"}
+        ) from None
+    try:
+        result = replace_profile(new_party, repos.profile)
+    except IntegrityError:
+        # A defence-in-depth DB constraint (e.g. the party-size cap trigger) refused the write;
+        # the boundary validation above should already have caught this, so this is a backstop.
+        raise HTTPException(
+            status_code=422, detail={"message_key": "profile.invalid_party"}
         ) from None
     if not result.ok:
         raise HTTPException(status_code=422, detail={"message_key": result.error.message_key})

@@ -26,6 +26,7 @@ from support_sources import (
     NOW,
     TERMINAL_A,
     FakeObservations,
+    FakeProfile,
     FakeSources,
     FakeSwitches,
     FakeTerminals,
@@ -101,10 +102,12 @@ def test_api_routes_are_gated_and_round_trip() -> None:
         observations=FakeObservations(),
         kill_switches=FakeSwitches(),
         trips=trips,
+        profile=FakeProfile(),
     )
     app.dependency_overrides[get_write_repositories] = lambda: WriteRepositories(
         terminals=FakeTerminals(),
         trips=trips,  # type: ignore[arg-type]
+        profile=FakeProfile(),  # type: ignore[arg-type]
     )
     try:
         client = TestClient(app)
@@ -144,6 +147,7 @@ def test_an_insert_refused_by_the_database_is_a_422_and_logs_no_request_text(
     app.dependency_overrides[get_write_repositories] = lambda: WriteRepositories(
         terminals=FakeTerminals(),
         trips=RefusingTrips(),  # type: ignore[arg-type]
+        profile=FakeProfile(),  # type: ignore[arg-type]
     )
     try:
         client = TestClient(app)

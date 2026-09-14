@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from paxpivot.domain.eligibility import PartyFacts
 from paxpivot.domain.source import (
     ExtractionState,
     KillSwitch,
@@ -360,3 +361,16 @@ class FakeTrips:
 
     def add(self, trip: "TripRequest") -> None:
         self.items.append(trip)
+
+
+class FakeProfile:
+    """In-memory `ProfileReader`/`ProfileRepository`. `None` is the honest unset state."""
+
+    def __init__(self, party: PartyFacts | None = None) -> None:
+        self.party = party
+
+    def get_party(self) -> PartyFacts | None:
+        return self.party
+
+    def replace(self, party: PartyFacts) -> None:
+        self.party = party

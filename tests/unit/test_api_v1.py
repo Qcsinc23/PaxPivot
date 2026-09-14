@@ -9,7 +9,14 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from paxpivot.api import Repositories, app, get_authenticator, get_repositories
+from paxpivot.api import (
+    Repositories,
+    WriteRepositories,
+    app,
+    get_authenticator,
+    get_repositories,
+    get_write_repositories,
+)
 from paxpivot.application.read_services import (
     get_terminal_detail,
     list_source_health,
@@ -25,6 +32,7 @@ from support_sources import (
     NOW,
     TERMINAL_A,
     FakeObservations,
+    FakeProfile,
     FakeSources,
     FakeSwitches,
     FakeTerminals,
@@ -38,12 +46,20 @@ EXAMPLES = Path(__file__).resolve().parents[2] / "apps/web/lib/api/examples"
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app.dependency_overrides[get_authenticator] = lambda: BearerTokenAuthenticator(TOKEN)
+    trips = FakeTrips()
+    profile = FakeProfile()
     app.dependency_overrides[get_repositories] = lambda: Repositories(
         terminals=FakeTerminals(),
         sources=FakeSources(),
         observations=FakeObservations(),
         kill_switches=FakeSwitches(),
-        trips=FakeTrips(),
+        trips=trips,
+        profile=profile,
+    )
+    app.dependency_overrides[get_write_repositories] = lambda: WriteRepositories(
+        terminals=FakeTerminals(),
+        trips=trips,  # type: ignore[arg-type]
+        profile=profile,  # type: ignore[arg-type]
     )
     try:
         yield TestClient(app)
@@ -55,7 +71,13 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
 @pytest.mark.parametrize(
-    "path", ["/api/v1/terminals", f"/api/v1/terminals/{uuid4()}", "/api/v1/sources/health"]
+    "path",
+    [
+        "/api/v1/terminals",
+        f"/api/v1/terminals/{uuid4()}",
+        "/api/v1/sources/health",
+        "/api/v1/profile",
+    ],
 )
 def test_every_read_route_requires_a_principal(client: TestClient, path: str) -> None:
     for headers in (
@@ -118,6 +140,73 @@ def test_source_health_route_exposes_no_raw_payload_or_hash(client: TestClient) 
     assert LOCAL_PRINCIPAL_ID is not None
 
 
+def test_profile_put_requires_a_principal(client: TestClient) -> None:
+    response = client.put("/api/v1/profile", json={"travelers": []})
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_profile_route_is_unset_then_roundtrips_and_rejects_an_invalid_party(
+    client: TestClient,
+) -> None:
+    """TASK-050: GET is an honest unset state until PUT sets one; PUT validates the whole party
+    before writing anything, and never stores a name, credential, medical or free-text field."""
+    empty = client.get("/api/v1/profile", headers=AUTH)
+    assert empty.status_code == 200
+    assert empty.json() == {"status": "unset", "party": None}
+
+    sponsor_id, dependent_id = str(uuid4()), str(uuid4())
+    sponsor: dict[str, object] = {
+        "traveler_id": sponsor_id,
+        "role": "sponsor",
+        "category_attestation": "VI",
+        "age_band": "adult",
+        "sponsor_id": None,
+    }
+    dependent: dict[str, object] = {
+        "traveler_id": dependent_id,
+        "role": "dependent",
+        "category_attestation": "unknown",
+        "age_band": "under_14",
+        "sponsor_id": sponsor_id,
+    }
+    body = {"travelers": [sponsor, dependent]}
+    put = client.put("/api/v1/profile", json=body, headers=AUTH)
+    assert put.status_code == 200, put.text
+    assert put.json()["status"] == "set"
+
+    read = client.get("/api/v1/profile", headers=AUTH)
+    assert read.status_code == 200
+    travelers = {t["traveler_id"]: t for t in read.json()["party"]["travelers"]}
+    assert travelers[sponsor_id]["category_attestation"] == "VI"
+    assert travelers[dependent_id]["age_band"] == "under_14"
+    assert travelers[dependent_id]["sponsor_id"] == sponsor_id
+    for forbidden in ("name", "ssn", "dod", "disability", "birth", "document", "credential"):
+        assert forbidden not in read.text.lower()
+
+    # A dependent with no sponsor is invalid; nothing is written for it.
+    bad = client.put(
+        "/api/v1/profile",
+        json={"travelers": [{**dependent, "sponsor_id": None}]},
+        headers=AUTH,
+    )
+    assert bad.status_code == 422
+    assert bad.json() == {"detail": {"message_key": "profile.invalid_party"}}
+    assert client.get("/api/v1/profile", headers=AUTH).json() == read.json()
+
+    # Field-shape violations (an unknown field, an out-of-range enum) are the same allowlisted
+    # key, never FastAPI's default validation body.
+    invalid_bodies: list[dict[str, object]] = [
+        {"travelers": []},
+        {"travelers": [{**sponsor, "category_attestation": "VII"}]},
+        {"travelers": [{**sponsor, "extra": "field"}]},
+    ]
+    for invalid_body in invalid_bodies:
+        response = client.put("/api/v1/profile", json=invalid_body, headers=AUTH)
+        assert response.status_code == 422
+        assert response.json() == {"detail": {"message_key": "profile.invalid_party"}}
+
+
 def test_json_examples_match_the_read_models() -> None:
     """The checked-in examples are the contract the web adapters are tested against."""
     terminals, sources, observations, switches = (
@@ -154,7 +243,7 @@ def test_every_api_v1_route_is_behind_the_principal_gate() -> None:
         names = {d.call.__name__ for d in (dependant.dependencies if dependant else [])}
         assert "require_principal" in names, f"{path} is not behind require_principal"
         guarded.append(path)
-    assert len(guarded) == 6, guarded
+    assert len(guarded) == 8, guarded
 
 
 @pytest.mark.anyio
