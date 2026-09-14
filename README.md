@@ -87,7 +87,7 @@ Migrations `0001`–`0005` are applied; the next revision is `0006`. The pilot r
 - FastAPI **0.135.4**, Pydantic **2.13.5**, SQLAlchemy **2.0.52**, Alembic **1.18.5**.
   `redis` **8.1.0** and `rq` **2.12.0** are installed for a future worker and are unused today.
 - Ruff **0.15.5**, mypy **1.19.1**, pytest **9.0.2**; ESLint **9.39.4**,
-  Prettier **3.8.1**, Vitest **4.0.18**.
+  Prettier **3.8.1**, Vitest **4.1.11**.
 - Docker Engine + Compose v2+ (verified locally with Engine 29.3.1 / Compose 5.1.1),
   GNU Make 3.81+.
 - Compose PostGIS image `postgis/postgis:16-3.5` (verified PostgreSQL 16.9 / PostGIS 3.5.2),
@@ -126,11 +126,13 @@ Run from the repository root:
 | `make test` | All unit and integration tests |
 | `make build` | Python sdist/wheel + production Next.js build |
 | `make build-images` | Build the api/web images for the Compose topology |
+| `make build-images-check` | CI/local gate: build both deployable images without pushing |
+| `make audit` | Dependency-vulnerability gate: `pnpm audit --prod` plus a production-only `pip-audit` (needs network) |
 | `make migrate` | Apply Alembic head to local development database |
 | `make migrate-check` | Verify single head, applied head, PostGIS and schema drift |
 | `make migrate-test` | Migrate a fresh uniquely named local DB, prove drift detection and rollback/reapply |
 | `make cold-start-check` | Local only: wipes this checkout's database volume, then proves N cold starts connect immediately after `--wait` (TASK-028) |
-| `make compose-check` | Validate Compose without exposing resolved secrets |
+| `make compose-check` | Validate Compose without exposing resolved secrets, for both the local-dev and production (`compose.prod.yml` + `deploy/compose.traefik.yml`) topologies |
 | `make check` | All required quality/build/test/migration/config checks |
 
 Web: http://127.0.0.1:3000. API liveness: http://127.0.0.1:8000/health returns
