@@ -31,7 +31,11 @@ What works end to end today:
   every registered pilot terminal worth checking — origin first, explicitly not a ranking — each
   with its own source state, read age, official-page link and the registered restricted 72-hour
   schedule link the traveler must open themselves, and states plainly that PaxPivot does not read
-  departure schedules yet.
+  departure schedules yet. Below that list, a commercial fallback card hands the traveler to a
+  prefilled Google Flights search built from the trip's own destination, dates and party size,
+  plus a curated (non-authoritative) suggested origin airport list; it always offers a second,
+  plain search link, shows the mandatory "Live handoff" label, and never fetches from Google or
+  shows a fare.
 - **Pilot access.** A shared passphrase sets a signed, `HttpOnly`, `Secure` session cookie; the
   web server calls the API with a server-only bearer token that never reaches a browser. A
   production deployment without both secrets fails closed ([ADR-005](docs/decisions/ADR-005-pilot-access-boundary.md)).
