@@ -16,7 +16,7 @@ Read this section first. Everything below it is the plan as written before execu
 | WP-01 | TASK-039 floating Ask clearance | done — three review rounds found dead space where the control is hidden (sticky-action-bar pages, then `/ask`); both fixed | f02c4be (PR #47) |
 | WP-03 | TASK-041 derived source staleness | done — review found the terminal page would have said "No opportunities are published" for stale evidence; fixed | 35d31c7 (PR #48) |
 | WP-04 | TASK-042 source reliability report | done — four review rounds found paused sources measured, unhashed and partly hashed sources passing detection, and the adapter-mismatch skip missing; all fixed, and check-sources' skip decision is now one shared function | 5ef033e (PR #49) |
-| WP-02 | TASK-040 documentation truth | merged last, so the documents describe merged and deployed behaviour (its own PR) | — |
+| WP-02 | TASK-040 documentation truth | done — merged last, so the documents describe merged and deployed behaviour; review found CONTRACTS.md cited a nonexistent `repositories(engine)` symbol and the drift guard's link check would falsely fail a valid `path.md#section` link; both fixed | 979abc2 (PR #50) |
 | WP-05 / 06 / 07 | heartbeat / off-host backup / unused Redis | not started — wait on D-4 / D-5 / D-6 | — |
 
 **Deployed.** `paxpivot-api:5ef033e` and `paxpivot-web:5ef033e` on the pilot VPS at 06:12 UTC on
