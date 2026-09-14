@@ -320,7 +320,11 @@ def source_report(days: int) -> int:
     """
     from datetime import UTC, datetime, timedelta
 
-    from paxpivot.application.source_reliability import Verdict, reliability, report_scope
+    from paxpivot.application.source_reliability import (
+        reliability,
+        report_exit_code,
+        report_scope,
+    )
     from paxpivot.infrastructure import database as db
     from paxpivot.infrastructure.providers.firecrawl import PROVIDER_ID
     from paxpivot.infrastructure.repositories import (
@@ -367,9 +371,12 @@ def source_report(days: int) -> int:
         result = reliability(history, source.cadence_minutes, start, now)
         results.append(result)
         completion = "unknown" if result.completion is None else f"{result.completion:.1f}%"
-        detection = (
-            hours(result.detection_p95) if result.hashed else "unmeasurable (no content hashes)"
-        )
+        if not result.hashed:
+            detection = "unmeasurable (not every read carried a content hash)"
+        elif result.detection_p95 is None:
+            detection = "no change seen"
+        else:
+            detection = hours(result.detection_p95)
         notes = [f"measured from its first check {result.start:%Y-%m-%d}"] if result.clipped else []
         if len(history) > history_limit:
             notes.append(f"history truncated at {history_limit} observations")
@@ -382,9 +389,7 @@ def source_report(days: int) -> int:
         )
     for source, reason in not_measured:
         print(f"SKIPPED {source.name}: not measured ({reason})")
-    if any(result.verdict == Verdict.STOP for result in results):
-        return 1
-    return 0 if any(result.recorded for result in results) else 2
+    return report_exit_code(results)
 
 
 def seed() -> None:

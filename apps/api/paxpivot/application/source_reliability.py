@@ -124,8 +124,9 @@ def reliability(
     # Nearest-rank percentile: with fewer than 20 changes this is the slowest one.
     p95 = latencies[ceil(0.95 * len(latencies)) - 1] if latencies else None
     longest = max(gaps)
-    # No change seen passes the detection half only when changes could have been seen at all.
-    detection_ok = p95 <= FRESHNESS_WINDOW if p95 is not None else hashed
+    # Full hash coverage is a precondition, not a tie-breaker: a quick change seen in a few hashed
+    # reads says nothing about the unhashed rest of the window.
+    detection_ok = hashed and (p95 is None or p95 <= FRESHNESS_WINDOW)
 
     if (completion is not None and completion < STOP_COMPLETION) or longest > STOP_GAP:
         verdict = Verdict.STOP
@@ -148,3 +149,16 @@ def reliability(
         detection_p95=p95,
         verdict=verdict,
     )
+
+
+def report_exit_code(results: Sequence[SourceReliability]) -> int:
+    """What a person or scheduler acts on after a report.
+
+    1 when any measured source must stop — checked first, so a source that went silent and
+    recorded nothing still stops rather than reading as "no data"; 2 when no measured source
+    recorded a single observation in the window, including when every source was skipped;
+    0 otherwise (pass, watch or unknown).
+    """
+    if any(result.verdict == Verdict.STOP for result in results):
+        return 1
+    return 0 if any(result.recorded for result in results) else 2

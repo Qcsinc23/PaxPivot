@@ -118,6 +118,38 @@ def test_partial_hash_coverage_is_unmeasurable_detection_and_cannot_pass() -> No
     assert result.verdict == Verdict.WATCH
 
 
+def test_partial_hash_coverage_cannot_pass_even_when_a_change_is_detected_quickly() -> None:
+    # Only the last five reads carry a hash, and one quick change happens among them: that says
+    # nothing about the unhashed rest of the window, so the detection half still cannot pass.
+    history = [
+        o if i >= 116 else o.model_copy(update={"content_hash": None})
+        for i, o in enumerate(checks(START - SIX_HOURS, change_every=118))
+    ]
+    result = reliability(history, CADENCE, START, NOW)
+    assert result.completion == 100.0 and not result.hashed
+    assert result.changes == 1 and result.detection_p95 == SIX_HOURS
+    assert result.verdict == Verdict.WATCH
+
+
+def test_the_exit_code_stops_first_and_reports_no_data_only_when_nothing_was_recorded() -> None:
+    from paxpivot.application.source_reliability import report_exit_code
+
+    passing = reliability(checks(START - SIX_HOURS), CADENCE, START, NOW)
+    stopped = reliability(checks(START - SIX_HOURS, skip={60, 61, 62}), CADENCE, START, NOW)
+    silent = reliability(checks(START - timedelta(days=2))[:4], CADENCE, START, NOW)
+    never = reliability([], CADENCE, START, NOW)
+    assert (passing.verdict, stopped.verdict, silent.verdict) == (
+        Verdict.PASS,
+        Verdict.STOP,
+        Verdict.STOP,
+    )
+    assert report_exit_code([passing, stopped]) == 1
+    assert report_exit_code([silent]) == 1  # a source that went silent still stops, not "no data"
+    assert report_exit_code([passing, never]) == 0
+    assert report_exit_code([never]) == 2
+    assert report_exit_code([]) == 2  # every source skipped: nothing was measured
+
+
 def test_a_newly_registered_source_is_measured_from_its_first_check_and_cannot_pass() -> None:
     first = NOW - timedelta(days=3)
     result = reliability(checks(first), CADENCE, START, NOW)
