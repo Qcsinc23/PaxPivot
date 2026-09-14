@@ -87,3 +87,71 @@ secret names (Handoff).
   `paxpivot.qcs-cargo.com` with this shared-passphrase boundary accepted for the single-user
   pilot; daily on-host database backups (30 days). Per-user authentication remains the gate
   before any multi-user use.
+
+- **2026-09-14, TASK-046.** A security audit of the now-internet-facing pilot found that "brute
+  force is mitigated by passphrase length and TLS, not by the app" (above) is no longer enough:
+  nothing capped the *aggregate* cost of parallel guessing, only the existing fixed 500 ms
+  per-request delay slowed a single sequential guesser. This amendment adds an application-level
+  ceiling and two related hardenings, all within `apps/web`, no API or schema change, no Traefik
+  middleware (Traefik is shared Dokploy-managed host infrastructure — TASK-046 is out of scope
+  for touching it):
+
+  - **Login rate limit** (`apps/web/lib/auth/rate-limit.ts`). An in-memory `LoginRateLimiter`
+    counts failed `POST /auth/session` attempts per client over a 15-minute window: 10 failures
+    blocks that client, and a 200-failure global ceiling blocks everyone once many distinct
+    clients fail regardless of any single client's own count. A blocked request is denied with
+    the same `/login?error=1` redirect as a wrong passphrase — no distinguishable response,
+    timing included, since the fixed failure delay still runs either way — so nothing about the
+    block is observable, matching this ADR's existing "never echoes the input" posture. A
+    successful sign-in clears only that client's own failure history, never the global counter,
+    and is otherwise unaffected by other clients' failures, so one noisy attacker cannot lock
+    out the pilot's one legitimate user short of tripping the global ceiling — an accepted
+    trade-off given the ceiling exists precisely to bound damage from many distinct attackers,
+    not to protect against the pilot user locking themselves out (a mistyped passphrase ten
+    times in a row is credential-checked, not merely counted). The limiter is in-process memory
+    only: correct because `compose.prod.yml` runs exactly one `web` replica; it resets on
+    restart and does not survive a redeploy, which is accepted for a single-user pilot (see the
+    module's `ponytail:` comment for the exact bounds).
+
+    **Client identity.** `deploy/compose.traefik.yml` and `docs/DEPLOYMENT.md` confirm the
+    topology is one Traefik hop directly in front of `web`, and Traefik's own behavior is to
+    *append* the real peer address to `X-Forwarded-For` rather than trust or rewrite any
+    existing value. A client can send its own `X-Forwarded-For` with any forged prefix it likes
+    (the whole point of the attack this task closes is that the client is untrusted), but it
+    cannot make Traefik *not* append the true peer address as the header's right-most entry.
+    `clientKey()` therefore reads only that right-most entry — the only part of the header this
+    single-hop topology can trust — and ignores everything to its left. Reading the left-most
+    entry instead (a common mistake) would let one attacker present a different "client" on
+    every request purely by varying its own forged prefix, defeating the per-client cap for
+    free; a future multi-hop deployment would need to trust the Nth-from-the-right entry
+    instead, for the same reason.
+
+  - **Same-origin POST enforcement** (`apps/web/lib/http/request-guards.ts::checkSameOrigin`).
+    `SameSite=Lax` alone stops a cross-site *authenticated* POST from carrying the session
+    cookie, but not a cross-site POST to `/auth/session` itself (no cookie needed to guess a
+    passphrase) or a same-site-cookie-adjacent CSRF variant. Every POST handler now also
+    requires `Sec-Fetch-Site` (when present) to be `same-origin` or `none`, and otherwise falls
+    back to comparing the `Origin` header's host against the request's own `Host` header — which
+    Traefik forwards unchanged (`passHostHeader` defaults to true), confirmed against
+    `deploy/compose.traefik.yml`, so trusting the `Host` header Next.js sees is safe one hop from
+    the client. A request with neither header is allowed through this check: real browsers set
+    at least one of them unconditionally on every fetch/form POST, so their absence means a
+    non-browser client, not a same-origin browser request stripped of its markers, and rejecting
+    such clients outright would also break legitimate non-browser tooling with no attack this
+    check is meant to stop.
+
+  - **Body size limits** (`apps/web/lib/http/request-guards.ts::checkBodySize`). Next's
+    `bodySizeLimit` config applies to Server Actions, not Route Handlers, so all three POST
+    handlers now reject before calling `formData()` when `Content-Length` is missing or exceeds
+    a small ceiling: 8 KiB for `/auth/session` and `/auth/logout` (a passphrase and a same-origin
+    path comfortably fit in bytes, not kilobytes), 16 KiB for `/trips/new` (its largest
+    legitimate field is a 200-character destination; the full form is well under 1 KiB even
+    URL-encoded). A missing `Content-Length` is rejected rather than trusted to a streamed read,
+    since omitting it is also how a client would hide an otherwise-oversized body.
+
+  No change to the passphrase/session mechanism itself, the fail-closed configuration modes, or
+  the cookie attributes described above.
+
+  **Verification:** `apps/web/tests/rate-limit.test.ts`, `apps/web/tests/request-guards.test.ts`,
+  and the "request hardening (TASK-046)" tests added to `apps/web/tests/auth.test.ts` and
+  `apps/web/tests/trips-route.test.ts` (see `docs/tasks/TASK-046-web-request-hardening.md`).
