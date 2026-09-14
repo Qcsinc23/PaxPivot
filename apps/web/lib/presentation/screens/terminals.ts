@@ -25,6 +25,7 @@ import type {
   MapView,
   SourceEvidenceView,
   TerminalCardView,
+  TerminalFactRowView,
 } from "@/lib/presentation/types";
 
 /** How many candidate terminals travel time made reachable, and how many it ruled out. */
@@ -95,6 +96,8 @@ export type TerminalDetailScreenModel = {
     /** Omitted when no source for this terminal has been observed yet. */
     age?: EvidenceAgeView;
     rows: readonly EvidenceRowView[];
+    /** Every displayable terminal operating fact, each with its own "Read at" (TASK-048). */
+    facts: readonly TerminalFactRowView[];
     /** Why this terminal is in the list at all; shown behind a disclosure. */
     whyIncluded: string;
   };
@@ -148,7 +151,7 @@ export const emptyTerminalDetail: TerminalDetailScreenModel = {
   opportunities: [],
   opportunitiesNote: "PaxPivot has not checked a source for this terminal yet.",
   travel: { rows: [], handoffs: [] },
-  evidence: { age: UNKNOWN_AGE, rows: [], whyIncluded: "" },
+  evidence: { age: UNKNOWN_AGE, rows: [], facts: [], whyIncluded: "" },
   history: NO_HISTORY,
   compareHref: "/terminals",
 };
@@ -231,6 +234,22 @@ export const fixtureTerminalDetail: TerminalDetailScreenModel = {
   evidence: {
     age: fixtureEvidenceAge,
     rows: fixtureEvidenceRows,
+    // Distinct labels from the Stats grid above (which already shows "Hours" and "Parking"
+    // from these same facts): this is the per-fact provenance list, not a second copy of Stats.
+    facts: [
+      {
+        id: "fact-phone",
+        label: "Phone",
+        value: known("Comm: (555) 010-0000; DSN: 555-0000"),
+        readAt: { iso: "2026-01-01T14:02:00Z", text: "2026-01-01 14:02Z" },
+      },
+      {
+        id: "fact-email",
+        label: "Email",
+        value: known("pax.example@us.af.mil"),
+        readAt: { iso: "2026-01-01T14:02:00Z", text: "2026-01-01 14:02Z" },
+      },
+    ],
     whyIncluded:
       "Synthetic rule wording. In production this is the deterministic reason the terminal was included or excluded.",
   },

@@ -187,6 +187,30 @@ describe("terminal detail adapter", () => {
     expect(model.evidence.rows[0]?.href).toBe(detail.sources[0]?.url);
   });
 
+  test("a fact the Stats grid does not already show renders with Page says / Read at (TASK-048)", () => {
+    // "Hours" is already in `stats` above; the phone fact is the one shown here, with its own
+    // provenance, never duplicated between the two sections.
+    const phoneRow = model.evidence.facts.find((f) => f.label === "Phone");
+    expect(phoneRow).toEqual({
+      id: "1c0aa1bc-7a20-5a79-a763-faec3142cabc",
+      label: "Phone",
+      value: { status: "known", value: "+1 000 000 0000 (synthetic)" },
+      readAt: { iso: "2026-09-10T09:00:00Z", text: "2026-09-10 09:00Z" },
+    });
+    expect(model.evidence.facts.some((f) => f.label === "Hours")).toBe(false);
+
+    render(<TerminalDetailScreen model={model} initialTab="evidence" />);
+    const phoneValue = screen.getByText("+1 000 000 0000 (synthetic)");
+    expect(phoneValue).toBeTruthy();
+    // The row itself carries "Page says ... · Read at ..." (EvidenceAge, rendered just above in
+    // the same tab, uses the same "Page says" wording for the source's own currency — this
+    // checks the fact row specifically, not the page as a whole).
+    const row = phoneValue.closest("li");
+    expect(row?.textContent).toContain("Page says");
+    expect(row?.textContent).toContain("Read at");
+    expect(row?.textContent).toContain("2026-09-10 09:00Z");
+  });
+
   test("a terminal without an entrance has no directions and no invented location", () => {
     const withoutEntrance: TerminalDetailRead = {
       ...detail,

@@ -234,12 +234,12 @@ def check_sources() -> int:
     with db.transaction(engine) as connection:
         sources = SqlSourceRepository(connection)
         registry = {s.identity.source_id: s for s in sources.list_sources()}
+        terminal_repository = SqlTerminalRepository(connection)
         provider = FirecrawlSourceProvider.from_env(
             registry,
             switches=SqlKillSwitchRepository(connection).list_engaged(),
             terminal_timezones={
-                t.terminal_id: t.timezone
-                for t in SqlTerminalRepository(connection).list_terminals()
+                t.terminal_id: t.timezone for t in terminal_repository.list_terminals()
             },
         )
         if provider is None:
@@ -251,6 +251,10 @@ def check_sources() -> int:
                 SqlSourceObservationRepository(connection),
                 SqlKillSwitchRepository(connection),
                 provider,
+                # TASK-048: the same adapter instance satisfies both the retrieval port and the
+                # additive terminal-facts port, so one page fetch per source serves both.
+                terminal_facts=terminal_repository,
+                facts_provider=provider,
             )
         )
     engine.dispose()

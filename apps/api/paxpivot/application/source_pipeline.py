@@ -15,22 +15,32 @@ incident. A retrieval failure is a normal observation and is stored as such.
 Every mode whose *effect* this pipeline commits — retrieval, parsing, raw storage — is
 authorised through ``authorize_processing``, so a kill switch scoped to a source, an adapter or
 a mode cannot be bypassed by engaging it after retrieval.
+
+``record_terminal_facts`` (TASK-048) is the parallel attach point for terminal operating facts:
+same identity check, but gated on both ``PARSE`` and ``DISPLAY`` (a fact is never written unless
+the current policy would also let PaxPivot show it), and deduplicated against each terminal's
+latest fact of the same kind before ``TerminalRepository.append_fact``.
 """
 
 from collections.abc import Sequence
+from datetime import datetime
+from uuid import uuid4
 
-from paxpivot.application.ports.repositories import SourceObservationRepository
-from paxpivot.application.ports.source_provider import SourceProvider
+from paxpivot.application.ports.repositories import SourceObservationRepository, TerminalRepository
+from paxpivot.application.ports.source_provider import SourceProvider, TerminalFactProvider
 from paxpivot.application.result import ApplicationError, Failure, Result, Success
 from paxpivot.application.source_gate import authorize_processing, engaged_switch
 from paxpivot.domain.source import (
     ExtractionState,
     KillSwitch,
     ProcessingMode,
+    Provenance,
     RawPayloadPolicy,
     Source,
+    SourceKind,
     SourceObservation,
 )
+from paxpivot.domain.terminal import TerminalOperationalFact
 
 _INTERPRETED = {ExtractionState.EXACT, ExtractionState.REVIEWED}
 
@@ -121,3 +131,61 @@ async def record_observation(
         return rejection
     observations.append(result.value)
     return Success(value=result.value)
+
+
+async def record_terminal_facts(
+    source: Source,
+    facts_provider: TerminalFactProvider,
+    terminal_facts: TerminalRepository,
+    switches: Sequence[KillSwitch],
+    *,
+    observed_at: datetime,
+) -> Result[tuple[TerminalOperationalFact, ...]]:
+    """Append every parsed fact that is new or changed, under the same identity/policy gate
+    ``record_observation`` uses (TASK-048).
+
+    Both ``PARSE`` and ``DISPLAY`` must be authorized: a fact is never written for a source the
+    current policy would not also let PaxPivot show, so a restricted or schedule-artifact source,
+    or a page with parsing paused by a kill switch, never gets a fact appended even when its
+    retrieval otherwise succeeds. ``observed_at`` is the caller's own clock reading for this run
+    (typically the ``SourceObservation`` just recorded alongside it), not read again here, so a
+    fact and the observation recorded in the same check always share one timestamp.
+    """
+    if source.terminal_id is None or source.kind != SourceKind.TERMINAL_PAGE:
+        return Success(value=())
+    if source.adapter_id is None or facts_provider.provider_id != source.adapter_id:
+        return _reject("invalid_input", "source_provider.identity_mismatch")
+    if not authorize_processing(source, ProcessingMode.PARSE, switches).ok:
+        return Success(value=())
+    if not authorize_processing(source, ProcessingMode.DISPLAY, switches).ok:
+        return Success(value=())
+    parsed = await facts_provider.observe_facts(source.identity)
+    if not parsed.ok:
+        return parsed
+    current = {f.kind: f for f in terminal_facts.list_current_facts(source.terminal_id)}
+    appended: list[TerminalOperationalFact] = []
+    for candidate in parsed.value:
+        existing = current.get(candidate.kind)
+        if existing is not None and existing.value == candidate.value:
+            continue  # No material change: a repeat 6-hour check appends nothing (TASK-048).
+        fact = TerminalOperationalFact(
+            fact_id=uuid4(),
+            terminal_id=source.terminal_id,
+            kind=candidate.kind,
+            value=candidate.value,
+            provenance=Provenance(
+                source=source.identity,
+                observed_at=observed_at,
+                # The page states a fact, not an instant it was authored; inventing one here
+                # would break the same no-guess rule ``amc_page_time`` enforces for the stamp.
+                source_time=None,
+                provider_id=facts_provider.provider_id,
+                policy_version_id=source.policy.policy_version_id,
+            ),
+            effective_from=None,
+            effective_to=None,
+            recorded_at=observed_at,
+        )
+        terminal_facts.append_fact(fact)
+        appended.append(fact)
+    return Success(value=tuple(appended))
