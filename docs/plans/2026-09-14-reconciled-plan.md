@@ -38,7 +38,8 @@ full window. Run the report weekly until then (command in `docs/DEPLOYMENT.md`).
 
 **Found during M1, not yet acted on:**
 - The `web` service has no Docker healthcheck, so `up --wait` returns before Next.js serves and the proxy
-  can answer 404 for a few seconds after a deploy (observed). Adding one is a small infrastructure task.
+  can answer 404 for a few seconds after a deploy (observed). Addressed by TASK-043 (`web` gets a
+  `/login`-probing healthcheck; `--wait` then blocks until Next.js serves); pending deploy.
 - The web accessibility tests run close to Vitest's 5 s default; under heavy parallel load on a
   developer machine they time out. CI has not been affected.
 - Nothing alerts a person when checks stop (D-4), and backups still live only on the VPS (D-5).
