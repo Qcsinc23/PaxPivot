@@ -20,6 +20,17 @@ import {
 } from "@/lib/auth/session";
 import { proxy } from "@/proxy";
 
+// Wraps (never replaces) the real timingSafeEqual so every other test's behaviour is unchanged,
+// while letting one test (TASK-046 review 2) assert exactly how many times it was called —
+// proving the compare always runs, even for an already-blocked client.
+vi.mock("@/lib/auth/session", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/auth/session")>(
+      "@/lib/auth/session",
+    );
+  return { ...actual, timingSafeEqual: vi.fn(actual.timingSafeEqual) };
+});
+
 const SECRET = "session-secret-with-at-least-32-characters!";
 const PASSPHRASE = "correct-horse-battery-staple-pilot";
 const CONFIGURED = {
@@ -240,12 +251,21 @@ describe("proxy", () => {
 });
 
 describe("sign-in route", () => {
-  function post(body: Record<string, string>): Request {
-    const form = new URLSearchParams(body);
+  // A real browser always sends Content-Length for a known-length form body (TASK-046 now
+  // requires it); a test that wants to omit or override it passes `headers` explicitly.
+  function post(
+    body: Record<string, string>,
+    headers: Record<string, string> = {},
+  ): Request {
+    const encoded = new URLSearchParams(body).toString();
     return new Request("https://pilot.invalid/auth/session", {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "content-length": String(new TextEncoder().encode(encoded).length),
+        ...headers,
+      },
+      body: encoded,
     });
   }
 
@@ -287,6 +307,7 @@ describe("sign-in route", () => {
       const malformed = await signIn(
         new Request("https://pilot.invalid/auth/session", {
           method: "POST",
+          headers: { "content-length": "2" },
           body: "{}",
         }),
       );
@@ -294,7 +315,10 @@ describe("sign-in route", () => {
       expect(malformed.headers.get("set-cookie")).toBeNull();
 
       const out = await signOut(
-        new Request("https://pilot.invalid/auth/logout", { method: "POST" }),
+        new Request("https://pilot.invalid/auth/logout", {
+          method: "POST",
+          headers: { "content-length": "0" },
+        }),
       );
       expect(out.status).toBe(303);
       expect(out.headers.get("set-cookie")).toMatch(/Max-Age=0/i);
@@ -313,6 +337,175 @@ describe("sign-in route", () => {
         );
       },
     );
+  });
+});
+
+describe("request hardening (TASK-046)", () => {
+  function post(
+    body: Record<string, string>,
+    headers: Record<string, string> = {},
+  ): Request {
+    const encoded = new URLSearchParams(body).toString();
+    return new Request("https://pilot.invalid/auth/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "content-length": String(new TextEncoder().encode(encoded).length),
+        ...headers,
+      },
+      body: encoded,
+    });
+  }
+
+  test("rejects a cross-site sign-in POST and accepts a same-origin one", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const crossSite = await signIn(
+        post({ passphrase: PASSPHRASE }, { "sec-fetch-site": "cross-site" }),
+      );
+      expect(crossSite.status).toBe(403);
+      expect(crossSite.headers.get("set-cookie")).toBeNull();
+
+      const mismatchedOrigin = await signIn(
+        post(
+          { passphrase: PASSPHRASE },
+          { origin: "https://evil.invalid", host: "pilot.invalid" },
+        ),
+      );
+      expect(mismatchedOrigin.status).toBe(403);
+
+      const sameOrigin = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          {
+            "sec-fetch-site": "same-origin",
+            "x-forwarded-for": "203.0.113.201",
+          },
+        ),
+      );
+      expect(sameOrigin.status).toBe(303);
+      expect(sameOrigin.headers.get("set-cookie")).not.toBeNull();
+
+      // The real logout POST carries Sec-Fetch-Site too; a forged one is refused the same way.
+      const crossSiteLogout = await signOut(
+        new Request("https://pilot.invalid/auth/logout", {
+          method: "POST",
+          headers: { "content-length": "0", "sec-fetch-site": "cross-site" },
+        }),
+      );
+      expect(crossSiteLogout.status).toBe(403);
+    });
+  });
+
+  test("rejects an oversize or undeclared sign-in body with 413", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const noContentLength = await signIn(
+        new Request("https://pilot.invalid/auth/session", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ passphrase: PASSPHRASE }).toString(),
+        }),
+      );
+      expect(noContentLength.status).toBe(413);
+
+      const oversize = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          { "content-length": String(9 * 1024) },
+        ),
+      );
+      expect(oversize.status).toBe(413);
+      expect(oversize.headers.get("set-cookie")).toBeNull();
+    });
+  });
+
+  test("11 failures from one client block even a correct passphrase; another client is unaffected", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const attacker = { "x-forwarded-for": "203.0.113.50" };
+      for (let i = 0; i < 10; i += 1) {
+        const failure = await signIn(
+          post({ passphrase: `wrong-guess-${i}-of-similar-length` }, attacker),
+        );
+        expect(failure.status).toBe(303);
+        expect(failure.headers.get("location")).toMatch(/^\/login\?error=1/);
+      }
+      // The passphrase is correct this time, but the client's own cap was already reached.
+      const stillBlocked = await signIn(
+        post({ passphrase: PASSPHRASE }, attacker),
+      );
+      expect(stillBlocked.status).toBe(303);
+      expect(stillBlocked.headers.get("location")).toMatch(/^\/login\?error=1/);
+      expect(stillBlocked.headers.get("set-cookie")).toBeNull();
+
+      // A different client, unrelated to the attacker's failures, signs in normally.
+      const other = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          { "x-forwarded-for": "203.0.113.60" },
+        ),
+      );
+      expect(other.status).toBe(303);
+      expect(other.headers.get("set-cookie")).not.toBeNull();
+    });
+  });
+
+  test("a global ceiling tripped by 20+ distinct clients never blocks a fresh client's correct passphrase", async () => {
+    await withEnv(CONFIGURED, async () => {
+      // MAX_FAILURES_GLOBAL (200) / MAX_FAILURES_PER_CLIENT (10) = 20: the documented minimum
+      // number of distinct clients that can trip the global ceiling without any one of them
+      // exceeding its own per-client cap.
+      for (let i = 0; i < 20; i += 1) {
+        const attacker = { "x-forwarded-for": `198.51.100.${i}` };
+        for (let j = 0; j < 10; j += 1) {
+          const failure = await signIn(
+            post({ passphrase: `wrong-${i}-${j}-of-similar-length` }, attacker),
+          );
+          expect(failure.status).toBe(303);
+        }
+      }
+      // A brand-new client — zero failures of its own — still signs in normally: the global
+      // ceiling only ever slows down a *wrong* passphrase, never a correct one (TASK-046 review).
+      const legitimate = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          { "x-forwarded-for": "203.0.113.250" },
+        ),
+      );
+      expect(legitimate.status).toBe(303);
+      expect(legitimate.headers.get("location")).toBe("/advanced");
+      expect(legitimate.headers.get("set-cookie")).not.toBeNull();
+    });
+  });
+
+  test("always runs the constant-time compare, even once the client is already blocked (regression, TASK-046 review 2)", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const attacker = { "x-forwarded-for": "203.0.113.90" };
+      const compare = vi.mocked(timingSafeEqual);
+      for (let i = 0; i < 10; i += 1) {
+        await signIn(
+          post({ passphrase: `wrong-${i}-of-similar-length` }, attacker),
+        );
+      }
+      // The client is now at its per-client cap. A regression that skips the compare once
+      // blocked (`validPassphrase = clientBlocked ? false : timingSafeEqual(...)`) still denies
+      // both attempts below — the response alone can't tell the two implementations apart —
+      // but it would call `timingSafeEqual` zero times instead of once for each.
+      const callsBeforeWrong = compare.mock.calls.length;
+      const stillWrong = await signIn(
+        post({ passphrase: "another-wrong-guess-of-length" }, attacker),
+      );
+      expect(stillWrong.status).toBe(303);
+      expect(compare.mock.calls.length).toBe(callsBeforeWrong + 1);
+
+      const callsBeforeCorrect = compare.mock.calls.length;
+      const stillBlockedWithRightPassphrase = await signIn(
+        post({ passphrase: PASSPHRASE }, attacker),
+      );
+      expect(stillBlockedWithRightPassphrase.status).toBe(303);
+      expect(
+        stillBlockedWithRightPassphrase.headers.get("set-cookie"),
+      ).toBeNull();
+      expect(compare.mock.calls.length).toBe(callsBeforeCorrect + 1);
+    });
   });
 });
 
