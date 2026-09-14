@@ -84,11 +84,10 @@ healthcheck:
       "CMD-SHELL",
       "node -e \"const p=process.env.PORT||3000;fetch('http://127.0.0.1:'+p+'/login').then((r)=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))\"",
     ]
-  interval: 30s
-  timeout: 3s
+  interval: 10s
+  timeout: 5s
   retries: 3
-  start_period: 60s
-  start_interval: 2s
+  start_period: 30s
 ```
 
 It probes `127.0.0.1:$PORT` inside the container — the same host:port the Next.js server actually
@@ -110,34 +109,32 @@ exactly the signal operators already treat as "web is up." Consequence: the heal
 `healthy` even while `api`/`postgres`/`redis` are down or unreachable, which is required — a web
 outage must not cascade into reporting `web` unhealthy for a dependency it doesn't own here.
 
-**Timing (revised after review 1).** The first version used `interval: 2s` steady-state, matching
-`postgres`. A fresh review measured that on a real container this costs roughly 10% CPU every 2s
-indefinitely, because each probe forks a fresh Node process — acceptable for a deploy-time check,
-not for a probe that runs forever on a small single-core-ish pilot VPS. The healthcheck now
-separates the two concerns with `start_interval` (Docker Engine >= 25 / Compose >= 2.20):
+**Timing (revised twice after review).** The first version used `interval: 2s` steady-state,
+matching `postgres`. Fresh review 1 measured that on a real container this costs roughly 10% CPU
+every 2s indefinitely, because each probe forks a fresh Node process — acceptable for a deploy-time
+check, not for a probe that runs forever on a small pilot VPS. That version was replaced with a
+`start_interval`-based design (a fast 2s cadence only while `starting`, a slow 30s steady cadence
+once `healthy`). Fresh review 2 found that design unsafe: since Compose 2.24.0, `docker compose up`
+against a Docker Engine older than 25 fails outright with `"can't set healthcheck.start_interval as
+feature require Docker Engine v25"` and never creates the container
+([docker-library/docker#473](https://github.com/docker-library/docker/issues/473)) — it does not
+degrade to the plain `interval`, it fails the deploy. The pilot VPS's exact engine version isn't
+recorded in this repository (`docs/DEPLOYMENT.md`'s host requirement only says "Docker Engine +
+Compose v2"), so relying on `start_interval` risked turning "the field is ignored" into "the deploy
+fails to create the container." The healthcheck now uses a single, engine-agnostic cadence instead:
 
-- `start_interval: 2s` — the fast cadence used only while the container is `starting`, so a deploy
-  still gets quick feedback (Next.js binds its port in low single-digit seconds locally).
-- `interval: 30s` — the steady-state cadence once the container is `healthy` (or once
-  `start_period` elapses without a success), so the forked-Node probe costs negligible CPU at run
-  time instead of running every 2s forever.
-- `start_period: 60s` — generous grace before a failing probe counts toward `retries`, safely above
-  the ~1-3s Next.js actually takes to bind locally, without extending steady-state cost.
-- `retries: 3` at the 30s steady interval (not 30 retries at 2s): three consecutive steady-state
-  failures (~90s) is enough evidence the process is actually down, not just slow.
-- `timeout: 3s` unchanged.
+- `interval: 10s` — one cadence throughout, `starting` and steady-state alike; short enough that a
+  deploy still resolves quickly (Next.js binds its port in low single-digit seconds locally, so the
+  first probe after container start typically already succeeds).
+- `timeout: 5s` — generous enough that a slow render under load doesn't itself trip a failure.
+- `retries: 3` — three consecutive failures before `unhealthy`.
+- `start_period: 30s` — grace before a failing probe counts toward `retries`, comfortably above the
+  ~1-3s Next.js actually takes to bind locally.
 
-**Fallback on an older Docker daemon.** `start_interval` was added in Docker Engine 25 / Compose
-2.20; `docs/DEPLOYMENT.md`'s host requirement only says "Docker Engine + Compose v2" (no version
-pinned), and the pilot VPS's exact engine version is not recorded in this repository. An engine
-that predates the field ignores it rather than erroring (Compose does not reject an unknown
-healthcheck sub-field on an older engine), so the fallback behavior is: probes run at the normal
-`interval` (30s) throughout, including while `starting`. Worst case, `up --wait` takes up to about
-one `interval` (~30s) longer to observe the first successful probe than on an engine that honors
-`start_interval` — still comfortably inside the 60s `start_period`, so `--wait` still succeeds, just
-slower to report it. The Handoff's deploy steps record `docker version --format
-'{{.Server.Version}}'` so this gets confirmed (or the fallback path gets seen) at actual deploy
-time.
+No Docker Engine or Compose version floor is required for this design; every field here has been
+supported since long before the pilot's "Docker Engine + Compose v2" baseline. The Handoff's deploy
+steps still record `docker version --format '{{.Server.Version}}'` as plain inventory (useful
+context for any future tuning), with no conditional behavior riding on it.
 
 **`depends_on` on `web`.** Only `proxy` (the bundled Caddy profile, off on the Traefik pilot host)
 declares `depends_on: web`, currently `condition: service_started`. Changed to
@@ -217,7 +214,7 @@ docker build -f apps/web/Dockerfile -t paxpivot-web:task043 .
 docker compose --env-file <scratch .env.production> -f compose.prod.yml -p task043 \
   up -d --wait --no-build --no-deps web            # record wall time; expect exit 0
 docker inspect --format '{{json .State.Health}}' task043-web-1   # expect starting -> healthy quickly
-# sample again after ~70s to see the steady 30s cadence in .Log
+# sample again after ~25s to see the steady ~10s cadence in .Log
 docker compose --env-file <scratch .env.production> -f compose.prod.yml -p task043 down --remove-orphans -v
 
 # Negative (criterion c): override the command so nothing listens, same healthcheck.
@@ -280,67 +277,75 @@ docs/tasks/TASK-043-web-healthcheck.md
 **Migrations:** none.
 
 **Verification run — round 1 (2026-09-14, on the rebased branch, `interval: 2s` steady-state):**
-superseded by round 2 below after fresh review 1 found the steady-state CPU cost; kept for
-history. `docker build` + `docker run --health-*` positive/negative transitions passed; `make
-check`/`make migrate-test` passed (283 Python + 341 web unit, 40 integration).
+superseded after fresh review 1 found the steady-state CPU cost; kept for history. `docker build`
++ `docker run --health-*` positive/negative transitions passed; `make check`/`make migrate-test`
+passed (283 Python + 341 web unit, 40 integration).
 
-**Verification run — round 2 (2026-09-14, after fresh review 1: `start_interval`/steady-`interval`
-retiming, `/ready` deploy-step fix, `make compose-check` scope clarified):**
+**Verification run — round 2 (2026-09-14, after fresh review 1: a `start_interval`-based retiming —
+fast 2s cadence only while `starting`, slow 30s steady cadence once `healthy` — plus the `/ready`
+deploy-step fix and the `make compose-check` scope clarification):** superseded after fresh review
+2 found `start_interval` unsafe (see "Timing" above: it fails container creation outright, not a
+graceful degrade, on a Docker Engine older than 25 since Compose 2.24.0); kept for history only.
+At the time, positive/negative `docker compose ... up --wait` transitions against that design
+passed (healthy in 3s, a clean 30s steady cadence, unhealthy at ~121s against nothing listening);
+`make check`/`make migrate-test` passed. None of those timing numbers apply to the current design.
+
+**Verification run — round 3 (2026-09-14, after fresh review 2: `start_interval` removed, single
+engine-agnostic `interval: 10s` / `timeout: 5s` / `retries: 3` / `start_period: 30s`; Known
+limitations updated with the outage-under-load risk):**
 
 ```text
 docker version --format '{{.Server.Version}}'          -> 29.3.1 (local Docker Desktop)
 docker compose version                                 -> v5.1.1
-  (both comfortably >= the start_interval minimum: Engine 25 / Compose 2.20)
+  (recorded as plain inventory; no field in the current healthcheck design depends on either)
 
-docker compose --env-file <scratch .env.production> -f compose.prod.yml config --quiet
-  -> PASS (a bare `docker compose -f compose.prod.yml config` with no env file still fails on the
-     pre-existing `${VAR:?...}` guards — unrelated to this change, and expected; DEPLOYMENT.md's
-     own deploy commands always pass --env-file)
+docker compose --env-file <scratch .env.production> -f compose.prod.yml config --quiet -> PASS
 docker compose --env-file <scratch .env.production> -f compose.prod.yml -f deploy/compose.traefik.yml \
-  config --quiet -> PASS; resolved `web.healthcheck` confirmed with start_interval: 2s / interval:
-  30s / timeout: 3s / retries: 3 / start_period: 1m0s, exactly as authored
-make compose-check -> PASS, but note: this target runs `docker compose config --quiet` with no
-  `-f` flags, so it validates the repository's default local-dev `compose.yml`, not
-  `compose.prod.yml`. It is still a required repository-wide check and passes, but the two
-  `docker compose -f compose.prod.yml ...` commands above are the actual production-config
-  evidence (Makefile intentionally not changed; out of scope).
+  config --quiet -> PASS (criterion d); resolved `web.healthcheck`: {test, timeout: 5s,
+  interval: 10s, retries: 3, start_period: 30s} — no `start_interval` key present, confirmed by
+  inspecting the rendered YAML directly.
+make compose-check -> PASS; still only validates the default local-dev `compose.yml`, not
+  `compose.prod.yml` — the two `-f compose.prod.yml` commands above remain the actual
+  production-config evidence (Makefile intentionally unchanged; out of scope).
 
 docker build -f apps/web/Dockerfile -t paxpivot-web:task043 .  -> built clean
-docker run --rm node:24.15.0-slim sh -c 'which curl; which wget'  -> both empty (neither present),
-  confirming the node -e/fetch probe is required, not merely preferred
 
-Positive (criterion b) — the healthcheck exactly as Compose renders it, via compose itself, not
-hand-copied `docker run --health-*` flags:
+Positive (criterion a) — the healthcheck exactly as Compose renders it, via compose itself:
   docker compose --env-file <scratch .env.production> -f compose.prod.yml -p task043 \
     up -d --wait --no-build --no-deps web
-  -> exit 0, wall time 3s (timed with `date +%s` before/after). `--no-deps` starts only `web`,
-     skipping `api`/`postgres`/`redis` entirely — `api` never ran during this test, proving no API
-     dependency. `docker inspect .State.Health` immediately after: {"Status":"healthy",
-     "FailingStreak":0,"Log":[{"Start":"2026-09-14T11:59:27.553Z",...,"ExitCode":0}]} — healthy on
-     the very first probe.
-  Sampled again ~75s later (container left running) to see the steady cadence once healthy:
-     Log now held three entries — Start 11:59:27.553, 11:59:57.729 (+30.18s), 12:00:27.883
-     (+30.15s) — a clean, precise 30s steady interval, confirming the CPU-cost fix actually takes
-     effect once past startup.
+  -> exit 0, wall time 5s (timed with `date +%s`). Container StartedAt 12:21:50.189Z; first probe
+     Start 12:21:55.235Z (+5.05s) — healthy on that very first probe, no failures. `--no-deps`
+     started only `web`; `api` never ran, proving no API dependency. (The review's own "~10s"
+     estimate assumed the first probe fires a full `interval` after start; the observed first
+     probe fired roughly half an interval in — still the same order of magnitude, and the
+     mechanism the change intends: no more near-instant `--wait` return that hides a slow app.)
   Torn down: `docker compose --env-file <scratch> -f compose.prod.yml -p task043 down --remove-orphans -v`.
 
-Negative (criterion c) — same setup, a scratch override file (not committed) setting
-  `services.web.command: ["sleep", "3600"]` so nothing listens on the port, same healthcheck as
-  authored in compose.prod.yml:
+Steady cadence (criterion b) — same run, container left up, sampled again ~26s later:
+  Log held five entries: 12:21:55.235, 12:22:05.405 (+10.17s), 12:22:15.511 (+10.11s),
+  12:22:25.627 (+10.12s), 12:22:35.736 (+10.11s) — a clean, unbroken ~10s steady cadence once
+  healthy, matching `interval: 10s` exactly.
+
+Negative (criterion c) — same setup, the scratch override file (not committed) setting
+  `services.web.command: ["sleep", "3600"]` so nothing listens on the port:
   docker compose --env-file <scratch .env.production> -f compose.prod.yml -f <scratch override.yml> \
     -p task043 up -d --wait --no-build --no-deps web
-  -> exit 1 ("container task043-web-1 is unhealthy"), wall time 121s.
-     docker inspect .State.Health: {"Status":"unhealthy","FailingStreak":3,"Log":[5 entries, all
-     ExitCode 1]}. Container StartedAt 12:01:09.663Z; the 5 retained log entries (Docker keeps only
-     the most recent 5) landed at +56.40s, +58.51s, +60.60s, +90.69s, +120.78s — i.e. three checks
-     ~2.1s apart (the tail of the `start_interval: 2s` fast cadence that ran, mostly scrolled out of
-     the 5-entry log, throughout the 60s `start_period`), then two checks exactly 30.09s apart (the
-     steady `interval`). FailingStreak 3 (not 5) confirms only checks at/after the `start_period`
-     boundary count toward `retries`: the check at +60.60s (just past the 60s boundary) is the
-     first counted failure, then +90.69s and +120.78s are the 2nd and 3rd, crossing `retries: 3`
-     and flipping to `unhealthy` at ~121s — see "Known limitations" below for why this is faster
-     than the naive `start_period + retries × interval` (150s) estimate.
+  -> exit 1 ("container task043-web-1 is unhealthy"), wall time 51s. Container StartedAt
+     12:22:58.195Z. docker inspect .State.Health: {"Status":"unhealthy","FailingStreak":3,
+     "Log":[5 entries, all ExitCode 1]} at offsets +20.31s, +25.37s, +30.44s, +40.53s, +50.60s.
+     FailingStreak 3 (not 5) again shows only checks at/after the 30s `start_period` boundary
+     count toward `retries`: the +30.44s check (just past the boundary) is the first counted
+     failure, then +40.53s and +50.60s (each ~10.08s later, matching the steady `interval`) are
+     the 2nd and 3rd, crossing `retries: 3` and flipping to `unhealthy` at ~51s — consistent with
+     "the first counted failure lands at the start_period boundary, then (retries-1) more at the
+     steady interval" observed in round 2 at the larger scale. (The two earliest retained entries,
+     +20.31s/+25.37s, sit inside start_period and don't count; as before, Docker's health `Log`
+     keeps only the 5 most recent entries, so any earlier checks are not visible here — the clean,
+     unbroken 10s cadence is established separately and unambiguously by the positive run above.)
   Torn down the same way afterward.
+
+Base-image check (unchanged from round 1/2): `docker run --rm node:24.15.0-slim sh -c 'which curl;
+  which wget'` -> both empty (neither present), confirming the node -e/fetch probe is required.
 
 make check -> PASS (exit 0)
   format-check / lint / typecheck                 -> PASS
@@ -367,25 +372,28 @@ blocking (container `starting`) is expected downtime for that restart — Traefi
 backend to route to during that window and returns a proxy error rather than serving stale content;
 this is unchanged from before and zero-downtime deploys are out of scope. No `--wait-timeout` is set
 on the deploy command, so `up --wait` does not time out on its own; the actual bound is the
-healthcheck's own state machine, and it is *not* simply `start_period + retries × interval` (60s +
-90s = 150s) — measured empirically at **~121s** (criterion c below) with nothing listening on the
-port. The reason: `docker inspect`'s `.State.Health.Log` retains only the 5 most recent checks, so
-the ~28 fast (`start_interval: 2s`) failures during the 60s `start_period` scroll out of view, but
-the timestamps of the 5 retained checks show the mechanism precisely — a fast check already
-in flight lands right at the `start_period` boundary (`+60.6s` in the observed run) and becomes the
-*first* failure that counts toward `retries` (failures strictly inside `start_period` never count),
-then two more failures at the 30s steady `interval` (`+90.7s`, `+120.8s`) reach `retries: 3` and the
-container flips to `unhealthy`. So the practical bound is closer to
-`start_period + (retries - 1) × interval` (≈ 120s) than the naive sum, because the boundary check
-that starts the counted streak lands at the *start* of `start_period`'s last `interval`-worth of
-counted failures, not a full `interval` after it. Either way, once `web` is genuinely down, Compose
-sees the terminal `unhealthy` state and `up --wait` exits 1 well under two minutes rather than
-hanging indefinitely.
+healthcheck's own state machine. From a cold start with nothing ever listening (the negative test,
+criterion c), that measured **~51s**, somewhat faster than the naive `start_period + retries ×
+interval` sum (30s + 30s = 60s): the health log's timestamps show the first failure that counts
+toward `retries` lands right at the `start_period` boundary rather than a full `interval` after it,
+so the practical bound is closer to `start_period + (retries - 1) × interval` (≈ 50s) — the same
+pattern observed at the larger scale in review round 2's `~121s` measurement (`start_period` 60s +
+`(retries-1)=2` × `interval` 30s ≈ 120s).
+
+The more operationally relevant number is different: once `web` is already `healthy` and serving,
+if `/login` renders slow enough under load to exceed the 5s `timeout` on `retries` (3) consecutive
+probes, Docker flips the single `web` replica to `unhealthy` and Traefik stops routing to it — a
+slowdown becomes a full outage rather than degraded service, because there is no second replica to
+absorb load while the first recovers (zero-downtime / multi-replica deploys are out of scope, per
+the task brief). That steady-state detection time is `retries × interval + timeout` ≈ 3 × 10s + 5s
+= **~35s** worst case from the last good response to `unhealthy`. `timeout` (5s) and `retries` (3)
+are the tuning knobs if this proves too sensitive (a slower detector) or too slow (a faster one) in
+practice; `interval` (10s) is the other lever but changes steady-state probe frequency/cost too.
 
 **Deploy-and-verify steps (not executed; VPS has no `make`):**
 
 ```bash
-docker version --format '{{.Server.Version}}'   # record the VPS engine version (start_interval needs >= 25)
+docker version --format '{{.Server.Version}}'   # record the VPS engine version (plain inventory)
 cd /opt/paxpivot && git pull --ff-only   # picks up the new compose.prod.yml
 TAG=$(git rev-parse --short HEAD)
 docker build -f apps/api/Dockerfile -t paxpivot-api:$TAG .

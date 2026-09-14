@@ -67,16 +67,12 @@ On a machine with `make`, `make build-images PAXPIVOT_TAG=$TAG` runs the same tw
 sign-in secrets are set (ADR-005).
 
 `web` has a Docker healthcheck (TASK-043): it probes `GET /login` on `127.0.0.1:$PORT` inside the
-container, a route that renders without calling the API, so `--wait` blocks until Next.js is
-actually serving, not merely until the container is running. Traefik's Docker provider only adds a
-container to a router's pool once Docker reports it `healthy`, so once `--wait` returns 0 the
-public `/login` request no longer needs a retry window. It probes every 2s while `starting`
-(`start_interval`, Docker Engine >= 25 / Compose >= 2.20) and every 30s once `healthy`, to avoid a
-forked-Node probe costing meaningful CPU indefinitely; on an older engine that ignores
-`start_interval`, it probes at the 30s steady interval throughout, so `--wait` can take up to ~30s
-longer to see the first successful probe (still inside the 60s `start_period`). Avoid switching
-tags within a few minutes of a scheduled check (00:00, 06:00, 12:00, 18:00 UTC), so a restart never
-costs a check run.
+container every 10s, a route that renders without calling the API, so `--wait` blocks until
+Next.js is actually serving, not merely until the container is running. Traefik's Docker provider
+only adds a container to a router's pool once Docker reports it `healthy`, so once `--wait` returns
+0 the public `/login` request no longer needs a retry window. Avoid switching tags within a few
+minutes of a scheduled check (00:00, 06:00, 12:00, 18:00 UTC), so a restart never costs a check
+run.
 
 ## Source checks (TASK-025)
 
