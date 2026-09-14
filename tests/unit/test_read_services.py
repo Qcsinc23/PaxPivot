@@ -1,8 +1,11 @@
 """Deterministic read use cases over in-memory repositories."""
 
 from collections.abc import Sequence
+from datetime import timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
+
+import pytest
 
 if TYPE_CHECKING:
     from paxpivot.domain.source import Source
@@ -13,12 +16,13 @@ from paxpivot.application.read_services import (
     list_source_health,
     list_terminal_network,
 )
-from paxpivot.domain.source import SourceState
+from paxpivot.domain.source import ExtractionState, RetrievalState, SourceState
 from support_sources import (
     NOW,
     SOURCE_A,
     SOURCE_B,
     SOURCE_C,
+    T0,
     TERMINAL_A,
     TERMINAL_B,
     TERMINAL_C,
@@ -26,6 +30,7 @@ from support_sources import (
     FakeSources,
     FakeSwitches,
     FakeTerminals,
+    observation,
 )
 
 
@@ -190,3 +195,64 @@ def test_a_restricted_source_contributes_no_evidence_to_a_terminal() -> None:
     # Operators still see the history on source health.
     health = list_source_health(sources, observations, FakeSwitches(), now=NOW)
     assert health.rows[0].latest is not None
+
+
+@pytest.mark.parametrize(
+    ("state", "age", "expected"),
+    [
+        (SourceState.FRESH, timedelta(hours=6, minutes=29), SourceState.FRESH),
+        (SourceState.FRESH, timedelta(hours=6, minutes=30), SourceState.FRESH),
+        (SourceState.FRESH, timedelta(hours=6, minutes=31), SourceState.STALE),
+        (SourceState.NO_DEPARTURES, timedelta(hours=7), SourceState.STALE),
+        (SourceState.UNREACHABLE, timedelta(hours=10), SourceState.UNREACHABLE),
+        # Observed after `now` (clock skew): never aged into anything.
+        (SourceState.FRESH, -timedelta(minutes=5), SourceState.FRESH),
+    ],
+)
+def test_every_read_reports_the_effective_state_at_generated_at(
+    state: SourceState, age: timedelta, expected: SourceState
+) -> None:
+    """SRC-008 (TASK-041): a current view needs a successful check within 6.5 hours.
+
+    A successful observation older than that is read as stale everywhere it is shown — the
+    network headline, the terminal detail and source health — while failure states keep their
+    own meaning. The stored observation is never changed: the state is derived at read time.
+    """
+    stored = observation(
+        SOURCE_A,
+        "freshness-window",
+        state=state,
+        observed_at=T0,
+        retrieval=(
+            RetrievalState.FAILED if state == SourceState.UNREACHABLE else RetrievalState.SUCCEEDED
+        ),
+        extraction=(
+            ExtractionState.EXACT
+            if state == SourceState.NO_DEPARTURES
+            else ExtractionState.NOT_ATTEMPTED
+        ),
+        parser_version="synthetic-parser-v1" if state == SourceState.NO_DEPARTURES else None,
+    )
+    sources, observations = FakeSources([SOURCE_A]), FakeObservations([stored])
+    now = T0 + age
+
+    network = list_terminal_network(FakeTerminals(), sources, observations, now=now)
+    detail = get_terminal_detail(
+        TERMINAL_A.terminal_id, FakeTerminals(), sources, observations, now=now
+    )
+    health = list_source_health(sources, observations, FakeSwitches(), now=now)
+    assert detail.ok
+
+    headline = next(t for t in network.terminals if t.terminal_id == TERMINAL_A.terminal_id)
+    evidence = [
+        headline.latest,
+        detail.value.summary.latest,
+        detail.value.sources[0].latest,
+        health.rows[0].latest,
+    ]
+    assert [e.state if e else None for e in evidence] == [expected] * 4
+    assert {(c.state, c.count) for c in health.counts} == {(expected, 1)}
+    assert network.generated_at == detail.value.generated_at == health.generated_at == now
+    if expected == SourceState.STALE:
+        assert all(e is not None and "no longer current" in e.explanation for e in evidence)
+    assert observations.items == [stored]

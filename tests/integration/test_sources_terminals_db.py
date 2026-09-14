@@ -141,8 +141,12 @@ def test_observations_are_append_only_and_keep_unknowns(engine: Engine) -> None:
         assert history[1].state == SourceState.UNREACHABLE
         latest = repo.latest_per_source()[DIRECTORY_SOURCE.identity.source_id]
         assert latest == newest
+        # Read at the newest observation's own time: past the SRC-008 window it would be stale.
         health = list_source_health(
-            SqlSourceRepository(connection), repo, SqlKillSwitchRepository(connection)
+            SqlSourceRepository(connection),
+            repo,
+            SqlKillSwitchRepository(connection),
+            now=newest.provenance.observed_at,
         )
         assert health.counts[0].state == SourceState.FRESH and health.never_observed == 8
     # The database itself refuses rewrites of history, whatever the caller.
@@ -297,7 +301,10 @@ def test_superseded_observation_is_not_current(engine: Engine) -> None:
         assert latest.observation_id == original.observation_id
 
         health = list_source_health(
-            SqlSourceRepository(connection), repo, SqlKillSwitchRepository(connection)
+            SqlSourceRepository(connection),
+            repo,
+            SqlKillSwitchRepository(connection),
+            now=original.provenance.observed_at,
         )
         assert health.rows[0].latest is not None
         assert health.rows[0].latest.state == SourceState.FRESH

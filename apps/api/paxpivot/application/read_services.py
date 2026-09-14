@@ -5,12 +5,15 @@ They compose repository ports into read models. Rules encoded here (and nowhere 
 * a terminal's headline evidence is the newest observation across its registered sources,
   chosen by ``observed_at``; a terminal whose sources were never observed has ``latest=None``;
 * a source with no observation is reported as never observed, not as any ``SourceState``;
+* a successful observation (fresh, no departures, no compatible opportunity) older than
+  ``FRESHNESS_WINDOW`` at the read's ``generated_at`` is reported as ``source_stale``: the state
+  is derived when read and never written back (pilot SRC-008, TASK-041);
 * the entrance is exposed only when the registry holds a verified entrance;
 * kill switches are reported as a flag; they never change an observation.
 """
 
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from paxpivot.application.ports.repositories import (
@@ -44,17 +47,41 @@ from paxpivot.domain.source import (
 )
 from paxpivot.domain.terminal import Terminal, TerminalOperationalFact
 
+# SRC-008: a current view requires a successful check within 6.5 hours. One window for every
+# source, whatever its cadence: a source without a cadence is never more current than one with.
+FRESHNESS_WINDOW = timedelta(hours=6, minutes=30)
 
-def evidence_read(observation: SourceObservation) -> SourceEvidenceRead:
+# States that assert something from a successful read, so they can go out of date. Failure,
+# restricted, review, conflict and supersession states already say "not current" on their own.
+_CURRENT_ONLY_STATES = frozenset(
+    {SourceState.FRESH, SourceState.NO_DEPARTURES, SourceState.NO_COMPATIBLE}
+)
+
+
+def effective(observation: SourceObservation, now: datetime) -> SourceObservation:
+    """The observation as it reads at ``now``; the stored observation is never changed.
+
+    A read stamped after ``now`` (clock skew) is not aged into anything.
+    """
+    if (
+        observation.state in _CURRENT_ONLY_STATES
+        and now - observation.provenance.observed_at > FRESHNESS_WINDOW
+    ):
+        return observation.model_copy(update={"state": SourceState.STALE})
+    return observation
+
+
+def evidence_read(observation: SourceObservation, now: datetime) -> SourceEvidenceRead:
+    current = effective(observation, now)
     return SourceEvidenceRead(
-        observation_id=observation.observation_id,
-        state=observation.state,
-        observed_at=observation.provenance.observed_at,
-        source_time=observation.provenance.source_time,
-        retrieval=observation.retrieval,
-        extraction=observation.extraction,
-        parser_version=observation.parser_version,
-        explanation=explain_source(observation),
+        observation_id=current.observation_id,
+        state=current.state,
+        observed_at=current.provenance.observed_at,
+        source_time=current.provenance.source_time,
+        retrieval=current.retrieval,
+        extraction=current.extraction,
+        parser_version=current.parser_version,
+        explanation=explain_source(current),
     )
 
 
@@ -70,6 +97,7 @@ def terminal_summary(
     terminal: Terminal,
     sources: Sequence[Source],
     latest: Mapping[UUID, SourceObservation],
+    now: datetime,
 ) -> TerminalSummaryRead:
     # A restricted source is user-opened only: whatever was observed before the restriction is
     # history for operators (source health), never evidence on a terminal.
@@ -89,7 +117,7 @@ def terminal_summary(
         entrance=terminal.entrance.coordinates if terminal.entrance else None,
         entrance_kind=terminal.entrance.kind if terminal.entrance else None,
         official_url=official.identity.url if official else None,
-        latest=evidence_read(headline) if headline else None,
+        latest=evidence_read(headline, now) if headline else None,
     )
 
 
@@ -100,11 +128,12 @@ def list_terminal_network(
     *,
     now: datetime | None = None,
 ) -> TerminalNetworkRead:
+    now = now or datetime.now(UTC)
     latest = observations.latest_per_source()
     return TerminalNetworkRead(
-        generated_at=now or datetime.now(UTC),
+        generated_at=now,
         terminals=tuple(
-            terminal_summary(t, sources.list_terminal_sources(t.terminal_id), latest)
+            terminal_summary(t, sources.list_terminal_sources(t.terminal_id), latest, now)
             for t in terminals.list_terminals()
         ),
     )
@@ -155,12 +184,13 @@ def get_terminal_detail(
                 code="unavailable", message_key="terminal.not_found", retryable=False
             )
         )
+    now = now or datetime.now(UTC)
     latest = observations.latest_per_source()
     terminal_sources = sources.list_terminal_sources(terminal_id)
     return Success(
         value=TerminalDetailRead(
-            generated_at=now or datetime.now(UTC),
-            summary=terminal_summary(terminal, terminal_sources, latest),
+            generated_at=now,
+            summary=terminal_summary(terminal, terminal_sources, latest, now),
             entrance_instructions=terminal.entrance.instructions if terminal.entrance else None,
             facts=tuple(
                 fact_read(f)
@@ -175,7 +205,7 @@ def get_terminal_detail(
                     enabled=s.enabled,
                     review_state=s.policy.review_state,
                     latest=(
-                        evidence_read(latest[s.identity.source_id])
+                        evidence_read(latest[s.identity.source_id], now)
                         if s.identity.source_id in latest and not _restricted(s)
                         else None
                     ),
@@ -187,7 +217,10 @@ def get_terminal_detail(
 
 
 def health_row(
-    source: Source, latest: SourceObservation | None, switches: Sequence[KillSwitch]
+    source: Source,
+    latest: SourceObservation | None,
+    switches: Sequence[KillSwitch],
+    now: datetime,
 ) -> SourceHealthRowRead:
     switched = any(engaged_switch(source, mode, switches) is not None for mode in ProcessingMode)
     return SourceHealthRowRead(
@@ -202,7 +235,7 @@ def health_row(
         adapter_id=source.adapter_id,
         adapter_version=source.adapter_version,
         kill_switched=switched,
-        latest=evidence_read(latest) if latest else None,
+        latest=evidence_read(latest, now) if latest else None,
     )
 
 
@@ -213,17 +246,19 @@ def list_source_health(
     *,
     now: datetime | None = None,
 ) -> SourceHealthRead:
+    now = now or datetime.now(UTC)
     latest = observations.latest_per_source()
     switches = kill_switches.list_engaged()
     rows = tuple(
-        health_row(s, latest.get(s.identity.source_id), switches) for s in sources.list_sources()
+        health_row(s, latest.get(s.identity.source_id), switches, now)
+        for s in sources.list_sources()
     )
     counts: dict[SourceState, int] = {}
     for row in rows:
         if row.latest is not None:
             counts[row.latest.state] = counts.get(row.latest.state, 0) + 1
     return SourceHealthRead(
-        generated_at=now or datetime.now(UTC),
+        generated_at=now,
         rows=rows,
         counts=tuple(
             SourceStateCount(state=state, count=count)
