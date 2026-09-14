@@ -2,7 +2,7 @@
 
 ## Status
 
-`in_progress`
+`review`
 
 ## Assigned role
 
@@ -83,6 +83,8 @@ apps/web/lib/presentation/screens/terminals.ts
 apps/web/lib/presentation/adapters/terminals.ts
 apps/web/lib/presentation/fixtures.ts
 apps/web/components/screens/terminals/TerminalDetailScreen.tsx
+apps/web/components/paxpivot/TerminalFacts.tsx
+apps/web/app/terminals/[terminalId]/page.tsx
 docs/architecture/CONTRACTS.md
 tests/unit/test_amc_terminal_facts.py
 tests/unit/test_source_pipeline.py
@@ -127,7 +129,8 @@ application/source_pipeline.py::record_terminal_facts(source, facts_provider, te
 application/source_checks.py::check_source/run_source_checks gain optional keyword-only terminal_facts: TerminalRepository | None = None and facts_provider: TerminalFactProvider | None = None (default None; every existing call site is unaffected)
 infrastructure/providers/firecrawl.py::FirecrawlSourceProvider.observe_facts (new method; reuses the same per-run page cache as observe(), so pairing the two costs one Firecrawl fetch, not two)
 apps/web/lib/presentation/types.ts::TerminalFactRowView (new)
-apps/web/lib/presentation/adapters/terminals.ts::toFactRows (new)
+apps/web/lib/presentation/adapters/terminals.ts::toFactRows (new; excludes counter_hours/parking, already covered by factValue() in the Stats grid)
+apps/web/components/paxpivot/TerminalFacts.tsx (new)
 ```
 
 This widens `SourceProvider`'s surface area only by adding a *separate* Protocol
@@ -178,14 +181,20 @@ under CONTRACTS.md as an additive, foundation-owned change.
   `None`: the page states a fact, not an instant it was authored, and inventing a timestamp would
   violate the no-guess rule these contracts share throughout.
 - **UI**: `apps/web/lib/presentation/adapters/terminals.ts::toFactRows` maps every displayable
-  fact (not only `counter_hours`/`parking`, which already rendered via the existing
-  `factValue()` helper in the Stats grid) into a new `TerminalFactRowView` (`types.ts`): a label,
-  the fact's own value, and its `observed_at` formatted the same way `EvidenceAge` already
-  formats read times. `TerminalDetailScreen` renders these in the Evidence tab, next to the
-  existing `EvidenceRows`, each showing "Page says: `<value>`" and "Read at: `<timestamp>`" — the
-  existing terminal-detail provenance pattern, extended to every fact kind instead of only the
-  two the Stats grid already covered. No wording states or implies that hours, phone, parking or
-  any other fact is guaranteed or current beyond what "Read at" already says.
+  fact **the Stats grid does not already show by label** into a new `TerminalFactRowView`
+  (`types.ts`): `counter_hours`/`parking` keep rendering only through the existing `factValue()`
+  helper in the Stats grid ("Hours"/"Parking"), so `toFactRows` covers the rest — phone, email,
+  the address note, USO information, an access note — each with its own value and its
+  `observed_at` formatted the same way `EvidenceAge` already formats read times. Showing a kind
+  in both places would put two "Hours" (or "Parking") labels with different content on one
+  screen, which is confusing and was caught by a rendering test during this task
+  (`apps/web/tests/screens/terminals.test.tsx`'s `getByText(stat.label)` check started failing
+  once a same-labelled fact row existed) rather than by inspection. `TerminalDetailScreen` renders
+  the new rows via a small `TerminalFacts` component in the Evidence tab, next to the existing
+  `EvidenceRows`, each showing "Page says `<value>` · Read at `<timestamp>`" — the existing
+  terminal-detail provenance pattern extended to every fact kind not already covered. No wording
+  states or implies that hours, phone, parking or any other fact is guaranteed or current beyond
+  what "Read at" already says.
 
 ## Acceptance criteria
 
@@ -267,20 +276,54 @@ Fill this in before review/done.
 
 **Branch:** `foundation/TASK-048-terminal-facts`
 
-**Commit:**
+**Commit:** `f77ba2d` (rebased onto `main` at `34a613b`, before this Handoff update)
 
-**Files changed:**
+**Files changed:** see "Owned paths" above; `git diff --stat origin/main` touches exactly those
+20 files (parser + test, provider/pipeline/ports + tests, tooling.py wiring, CONTRACTS.md, the
+terminals adapter/screen/types/component + tests, and this task file).
 
-**Interfaces added/changed:**
+**Interfaces added/changed:** see "Interfaces produced" above —
+`application/parsers/amc_terminal_facts.py` (new), `TerminalFactProvider` (new, additive
+Protocol), `FirecrawlSourceProvider.observe_facts` (new method),
+`source_pipeline.record_terminal_facts` (new), `source_checks.check_source`/`run_source_checks`
+(two new optional keyword-only parameters, default `None`), `TerminalFactRowView` (new web type),
+`toFactRows` (new adapter function), `TerminalFacts` (new web component).
 
-**Migrations:** None.
+**Migrations:** None. The `terminal_facts` table and its CHECK constraints already exist from
+migration 0002; `make migrate-test`'s CHECK-parity probe passes unchanged.
 
-**Verification run:**
+**Verification run** (this worktree, after the final rebase onto `main`):
 
 ```text
-command -> PASS/FAIL summary
+make setup          -> PASS
+make check          -> PASS (format-check, lint, typecheck, test-unit [316 python + 358 web],
+                        test-integration [40], build, migrate, migrate-check, compose-check)
+make migrate-test   -> PASS (empty-db baseline, drift detection, idempotent seed, 24 CHECK
+                        rules, roundtrip)
 ```
 
+Also verified directly against the four real, public, unclassified AMC terminal pages (fetched
+read-only, in-process, never committed) to sanity-check the parser beyond the synthetic
+fixtures: every kind in the corpus-findings table above was produced, all within
+`MAX_FACT_LENGTH`.
+
 **Known limitations / risks:**
+
+- The real TASK-031 corpus (`private-fixtures/`) exists only on the deployment host, not in any
+  development checkout; this task's corpus survey used a fresh, read-only, in-process fetch of
+  the same four approved pages instead (see "Corpus findings" above), never storing or
+  committing a page body. A reviewer who wants to cross-check against the actual captured corpus
+  will need host/VPS access (`docs/DEPLOYMENT.md` "Capturing parser corpus pages").
+- The parser's per-kind extraction rules are keyed to the shared AFPIMS/DNN template's own
+  labels (e.g. "Service Counter", "Hours of operation:", "USO Information"). If AMC ever changes
+  that template's wording or structure, a kind may silently start yielding nothing again until a
+  new parser version is written — the same class of risk `amc_page_time.py` already carries for
+  its stamp.
+- `record_terminal_facts`'s own failures (provider identity mismatch, a scripted `Failure` from
+  the facts provider) are deliberately swallowed by `check_source` so they never change a
+  `SourceCheckOutcome`; nothing currently surfaces a facts-recording failure to an operator the
+  way `source-report`/the reliability report does for observations. Acceptable for this task
+  (facts are additional telemetry, not the check's own result) but worth revisiting if silent
+  facts-recording failures ever need their own alerting.
 
 **Next dependency:**
