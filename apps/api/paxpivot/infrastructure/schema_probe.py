@@ -23,6 +23,7 @@ from uuid import uuid4
 from sqlalchemy import Connection, Table, insert
 from sqlalchemy.exc import IntegrityError
 
+from paxpivot.domain.profile import AGE_BANDS, CATEGORY_ATTESTATIONS
 from paxpivot.domain.source import (
     ExtractionState,
     KillSwitchScope,
@@ -174,6 +175,28 @@ def trip_row(terminal_id: Any, **overrides: Any) -> Row:
         "window_end": datetime(2026, 1, 3, tzinfo=UTC),
         "party_size": 2,
         "created_at": NOW,
+    }
+    return {**row, **overrides}
+
+
+def profile_row(**overrides: Any) -> Row:
+    row: Row = {
+        "profile_id": uuid4(),
+        "singleton": True,
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+    return {**row, **overrides}
+
+
+def traveler_row(profile_id: Any, **overrides: Any) -> Row:
+    row: Row = {
+        "traveler_id": uuid4(),
+        "profile_id": profile_id,
+        "role": "sponsor",
+        "category_attestation": "unknown",
+        "age_band": "adult",
+        "sponsor_id": None,
     }
     return {**row, **overrides}
 
@@ -418,14 +441,98 @@ def _self_superseding(row: Row) -> Row:
     return {**row, "supersedes_observation_id": row["observation_id"]}
 
 
+def _self_sponsoring(row: Row) -> Row:
+    return {**row, "sponsor_id": row["traveler_id"]}
+
+
+def profile_rules(profile_id: Any, sponsor_id: Any) -> tuple[Rule, ...]:
+    """`profile_id`/`sponsor_id` name the persistent probe profile and its sponsor traveler that
+    `verify_check_parity` inserts once, so a dependent row here always has a real sponsor to
+    reference without every rule re-creating one (which the singleton profile could not hold
+    twice anyway)."""
+
+    def sponsor(**o: Any) -> Row:
+        base = {"profile_id": profile_id, "role": "sponsor", "sponsor_id": None}
+        return traveler_row(**{**base, **o})
+
+    def dep(**o: Any) -> Row:
+        base = {"profile_id": profile_id, "role": "dependent", "sponsor_id": sponsor_id}
+        return traveler_row(**{**base, **o})
+
+    return (
+        Rule(
+            "ck_profile_travelers_role",
+            db.profile_travelers,
+            lambda: [sponsor(), dep()],
+            lambda: [traveler_row(profile_id, role="__invented__", sponsor_id=sponsor_id)],
+        ),
+        Rule(
+            "ck_profile_travelers_category_attestation",
+            db.profile_travelers,
+            lambda: [dep(category_attestation=m) for m in CATEGORY_ATTESTATIONS],
+            lambda: [dep(category_attestation="__invented__")],
+        ),
+        Rule(
+            "ck_profile_travelers_age_band",
+            db.profile_travelers,
+            lambda: [dep(age_band=m) for m in AGE_BANDS],
+            lambda: [dep(age_band="__invented__")],
+        ),
+        Rule(
+            "ck_profile_travelers_sponsor_null_pairing",
+            db.profile_travelers,
+            lambda: [sponsor(), dep()],
+            lambda: [sponsor(sponsor_id=sponsor_id), dep(sponsor_id=None)],
+        ),
+        Rule(
+            "ck_profile_travelers_no_self_sponsor",
+            db.profile_travelers,
+            lambda: [dep()],
+            lambda: [_self_sponsoring(dep())],
+        ),
+        Rule(
+            "fk_profile_travelers_sponsor_id_profile_travelers",
+            db.profile_travelers,
+            lambda: [dep()],
+            lambda: [dep(sponsor_id=uuid4())],
+        ),
+        Rule(
+            "fk_profile_travelers_profile_id_profile",
+            db.profile_travelers,
+            lambda: [sponsor()],
+            lambda: [sponsor(profile_id=uuid4())],
+        ),
+        Rule(
+            "ck_profile_singleton",
+            db.profile,
+            lambda: [],
+            lambda: [profile_row(singleton=False)],
+        ),
+        Rule(
+            "uq_profile_singleton",
+            db.profile,
+            lambda: [],
+            lambda: [profile_row(singleton=True)],
+        ),
+    )
+
+
 def verify_check_parity(connection: Connection) -> ParityReport:
     """Exercise every rule against the deployed database. The caller rolls the transaction back."""
     probe_source = source_row()
     probe_terminal = terminal_row(probe_source["source_id"])
+    probe_profile = profile_row()
+    probe_sponsor = traveler_row(probe_profile["profile_id"], role="sponsor", sponsor_id=None)
     connection.execute(insert(db.sources).values(probe_source))
     connection.execute(insert(db.terminals).values(probe_terminal))
+    connection.execute(insert(db.profile).values(probe_profile))
+    connection.execute(insert(db.profile_travelers).values(probe_sponsor))
     report = ParityReport()
-    for rule in rules(probe_source["source_id"], probe_terminal["terminal_id"]):
+    all_rules = (
+        *rules(probe_source["source_id"], probe_terminal["terminal_id"]),
+        *profile_rules(probe_profile["profile_id"], probe_sponsor["traveler_id"]),
+    )
+    for rule in all_rules:
         for row in rule.valid():
             violated = _attempt(connection, rule.table, row)
             if violated is not None:
