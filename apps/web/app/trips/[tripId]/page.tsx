@@ -1,20 +1,48 @@
 import { notFound } from "next/navigation";
+import { GUARANTEE_TEXT } from "@/components/shell/AppShell";
 import { NotConfigured } from "@/components/shell/NotConfigured";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { Card } from "@/components/ui/Card";
 import { FactStrip } from "@/components/ui/Facts";
-import { EmptyState, ErrorState } from "@/components/ui/States";
+import { ErrorState } from "@/components/ui/States";
 import { readApi } from "@/lib/api/client";
-import type { TripRead } from "@/lib/api/contracts";
+import type { ApiResult } from "@/lib/api/client";
+import type {
+  TerminalDetailRead,
+  TerminalNetworkRead,
+  TripRead,
+} from "@/lib/api/contracts";
+import { toTerminalsToCheckViewModel } from "@/lib/presentation/adapters/terminals-to-check";
 import { toTripDetailModel } from "@/lib/presentation/adapters/trips";
+import { TerminalsToCheck } from "./TerminalsToCheck";
 
 type Props = { params: Promise<{ tripId: string }> };
 
 /**
- * Live trip route (TASK-034): the request as recorded, and an honest statement that no route
- * has been searched. It never renders synthetic routes or source states.
+ * Live trip route (TASK-034, TASK-044): the request as recorded, and an honest, non-ranked list
+ * of every registered pilot terminal worth checking for this trip. It never renders a route, an
+ * opportunity, or any claim about flights, departures, seats or probability.
  */
 export const dynamic = "force-dynamic";
+
+/**
+ * One `/api/v1/terminals/{id}` read per registered terminal, run in parallel (ponytail note in
+ * `lib/presentation/adapters/terminals-to-check.ts`). A failed read never removes a terminal from
+ * the list — it only means that terminal's schedule link cannot be shown right now.
+ */
+async function readTerminalDetails(
+  network: TerminalNetworkRead,
+): Promise<Map<string, ApiResult<TerminalDetailRead>>> {
+  const entries = await Promise.all(
+    network.terminals.map(async (terminal) => {
+      const detail = await readApi<TerminalDetailRead>(
+        `/api/v1/terminals/${terminal.terminal_id}`,
+      );
+      return [terminal.terminal_id, detail] as const;
+    }),
+  );
+  return new Map(entries);
+}
 
 export default async function TripPage({ params }: Props) {
   const { tripId } = await params;
@@ -40,17 +68,32 @@ export default async function TripPage({ params }: Props) {
       </>
     );
   }
-  const model = toTripDetailModel(result.value);
+  const trip = result.value;
+  const model = toTripDetailModel(trip);
+  const networkResult = await readApi<TerminalNetworkRead>("/api/v1/terminals");
+
   return (
     <>
       <AppHeader title={model.title} subtitle={model.createdText} />
       <Card as="div">
         <FactStrip facts={model.facts} />
       </Card>
-      <EmptyState
-        title="No routes searched yet"
-        body="Route search is not built yet. This request is saved; nothing here says what is or is not flying."
-      />
+      {networkResult.ok ? (
+        <TerminalsToCheck
+          model={toTerminalsToCheckViewModel(
+            trip,
+            networkResult.value,
+            await readTerminalDetails(networkResult.value),
+            { now: new Date() },
+          )}
+        />
+      ) : (
+        <ErrorState
+          title="We could not load the terminals to check"
+          body="This is a failure on our side. Your request is unchanged."
+        />
+      )}
+      <p className="pp-sub">{GUARANTEE_TEXT}</p>
     </>
   );
 }
