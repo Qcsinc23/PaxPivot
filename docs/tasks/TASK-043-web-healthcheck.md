@@ -2,7 +2,7 @@
 
 ## Status
 
-`in_progress`
+`review`
 
 ## Assigned role
 
@@ -151,18 +151,18 @@ and tightens one `depends_on` condition to an already-established pattern in the
 
 ## Acceptance criteria
 
-- [ ] `compose.prod.yml` and the Traefik override remain valid Compose config.
-- [ ] Positive: the web image built from `apps/web/Dockerfile`, run with the same healthcheck and
+- [x] `compose.prod.yml` and the Traefik override remain valid Compose config.
+- [x] Positive: the web image built from `apps/web/Dockerfile`, run with the same healthcheck and
       no `api` reachable, transitions `starting` -> `healthy` (proves no API dependency).
-- [ ] Negative: the same probe command fails (non-zero exit / reports `unhealthy`) when nothing is
+- [x] Negative: the same probe command fails (non-zero exit / reports `unhealthy`) when nothing is
       serving on the probed port.
-- [ ] `proxy`'s `depends_on.web.condition` is `service_healthy`.
-- [ ] `docs/DEPLOYMENT.md`'s web-restart/404 note reflects the new behavior instead of telling the
+- [x] `proxy`'s `depends_on.web.condition` is `service_healthy`.
+- [x] `docs/DEPLOYMENT.md`'s web-restart/404 note reflects the new behavior instead of telling the
       operator to work around it.
-- [ ] `docs/plans/2026-09-14-reconciled-plan.md`'s healthcheck bullet says this is addressed by
+- [x] `docs/plans/2026-09-14-reconciled-plan.md`'s healthcheck bullet says this is addressed by
       TASK-043, pending deploy.
-- [ ] `make check` and the docs drift guard (`tests/unit/test_docs_consistency.py`) pass.
-- [ ] `git diff --stat origin/main` touches only the owned paths above.
+- [x] `make check` and the docs drift guard (`tests/unit/test_docs_consistency.py`) pass.
+- [x] `git diff --stat origin/main` touches only the owned paths above.
 
 ## Required tests
 
@@ -225,25 +225,83 @@ Important findings is required before this agent may merge its own PR.
 
 ## Handoff
 
-Fill in before `review`.
+**Branch:** `foundation/TASK-043-web-healthcheck` (rebased onto `main` @ `df0723d`, after the
+TASK-040 status-normalization merge, PR #51)
 
-**Branch:** `foundation/TASK-043-web-healthcheck`
-
-**Commit:**
+**Commit:** `d6d1400` — "TASK-043: add web container healthcheck so up --wait returns only when
+Next.js serves"
 
 **Files changed:**
 
-**Interfaces added/changed:** see "Interfaces produced" above.
+```text
+compose.prod.yml
+docs/DEPLOYMENT.md
+docs/plans/2026-09-14-reconciled-plan.md
+docs/tasks/TASK-043-web-healthcheck.md
+```
+
+**Interfaces added/changed:** see "Interfaces produced" above (`services.web.healthcheck`,
+`services.proxy.depends_on.web.condition`).
 
 **Migrations:** none.
 
-**Verification run:**
+**Verification run (2026-09-14, on the rebased branch):**
 
 ```text
-command -> PASS/FAIL summary
+docker compose --env-file .env.production -f compose.prod.yml config --quiet
+  -> PASS (valid; required-var interpolation for PAXPIVOT_DOMAIN/PAXPIVOT_API_TOKEN/etc. needs an
+     env file exactly as docs/DEPLOYMENT.md's own deploy commands use — a bare
+     `docker compose -f compose.prod.yml config` with no env file fails on the pre-existing
+     `${VAR:?...}` guards, unrelated to this change)
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
+  config --quiet -> PASS; resolved `web.healthcheck` block confirmed correct (test/interval/
+  timeout/retries/start_period all present as authored)
+make compose-check -> PASS (docker compose config --quiet on the default compose.yml, exit 0)
+
+Positive (criterion 2): docker build -f apps/web/Dockerfile -t paxpivot-web:task043 .  -> built
+  clean. docker run -d --health-cmd '<the compose probe>' --health-interval=2s --health-timeout=3s
+  --health-retries=30 --health-start-period=10s -e PAXPIVOT_API_URL=http://127.0.0.1:1 (nothing
+  listening) ... paxpivot-web:task043
+  -> docker inspect .State.Health: starting immediately after start, healthy on the very first
+     probe (~1s later), 4 consecutive healthy checks observed, 0 errors/warnings in logs, API
+     never reachable throughout. Proves no API dependency.
+
+Negative (criterion 3): same image, command overridden to `sleep 3600` (nothing serves the port),
+  healthcheck with retries=3/start_period=1s for a fast cycle -> starting for ~4s, then unhealthy
+  with FailingStreak 3, each probe run exiting code 1. Also ran the probe as a one-off against the
+  wrong port (9 instead of $PORT) on a running container: `node -e "...fetch('http://127.0.0.1:9
+  /login')..."` -> exit 1.
+
+Base-image check: `docker run --rm node:24.15.0-slim sh -c 'which curl; which wget'` -> both empty
+  (neither present), confirming the node -e/fetch choice is required, not merely preferred.
+
+make check -> PASS (exit 0)
+  format-check / lint / typecheck                 -> PASS
+  test-unit                                       -> PASS: 283 Python, 341 web
+  test-integration                                -> PASS: 40
+  build / migrate / migrate-check / compose-check -> PASS
+make migrate-test -> PASS (empty-database baseline, drift detection, idempotent seed, 24 CHECK
+  rules, roundtrip)
+tests/unit/test_docs_consistency.py -> PASS (5 cases, included in test-unit above; unaffected by
+  this change since README.md/CONTRACTS.md do not describe compose healthchecks)
+git diff --stat origin/main -> only compose.prod.yml, docs/DEPLOYMENT.md,
+  docs/plans/2026-09-14-reconciled-plan.md, docs/tasks/TASK-043-web-healthcheck.md
+git status --porcelain after `make check` (which runs `pnpm build`) -> clean; apps/web/next-env.d.ts
+  was not rewritten this run (Next.js 16.3.4), so nothing needed restoring from origin/main.
 ```
 
-**Known limitations / risks:**
+All local Docker verification artifacts (containers `paxpivot-web-task043`,
+`paxpivot-web-task043-neg`, image `paxpivot-web:task043`, the scratch `.env.production`) were
+removed after verification; nothing was left running or tagged locally.
+
+**Known limitations / risks:** a single `web` replica means a brief window while `--wait` is still
+blocking (container `starting`) is expected downtime for that restart — Traefik has no other
+backend to route to during that window and returns a proxy error rather than serving stale content;
+this is unchanged from before and zero-downtime deploys are out of scope. `retries: 30` /
+`interval: 2s` gives roughly a minute of grace before Docker gives up and reports `unhealthy`; if
+production `web` startup is ever much slower than observed locally (~1s to first successful probe),
+`--wait`'s own default timeout (compose's `--wait-timeout`, not overridden here) would still bound
+the deploy command.
 
 **Deploy-and-verify steps (not executed; VPS has no `make`):**
 
