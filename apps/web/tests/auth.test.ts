@@ -240,12 +240,21 @@ describe("proxy", () => {
 });
 
 describe("sign-in route", () => {
-  function post(body: Record<string, string>): Request {
-    const form = new URLSearchParams(body);
+  // A real browser always sends Content-Length for a known-length form body (TASK-046 now
+  // requires it); a test that wants to omit or override it passes `headers` explicitly.
+  function post(
+    body: Record<string, string>,
+    headers: Record<string, string> = {},
+  ): Request {
+    const encoded = new URLSearchParams(body).toString();
     return new Request("https://pilot.invalid/auth/session", {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "content-length": String(new TextEncoder().encode(encoded).length),
+        ...headers,
+      },
+      body: encoded,
     });
   }
 
@@ -287,6 +296,7 @@ describe("sign-in route", () => {
       const malformed = await signIn(
         new Request("https://pilot.invalid/auth/session", {
           method: "POST",
+          headers: { "content-length": "2" },
           body: "{}",
         }),
       );
@@ -294,7 +304,10 @@ describe("sign-in route", () => {
       expect(malformed.headers.get("set-cookie")).toBeNull();
 
       const out = await signOut(
-        new Request("https://pilot.invalid/auth/logout", { method: "POST" }),
+        new Request("https://pilot.invalid/auth/logout", {
+          method: "POST",
+          headers: { "content-length": "0" },
+        }),
       );
       expect(out.status).toBe(303);
       expect(out.headers.get("set-cookie")).toMatch(/Max-Age=0/i);
@@ -313,6 +326,115 @@ describe("sign-in route", () => {
         );
       },
     );
+  });
+});
+
+describe("request hardening (TASK-046)", () => {
+  function post(
+    body: Record<string, string>,
+    headers: Record<string, string> = {},
+  ): Request {
+    const encoded = new URLSearchParams(body).toString();
+    return new Request("https://pilot.invalid/auth/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "content-length": String(new TextEncoder().encode(encoded).length),
+        ...headers,
+      },
+      body: encoded,
+    });
+  }
+
+  test("rejects a cross-site sign-in POST and accepts a same-origin one", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const crossSite = await signIn(
+        post({ passphrase: PASSPHRASE }, { "sec-fetch-site": "cross-site" }),
+      );
+      expect(crossSite.status).toBe(403);
+      expect(crossSite.headers.get("set-cookie")).toBeNull();
+
+      const mismatchedOrigin = await signIn(
+        post(
+          { passphrase: PASSPHRASE },
+          { origin: "https://evil.invalid", host: "pilot.invalid" },
+        ),
+      );
+      expect(mismatchedOrigin.status).toBe(403);
+
+      const sameOrigin = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          {
+            "sec-fetch-site": "same-origin",
+            "x-forwarded-for": "203.0.113.201",
+          },
+        ),
+      );
+      expect(sameOrigin.status).toBe(303);
+      expect(sameOrigin.headers.get("set-cookie")).not.toBeNull();
+
+      // The real logout POST carries Sec-Fetch-Site too; a forged one is refused the same way.
+      const crossSiteLogout = await signOut(
+        new Request("https://pilot.invalid/auth/logout", {
+          method: "POST",
+          headers: { "content-length": "0", "sec-fetch-site": "cross-site" },
+        }),
+      );
+      expect(crossSiteLogout.status).toBe(403);
+    });
+  });
+
+  test("rejects an oversize or undeclared sign-in body with 413", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const noContentLength = await signIn(
+        new Request("https://pilot.invalid/auth/session", {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ passphrase: PASSPHRASE }).toString(),
+        }),
+      );
+      expect(noContentLength.status).toBe(413);
+
+      const oversize = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          { "content-length": String(9 * 1024) },
+        ),
+      );
+      expect(oversize.status).toBe(413);
+      expect(oversize.headers.get("set-cookie")).toBeNull();
+    });
+  });
+
+  test("11 failures from one client block even a correct passphrase; another client is unaffected", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const attacker = { "x-forwarded-for": "203.0.113.50" };
+      for (let i = 0; i < 10; i += 1) {
+        const failure = await signIn(
+          post({ passphrase: `wrong-guess-${i}-of-similar-length` }, attacker),
+        );
+        expect(failure.status).toBe(303);
+        expect(failure.headers.get("location")).toMatch(/^\/login\?error=1/);
+      }
+      // The passphrase is correct this time, but the client's own cap was already reached.
+      const stillBlocked = await signIn(
+        post({ passphrase: PASSPHRASE }, attacker),
+      );
+      expect(stillBlocked.status).toBe(303);
+      expect(stillBlocked.headers.get("location")).toMatch(/^\/login\?error=1/);
+      expect(stillBlocked.headers.get("set-cookie")).toBeNull();
+
+      // A different client, unrelated to the attacker's failures, signs in normally.
+      const other = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          { "x-forwarded-for": "203.0.113.60" },
+        ),
+      );
+      expect(other.status).toBe(303);
+      expect(other.headers.get("set-cookie")).not.toBeNull();
+    });
   });
 });
 

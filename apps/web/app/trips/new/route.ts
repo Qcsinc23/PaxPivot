@@ -1,6 +1,10 @@
 import { writeApi } from "@/lib/api/client";
 import type { NewTripRequestWire, TripRead } from "@/lib/api/contracts";
 import { redirectTo } from "@/lib/auth/guard";
+import { checkBodySize, checkSameOrigin } from "@/lib/http/request-guards";
+
+/** A 200-char destination plus the other fields (NewTripForm.tsx) stays well under this. */
+const BODY_LIMIT_BYTES = 16 * 1024;
 
 /** A `datetime-local` value has no zone; the pilot treats it as UTC and says so nowhere else. */
 function toIso(value: FormDataEntryValue | null): string | null {
@@ -15,6 +19,11 @@ function toIso(value: FormDataEntryValue | null): string | null {
 
 /** POST form → `POST /api/v1/trips` → 303 to the new trip. The API makes the final decision. */
 export async function POST(request: Request) {
+  const originFailure = checkSameOrigin(request);
+  if (originFailure) return originFailure.response;
+  const sizeFailure = checkBodySize(request, BODY_LIMIT_BYTES);
+  if (sizeFailure) return sizeFailure.response;
+
   let form: FormData;
   try {
     form = await request.formData();
