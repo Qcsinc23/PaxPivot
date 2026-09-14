@@ -66,6 +66,12 @@ On a machine with `make`, `make build-images PAXPIVOT_TAG=$TAG` runs the same tw
 `api` runs `alembic upgrade head` on every start; `web` fails closed (503) unless both
 sign-in secrets are set (ADR-005).
 
+The `web` service has no Docker healthcheck, so `--wait` returns as soon as its container is
+running. For a few seconds after a restart Traefik can answer 404 until Next.js is serving
+(observed on 2026-09-14): re-check `/login` before treating a 404 as a failed deploy. Avoid switching
+tags within a few minutes of a scheduled check (00:00, 06:00, 12:00, 18:00 UTC), so a restart never
+costs a check run.
+
 ## Source checks (TASK-025)
 
 `/etc/cron.d/paxpivot-checks` runs at 00:00, 06:00, 12:00 and 18:00 UTC:

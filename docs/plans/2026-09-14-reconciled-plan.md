@@ -1,7 +1,47 @@
-# PaxPivot — Reconciled plan (2026-09-14, `main` @ 63e0935 + 5 uncommitted files)
+# PaxPivot — Reconciled plan (written 2026-09-14 on `main` @ 63e0935; status updated after the M1 deploy)
 
 Evidence key: **[V]** verified in this pass · **[R]** reported by an earlier session, not re-verified ·
 **[I]** inference · **[U]** unvalidated idea. Sizes are relative (S/M/L), not hours.
+
+## Status (updated 2026-09-14, after the milestone M1 deploy)
+
+Read this section first. Everything below it is the plan as written before execution; where it says
+"uncommitted", "not started" or "PR open", this section is the current truth.
+
+**Decisions.** The product owner answered **D-8: yes** (agents commit, open PRs, merge per
+`docs/agent/MERGE_POLICY.md` and deploy for M1). D-1 through D-7 are still open.
+
+| WP | Task | Result | Merged |
+|---|---|---|---|
+| WP-01 | TASK-039 floating Ask clearance | done — three review rounds found dead space where the control is hidden (sticky-action-bar pages, then `/ask`); both fixed | f02c4be (PR #47) |
+| WP-03 | TASK-041 derived source staleness | done — review found the terminal page would have said "No opportunities are published" for stale evidence; fixed | 35d31c7 (PR #48) |
+| WP-04 | TASK-042 source reliability report | done — four review rounds found paused sources measured, unhashed and partly hashed sources passing detection, and the adapter-mismatch skip missing; all fixed, and check-sources' skip decision is now one shared function | 5ef033e (PR #49) |
+| WP-02 | TASK-040 documentation truth | merged last, so the documents describe merged and deployed behaviour (its own PR) | — |
+| WP-05 / 06 / 07 | heartbeat / off-host backup / unused Redis | not started — wait on D-4 / D-5 / D-6 | — |
+
+**Deployed.** `paxpivot-api:5ef033e` and `paxpivot-web:5ef033e` on the pilot VPS at 06:12 UTC on
+2026-09-14, after CI `Quality` passed on that commit and after the 06:00 check had run; tag `56cee3a`
+is kept for rollback. Verified: every container up, API `/ready` → 200, public `/login` → 200 and
+signed-out `/terminals` → 307 (for a few seconds right after the switch the proxy answered 404 while
+the new web container started), the four terminal pages `fresh` from the 06:00 check, and the
+restricted artifacts' pre-restriction history shown as `source_stale`.
+
+**First production source report** (`source-report 30`, 06:12 UTC): all four terminal pages **WATCH**
+— completion 100 %, longest gap 6.0 h, no gap over 6.5 h, detection p95 6.0 h — because they were first
+checked on 2026-09-11, so none can PASS until a full 30-day window exists (no earlier than
+2026-10-11). The directory source is SKIPPED (disabled) and the four 72-hour artifacts are SKIPPED
+(restricted). Exit 0. "16 read of 10 expected" reflects extra manual checks during the TASK-037/038
+deploys; completion is capped at 100 %.
+
+**M2 (the planner-path decision) opens** when D-1 and D-2 are answered and `source-report 30` covers a
+full window. Run the report weekly until then (command in `docs/DEPLOYMENT.md`).
+
+**Found during M1, not yet acted on:**
+- The `web` service has no Docker healthcheck, so `up --wait` returns before Next.js serves and the proxy
+  can answer 404 for a few seconds after a deploy (observed). Adding one is a small infrastructure task.
+- The web accessibility tests run close to Vitest's 5 s default; under heavy parallel load on a
+  developer machine they time out. CI has not been affected.
+- Nothing alerts a person when checks stop (D-4), and backups still live only on the VPS (D-5).
 
 ---
 
