@@ -20,8 +20,13 @@
   width: 100%;
   max-width: var(--content-max);
   margin: 0 auto;
+  /* Clears the bottom navigation and the floating Ask action above it: the control is fixed
+     over the scroll area, so the last interactive row would otherwise sit underneath it. */
   padding: calc(var(--space-3) + env(safe-area-inset-top, 0px)) var(--space-4)
-    calc(var(--nav-height) + var(--space-8) + env(safe-area-inset-bottom, 0px));
+    calc(
+      var(--nav-height) + var(--space-4) + var(--fab-height) + var(--space-4) +
+        env(safe-area-inset-bottom, 0px)
+    );
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -88,7 +93,12 @@ body[data-sticky-bar] .pp-fab {
 }
 
 .pp-guarantee {
-  margin-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+  /* Clears the bottom navigation and the floating Ask action, so the standing disclaimer is
+     never the element left underneath the control at the end of a long page. */
+  margin-bottom: calc(
+    var(--nav-height) + var(--space-4) + var(--fab-height) + var(--space-4) +
+      env(safe-area-inset-bottom, 0px)
+  );
   padding: var(--space-2) var(--space-4);
   background: var(--color-text);
   color: var(--color-bg);
@@ -163,11 +173,14 @@ body[data-sticky-bar] .pp-fab {
 
   .pp-main {
     max-width: var(--content-max-wide);
-    padding: var(--space-6) var(--space-6) var(--space-8);
+    /* No bottom navigation on this layout, but the floating Ask action still sits over the
+       scroll area, so the content keeps reserving room for it. */
+    padding: var(--space-6) var(--space-6)
+      calc(var(--fab-height) + var(--space-6) + var(--space-6));
   }
 
   .pp-guarantee {
-    margin-bottom: 0;
+    margin-bottom: calc(var(--fab-height) + var(--space-6));
   }
 
   .pp-fab {
