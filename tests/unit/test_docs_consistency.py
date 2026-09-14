@@ -34,7 +34,8 @@ def readme() -> str:
 def registered_routes() -> set[str]:
     """Every path an `@app.<method>("<path>")` decorator in the API module registers."""
     return {
-        path for _, path in re.findall(r'@app\.(get|post|put|patch|delete)\(\s*"([^"]+)"', read(API))
+        path
+        for _, path in re.findall(r'@app\.(get|post|put|patch|delete)\(\s*"([^"]+)"', read(API))
     }
 
 
