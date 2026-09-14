@@ -114,7 +114,13 @@ secret names (Handoff).
     sign-in; the trade-off is that a large-enough distributed attack still gets to *try*
     indefinitely (just slowly), which is why the passphrase's own length (≥ 20 chars, ADR-005
     above) remains the real entropy floor this defense leans on — a global slowdown buys time
-    against automation, it does not substitute for passphrase strength. One structured log line
+    against automation, it does not substitute for passphrase strength. The 5 s delay holds one
+    Node request-handling connection open per wrong attempt from a client under its own cap
+    while the ceiling stays tripped; this residual is bounded (attackers who are themselves
+    per-client-capped stop consuming a slot, and the pilot has no traffic volume where holding a
+    modest number of such connections open is itself a resourcing problem) and is disclosed here
+    rather than mitigated with an added concurrency cap, which is not required for this
+    single-user pilot. One structured log line
     (`{"event":"auth_global_rate_limit_tripped"}`, no IP, no passphrase, no per-client counts)
     is emitted the moment the ceiling trips, once per trip, so an operator can notice sustained
     distributed guessing without the log itself becoming a way to fingerprint clients. A blocked

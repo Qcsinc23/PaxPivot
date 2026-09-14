@@ -128,8 +128,9 @@ apps/web/tests/request-guards.test.ts   checkSameOrigin: cross-site rejected, sa
                                          Origin rejected, neither header present allowed,
                                          Sec-Fetch-Site and Origin checked independently (not a
                                          fallback), Origin scheme checked against
-                                         X-Forwarded-Proto and against the request URL's own
-                                         protocol when that header is absent; checkBodySize:
+                                         X-Forwarded-Proto (including a multi-valued header,
+                                         using only its first entry) and against the request
+                                         URL's own protocol when that header is absent; checkBodySize:
                                          missing/over-limit/non-numeric/negative Content-Length
                                          rejected, at-limit and small accepted, a maximal
                                          legitimate trip form's byte size accepted.
@@ -151,7 +152,13 @@ apps/web/tests/auth.test.ts             "request hardening (TASK-046)": cross-si
                                          body rejected; 11 failures from one client block even a
                                          correct passphrase, a different client still succeeds;
                                          a global ceiling tripped by 20+ distinct clients never
-                                         blocks a fresh client's correct passphrase.
+                                         blocks a fresh client's correct passphrase; the
+                                         constant-time compare always runs, proven by a mocked
+                                         timingSafeEqual call-count check for both a wrong and a
+                                         correct passphrase once the client is already blocked
+                                         (regression added in TASK-046 review round 2, after a
+                                         mutation that skips the compare when blocked passed all
+                                         401 prior tests undetected).
 apps/web/tests/trips-route.test.ts      "trip request route hardening (TASK-046)": cross-site and
                                          mismatched-Origin POST rejected, same-origin accepted;
                                          oversize and undeclared-length body rejected; a maximal
@@ -238,6 +245,10 @@ the pilot's one legitimate user; a large-enough distributed attack can still kee
 indefinitely, just slowly, which is why the passphrase's own length (≥ 20 chars, ADR-005) is the
 real entropy floor this defense leans on. (A first draft had the global ceiling block everyone
 once tripped; a security review found that made a ~20-IP distributed attack a cheap, indefinite
-denial-of-service against the pilot's one user, and this was corrected before merge.)
+denial-of-service against the pilot's one user, and this was corrected before merge.) The 5 s
+delay holds one connection open per wrong attempt from a client under its own cap while the
+ceiling stays tripped; this residual is bounded and disclosed rather than mitigated with an
+added concurrency cap, which is not required for this single-user pilot (see the ADR-005
+amendment for the full reasoning).
 
 **Next dependency:** none known; TASK-044 and TASK-045 are independent parallel tasks.

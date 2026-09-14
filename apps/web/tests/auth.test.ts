@@ -20,6 +20,17 @@ import {
 } from "@/lib/auth/session";
 import { proxy } from "@/proxy";
 
+// Wraps (never replaces) the real timingSafeEqual so every other test's behaviour is unchanged,
+// while letting one test (TASK-046 review 2) assert exactly how many times it was called —
+// proving the compare always runs, even for an already-blocked client.
+vi.mock("@/lib/auth/session", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/auth/session")>(
+      "@/lib/auth/session",
+    );
+  return { ...actual, timingSafeEqual: vi.fn(actual.timingSafeEqual) };
+});
+
 const SECRET = "session-secret-with-at-least-32-characters!";
 const PASSPHRASE = "correct-horse-battery-staple-pilot";
 const CONFIGURED = {
@@ -462,6 +473,38 @@ describe("request hardening (TASK-046)", () => {
       expect(legitimate.status).toBe(303);
       expect(legitimate.headers.get("location")).toBe("/advanced");
       expect(legitimate.headers.get("set-cookie")).not.toBeNull();
+    });
+  });
+
+  test("always runs the constant-time compare, even once the client is already blocked (regression, TASK-046 review 2)", async () => {
+    await withEnv(CONFIGURED, async () => {
+      const attacker = { "x-forwarded-for": "203.0.113.90" };
+      const compare = vi.mocked(timingSafeEqual);
+      for (let i = 0; i < 10; i += 1) {
+        await signIn(
+          post({ passphrase: `wrong-${i}-of-similar-length` }, attacker),
+        );
+      }
+      // The client is now at its per-client cap. A regression that skips the compare once
+      // blocked (`validPassphrase = clientBlocked ? false : timingSafeEqual(...)`) still denies
+      // both attempts below — the response alone can't tell the two implementations apart —
+      // but it would call `timingSafeEqual` zero times instead of once for each.
+      const callsBeforeWrong = compare.mock.calls.length;
+      const stillWrong = await signIn(
+        post({ passphrase: "another-wrong-guess-of-length" }, attacker),
+      );
+      expect(stillWrong.status).toBe(303);
+      expect(compare.mock.calls.length).toBe(callsBeforeWrong + 1);
+
+      const callsBeforeCorrect = compare.mock.calls.length;
+      const stillBlockedWithRightPassphrase = await signIn(
+        post({ passphrase: PASSPHRASE }, attacker),
+      );
+      expect(stillBlockedWithRightPassphrase.status).toBe(303);
+      expect(
+        stillBlockedWithRightPassphrase.headers.get("set-cookie"),
+      ).toBeNull();
+      expect(compare.mock.calls.length).toBe(callsBeforeCorrect + 1);
     });
   });
 });

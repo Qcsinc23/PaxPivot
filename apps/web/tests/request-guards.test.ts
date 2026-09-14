@@ -130,6 +130,26 @@ describe("checkSameOrigin", () => {
       ),
     ).toBeNull();
   });
+
+  test("uses only the first value of a multi-valued X-Forwarded-Proto", () => {
+    expect(
+      checkSameOrigin(
+        request({
+          origin: "https://pilot.invalid",
+          host: "pilot.invalid",
+          "x-forwarded-proto": "https,http",
+        }),
+      ),
+    ).toBeNull();
+    const mismatched = checkSameOrigin(
+      request({
+        origin: "http://pilot.invalid",
+        host: "pilot.invalid",
+        "x-forwarded-proto": "https,http",
+      }),
+    );
+    expect(mismatched?.response.status).toBe(403);
+  });
 });
 
 describe("checkBodySize", () => {
