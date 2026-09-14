@@ -22,6 +22,7 @@ import type {
   MapMarkerView,
   MapView,
   TerminalCardView,
+  TerminalFactRowView,
 } from "@/lib/presentation/types";
 import { lexemeFor } from "@/components/paxpivot/SourceStateBadge";
 import { SOURCE_STATE_LEXICON } from "@/lib/presentation/source-state";
@@ -143,6 +144,41 @@ function factValue(
   return fact ? known(fact.value) : unknown("Not published");
 }
 
+const FACT_LABEL: Readonly<Record<TerminalFactRead["kind"], string>> = {
+  counter_hours: "Hours",
+  phone: "Phone",
+  email: "Email",
+  parking: "Parking",
+  passenger_terminal_note: "Address",
+  uso_availability: "USO",
+  access_note: "Access note",
+};
+
+/** Kinds the Stats grid above already surfaces by label (`factValue`); shown there, not twice. */
+const STATS_KINDS: ReadonlySet<TerminalFactRead["kind"]> = new Set([
+  "counter_hours",
+  "parking",
+]);
+
+/**
+ * Every displayable fact the Stats grid does *not* already show, each with its own "Read at"
+ * (TASK-048) — phone, email, the address note, USO information, an access note. `read.facts`
+ * already excludes a fact whose source no longer permits display
+ * (`application/read_services.py::displayable_facts`); this only filters and formats. Each row's
+ * timestamp is the fact's own `observed_at`, not an age computed against "now": a fact has no
+ * separate freshness window the way a source observation does (SRC-008).
+ */
+function toFactRows(facts: readonly TerminalFactRead[]): TerminalFactRowView[] {
+  return facts
+    .filter((f) => !STATS_KINDS.has(f.kind))
+    .map((f) => ({
+      id: f.fact_id,
+      label: FACT_LABEL[f.kind] ?? f.kind,
+      value: known(f.value),
+      readAt: { iso: f.observed_at, text: formatTimestamp(f.observed_at) },
+    }));
+}
+
 /**
  * The source's own time beside PaxPivot's read time (SRC-008), or "Page showed no timestamp"
  * when the source never printed one. Exported so other trip-scoped compositions (TASK-044) can
@@ -259,6 +295,7 @@ export function toTerminalDetailScreenModel(
     evidence: {
       age: ageView(summary, options.now),
       rows: evidenceRows,
+      facts: toFactRows(read.facts),
       whyIncluded:
         "Listed in the terminal registry. Travel-time inclusion for a trip is not computed yet.",
     },

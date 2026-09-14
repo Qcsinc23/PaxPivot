@@ -48,7 +48,7 @@ export default async function TerminalDetailPage({ params }: Props) {
       opportunitiesNote:
         "PaxPivot has not checked a source for this terminal yet.",
       travel: { rows: [], handoffs: [] },
-      evidence: { rows: [], whyIncluded: "" },
+      evidence: { rows: [], facts: [], whyIncluded: "" },
       history: {
         observed: unknown(),
         successfulChecks: unknown(),

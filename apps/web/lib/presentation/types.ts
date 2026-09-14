@@ -212,6 +212,19 @@ export type EvidenceRowView = {
   href?: Href;
 };
 
+/**
+ * One terminal operating fact (hours, phone, email, ...) with its own provenance (TASK-048).
+ * `readAt` is when PaxPivot's check read the page, not when the page's own content changed —
+ * the fact contract carries no such instant, so no wording may imply the value is current
+ * beyond that read time.
+ */
+export type TerminalFactRowView = {
+  id: string;
+  label: string;
+  value: Fact<string>;
+  readAt: { iso: string; text: string };
+};
+
 /** Factual history only (PRD §10.2). No rate, likelihood or "useful" wording. */
 export type HistoricalSummaryView = {
   observed: Fact<number>;

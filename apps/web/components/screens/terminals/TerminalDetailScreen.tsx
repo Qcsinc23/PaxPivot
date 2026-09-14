@@ -5,6 +5,7 @@ import { HandoffLabel } from "@/components/paxpivot/Handoff";
 import { HistoricalStats } from "@/components/paxpivot/HistoricalStats";
 import { MapSurface } from "@/components/paxpivot/MapSurface";
 import { SourceStateBadge } from "@/components/paxpivot/SourceStateBadge";
+import { TerminalFacts } from "@/components/paxpivot/TerminalFacts";
 import { AppHeader } from "@/components/ui/AppHeader";
 import { Button } from "@/components/ui/Button";
 import { Card, CardActions, Row, Rows } from "@/components/ui/Card";
@@ -128,6 +129,11 @@ export function TerminalDetailScreen({ model, initialTab }: Props) {
         )}
         <EvidenceRows rows={model.evidence.rows} />
       </Card>
+      {model.evidence.facts.length > 0 ? (
+        <Card>
+          <TerminalFacts facts={model.evidence.facts} />
+        </Card>
+      ) : null}
       <Disclosure summary="Why included or excluded?">
         <p>{model.evidence.whyIncluded}</p>
       </Disclosure>
