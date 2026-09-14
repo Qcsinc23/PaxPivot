@@ -136,3 +136,52 @@ export type NewTripRequestWire = {
   window_end: string;
   party_size: number;
 };
+
+/* ── private traveler/party profile (TASK-050) ────────────────────── */
+
+export type RoleWire = "sponsor" | "dependent";
+export type CategoryAttestationWire =
+  | "I"
+  | "II"
+  | "III"
+  | "IV"
+  | "V"
+  | "VI"
+  | "unknown";
+export type AgeBandWire =
+  | "under_14"
+  | "minor_14_or_older"
+  | "adult"
+  | "unknown";
+
+/**
+ * `domain.eligibility.TravelerFacts` as the API serves it. `traveler_class` and `accompanied`
+ * are explicit placeholders this profile never collects (ADR-009); adapters must not read them.
+ */
+export type TravelerFactsWire = {
+  traveler_id: string;
+  role: RoleWire;
+  traveler_class: string;
+  category_attestation: CategoryAttestationWire;
+  age_band: AgeBandWire;
+  sponsor_id: string | null;
+  accompanied: boolean | null;
+};
+
+export type PartyFactsWire = { travelers: TravelerFactsWire[] };
+
+/** `GET`/`PUT /api/v1/profile`. `party` is `null` only when the pilot has never set one. */
+export type ProfileRead = {
+  status: "set" | "unset";
+  party: PartyFactsWire | null;
+};
+
+export type NewProfileTravelerWire = {
+  traveler_id: string;
+  role: RoleWire;
+  category_attestation: CategoryAttestationWire;
+  age_band: AgeBandWire;
+  sponsor_id: string | null;
+};
+
+export type NewPartyWire = { travelers: NewProfileTravelerWire[] };

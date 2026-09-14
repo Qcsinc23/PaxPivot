@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 from uuid import UUID
 
+from paxpivot.domain.eligibility import PartyFacts
 from paxpivot.domain.source import KillSwitch, Source, SourceObservation
 from paxpivot.domain.terminal import Terminal, TerminalOperationalFact
 from paxpivot.domain.trip import TripRequest
@@ -91,4 +92,16 @@ class TripReader(Protocol):
 class TripRepository(TripReader, Protocol):
     def add(self, trip: TripRequest) -> None:
         """Insert a new request. Requests are never edited; a change is a new request."""
+        ...
+
+
+class ProfileReader(Protocol):
+    def get_party(self) -> PartyFacts | None:
+        """The pilot's one party, or `None` when it has never been set."""
+        ...
+
+
+class ProfileRepository(ProfileReader, Protocol):
+    def replace(self, party: PartyFacts) -> None:
+        """Atomically replace the whole party. Never a partial write."""
         ...

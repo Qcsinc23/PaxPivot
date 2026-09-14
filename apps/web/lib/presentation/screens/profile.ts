@@ -20,7 +20,45 @@ export type PartyMemberView = {
   id: string;
   name: string;
   roleText: string;
-  href: string;
+  href?: string;
+};
+
+/** Options for the party-edit form's category attestation and age band selects (TASK-050). */
+export const CATEGORY_ATTESTATION_OPTIONS: readonly {
+  value: string;
+  label: string;
+}[] = [
+  { value: "I", label: "I" },
+  { value: "II", label: "II" },
+  { value: "III", label: "III" },
+  { value: "IV", label: "IV" },
+  { value: "V", label: "V" },
+  { value: "VI", label: "VI" },
+  { value: "unknown", label: "Unknown" },
+];
+
+export const AGE_BAND_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: "under_14", label: "Under 14" },
+  { value: "minor_14_or_older", label: "14 to 17" },
+  { value: "adult", label: "Adult" },
+  { value: "unknown", label: "Unknown" },
+];
+
+export type PartyFormTravelerView = {
+  id: string;
+  categoryAttestation: string;
+  ageBand: string;
+};
+
+/**
+ * What `/profile`'s form needs to set the sponsor's category attestation and add or remove
+ * dependents with an age band (TASK-050). No eligibility conclusion is computed from it here.
+ */
+export type PartyFormView = {
+  action: string;
+  sponsor: PartyFormTravelerView;
+  dependents: readonly PartyFormTravelerView[];
+  error?: "invalid" | "unavailable";
 };
 
 /** "Before you go": progress, the checklist, and the one thing the app cannot settle. */
@@ -37,6 +75,7 @@ export type ProfileScreenModel = {
   status: "empty" | "ready" | "loading" | "error";
   eligibility: EligibilitySummaryView;
   party: readonly PartyMemberView[];
+  partyForm: PartyFormView;
   readiness: ReadinessView;
   notifications: { rows: readonly EvidenceRowView[]; href: string };
   advancedHref: string;
@@ -65,11 +104,19 @@ export type EligibilityDetailScreenModel = {
   travelers: readonly EligibilityTravelerView[];
 };
 
+/** A blank sponsor-only starting point for the party-edit form (TASK-050). */
+export const blankPartyForm: PartyFormView = {
+  action: "/profile/edit",
+  sponsor: { id: "", categoryAttestation: "unknown", ageBand: "adult" },
+  dependents: [],
+};
+
 /** The live routes' models until a profile API contract exists. They carry no product data. */
 export const emptyProfile: ProfileScreenModel = {
   status: "empty",
   eligibility: { state: "unknown", travelerCount: 0 },
   party: [],
+  partyForm: blankPartyForm,
   readiness: {
     done: unknown(),
     total: unknown(),
@@ -111,6 +158,21 @@ export const fixtureProfile: ProfileScreenModel = {
       href: "/showcase#party",
     },
   ],
+  partyForm: {
+    action: "/showcase#party-form",
+    sponsor: {
+      id: "party-sponsor",
+      categoryAttestation: "VI",
+      ageBand: "adult",
+    },
+    dependents: [
+      {
+        id: "party-dependent",
+        categoryAttestation: "unknown",
+        ageBand: "under_14",
+      },
+    ],
+  },
   readiness: {
     done: known(2),
     total: known(4),

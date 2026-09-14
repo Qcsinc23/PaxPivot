@@ -7,10 +7,12 @@ database trigger rejects any UPDATE/DELETE, so history cannot be rewritten from 
 
 from collections.abc import Mapping, Sequence
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import Connection, Row, func, insert, select
+from sqlalchemy import Connection, Row, delete, func, insert, select, update
 
+from paxpivot.domain.eligibility import PartyFacts, TravelerFacts
+from paxpivot.domain.profile import UNASSIGNED_TRAVELER_CLASS
 from paxpivot.domain.source import (
     KillSwitch,
     Provenance,
@@ -390,3 +392,83 @@ class SqlTripRepository:
 
     def add(self, trip: TripRequest) -> None:
         self._c.execute(insert(db.trip_requests).values(trip.model_dump()))
+
+
+def _profile_traveler(row: Row[Any]) -> TravelerFacts:
+    """The two fields this table never stores (`traveler_class`, `accompanied`) are always
+    reconstructed as the same explicit placeholder/`None` `NewParty.to_party_facts` uses, so a
+    read after a write is indistinguishable from the value that was written."""
+    m = row._mapping
+    return TravelerFacts(
+        traveler_id=m["traveler_id"],
+        role=m["role"],
+        traveler_class=UNASSIGNED_TRAVELER_CLASS,
+        category_attestation=m["category_attestation"],
+        age_band=m["age_band"],
+        sponsor_id=m["sponsor_id"],
+        accompanied=None,
+    )
+
+
+class SqlProfileRepository:
+    """The pilot's one party (TASK-050). `replace` is atomic within the caller's transaction:
+    the profile row is upserted, every existing traveler row is deleted, and the new travelers
+    are inserted sponsor-first so a dependent's `sponsor_id` always names an already-inserted
+    row of this same statement."""
+
+    def __init__(self, connection: Connection) -> None:
+        self._c = connection
+
+    def get_party(self) -> PartyFacts | None:
+        profile_row = self._c.execute(select(db.profile.c.profile_id)).first()
+        if profile_row is None:
+            return None
+        rows = self._c.execute(
+            select(db.profile_travelers)
+            .where(db.profile_travelers.c.profile_id == profile_row._mapping["profile_id"])
+            .order_by(db.profile_travelers.c.traveler_id)
+        ).all()
+        if not rows:
+            return None
+        return PartyFacts(travelers=tuple(_profile_traveler(r) for r in rows))
+
+    def replace(self, party: PartyFacts) -> None:
+        profile_id = self._ensure_profile()
+        self._c.execute(
+            delete(db.profile_travelers).where(db.profile_travelers.c.profile_id == profile_id)
+        )
+        ordered = sorted(party.travelers, key=lambda t: t.role != "sponsor")
+        if not ordered:
+            return
+        self._c.execute(
+            insert(db.profile_travelers),
+            [
+                {
+                    "traveler_id": t.traveler_id,
+                    "profile_id": profile_id,
+                    "role": t.role,
+                    "category_attestation": t.category_attestation,
+                    "age_band": t.age_band,
+                    "sponsor_id": t.sponsor_id,
+                }
+                for t in ordered
+            ],
+        )
+
+    def _ensure_profile(self) -> UUID:
+        row = self._c.execute(select(db.profile.c.profile_id)).first()
+        if row is not None:
+            profile_id: UUID = row._mapping["profile_id"]
+            self._c.execute(
+                update(db.profile)
+                .where(db.profile.c.profile_id == profile_id)
+                .values(updated_at=func.now())
+            )
+            return profile_id
+        profile_id = uuid4()
+        self._c.execute(
+            insert(db.profile).values(
+                profile_id=profile_id, created_at=func.now(), updated_at=func.now()
+            )
+        )
+        return profile_id

@@ -36,6 +36,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 
+from paxpivot.domain.profile import AGE_BANDS, CATEGORY_ATTESTATIONS, ROLES
 from paxpivot.domain.source import ExtractionState as ExtractionStateEnum
 from paxpivot.domain.source import (
     KillSwitchScope,
@@ -300,6 +301,44 @@ trip_requests = Table(
     CheckConstraint("party_size BETWEEN 1 AND 9", name="party_size"),
     CheckConstraint("length(btrim(destination_text)) > 0", name="destination_present"),
     Index("ix_trip_requests_created_at", "created_at"),
+)
+
+profile = Table(
+    "profile",
+    metadata,
+    Column("profile_id", Uuid, primary_key=True),
+    # A database-enforced singleton (ADR-009): a second row, whatever its `profile_id`, always
+    # collides with this unique constraint, and `singleton = false` is refused outright.
+    Column("singleton", Boolean, nullable=False, server_default=text("true"), unique=True),
+    Column("created_at", _tz(), nullable=False),
+    Column("updated_at", _tz(), nullable=False),
+    CheckConstraint("singleton", name="singleton"),
+)
+
+profile_travelers = Table(
+    "profile_travelers",
+    metadata,
+    Column("traveler_id", Uuid, primary_key=True),
+    Column(
+        "profile_id", Uuid, ForeignKey("profile.profile_id", ondelete="CASCADE"), nullable=False
+    ),
+    Column("role", Text, nullable=False),
+    Column("category_attestation", Text, nullable=False),
+    Column("age_band", Text, nullable=False),
+    Column(
+        "sponsor_id",
+        Uuid,
+        ForeignKey("profile_travelers.traveler_id", ondelete="CASCADE"),
+        nullable=True,
+    ),
+    CheckConstraint(_in("role", list(ROLES)), name="role"),
+    CheckConstraint(
+        _in("category_attestation", list(CATEGORY_ATTESTATIONS)), name="category_attestation"
+    ),
+    CheckConstraint(_in("age_band", list(AGE_BANDS)), name="age_band"),
+    CheckConstraint("(role = 'sponsor') = (sponsor_id IS NULL)", name="sponsor_null_pairing"),
+    CheckConstraint("sponsor_id IS NULL OR sponsor_id <> traveler_id", name="no_self_sponsor"),
+    Index("ix_profile_travelers_profile_id", "profile_id"),
 )
 
 # Tables whose rows may never be updated or deleted (enforced by trigger in migration 0002).

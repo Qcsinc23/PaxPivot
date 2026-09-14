@@ -1,10 +1,17 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import ProfileLivePage from "@/app/profile/page";
 import { EligibilityDetailScreen } from "@/components/screens/profile/EligibilityDetailScreen";
 import { ProfileScreen } from "@/components/screens/profile/ProfileScreen";
 import { ReadinessScreen } from "@/components/screens/profile/ReadinessScreen";
+import type { PartyFactsWire, ProfileRead } from "@/lib/api/contracts";
+import { readApi } from "@/lib/api/client";
 import { unknown } from "@/lib/presentation/fact";
+import {
+  toPartyForm,
+  toPartyMembers,
+  toProfileScreenModel,
+} from "@/lib/presentation/adapters/profile";
 import {
   emptyEligibilityDetail,
   emptyProfile,
@@ -12,6 +19,39 @@ import {
   fixtureProfile,
 } from "@/lib/presentation/screens/profile";
 import { expectNoAxeViolations } from "../a11y";
+
+vi.mock("@/lib/api/client", () => ({ readApi: vi.fn() }));
+
+const readApiMock = vi.mocked(readApi);
+
+const SPONSOR_ID = "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a";
+const DEPENDENT_ID = "0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b";
+
+const PARTY: PartyFactsWire = {
+  travelers: [
+    {
+      traveler_id: SPONSOR_ID,
+      role: "sponsor",
+      traveler_class: "unassigned",
+      category_attestation: "VI",
+      age_band: "adult",
+      sponsor_id: null,
+      accompanied: null,
+    },
+    {
+      traveler_id: DEPENDENT_ID,
+      role: "dependent",
+      traveler_class: "unassigned",
+      category_attestation: "unknown",
+      age_band: "under_14",
+      sponsor_id: SPONSOR_ID,
+      accompanied: null,
+    },
+  ],
+};
+
+const SET_PROFILE: ProfileRead = { status: "set", party: PARTY };
+const UNSET_PROFILE: ProfileRead = { status: "unset", party: null };
 
 /** Terms that must never appear in a profile or eligibility surface. */
 const FORBIDDEN_FIELDS = [
@@ -128,9 +168,13 @@ describe("ProfileScreen", () => {
     ).toBe(fixtureProfile.notifications.href);
   });
 
-  test("keeps category codes off the profile surface", () => {
-    const { container } = render(<ProfileScreen model={fixtureProfile} />);
-    expect(container.textContent).not.toContain("Category");
+  test("keeps category codes off the read-only party summary", () => {
+    // TASK-050: the party-edit form legitimately collects a category attestation; the
+    // read-only "Travel party" summary rows must still stay in plain traveler wording.
+    render(<ProfileScreen model={fixtureProfile} />);
+    const summary = screen.getByRole("list", { name: "Travel party" });
+    expect(summary.textContent).not.toContain("Category");
+    expect(within(summary).getByText("Sponsor (example)")).toBeTruthy();
   });
 
   test("shows no medical, document or credential fields", () => {
@@ -345,13 +389,114 @@ describe("profile states and live routes", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 
-  test("live /profile renders the empty state and no fixture data", () => {
-    render(<ProfileLivePage />);
+  async function live(searchParams: Record<string, string> = {}) {
+    return ProfileLivePage({ searchParams: Promise.resolve(searchParams) });
+  }
+
+  test("live /profile is unset until a party is saved, and invents no fixture data", async () => {
+    readApiMock.mockResolvedValue({ ok: true, value: UNSET_PROFILE });
+    render(await live());
     expect(
       screen.getByRole("heading", { name: "No profile yet" }),
     ).toBeTruthy();
     expect(screen.queryByText(/Example|\(example\)/)).toBeNull();
     expect(screen.queryByText("Eligible · 2 travelers")).toBeNull();
+    // The empty state still offers the way to set the party up.
+    expect(screen.getByRole("form", { name: "Your party" })).toBeTruthy();
+  });
+
+  test("live /profile renders the saved party and no eligibility conclusion", async () => {
+    readApiMock.mockResolvedValue({ ok: true, value: SET_PROFILE });
+    render(await live());
+    const summary = screen.getByRole("list", { name: "Travel party" });
+    expect(within(summary).getByText("Sponsor of the party")).toBeTruthy();
+    expect(within(summary).getByText("Dependent 1")).toBeTruthy();
+    expect(within(summary).getByText("Dependent of the sponsor")).toBeTruthy();
+    // Eligibility state stays unknown: no eligible/ineligible wording is invented here.
+    expect(screen.queryByText(/^Eligible/)).toBeNull();
+    expect(screen.queryByText(/^Not eligible/)).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Why this eligibility decision?" }),
+    ).toBeTruthy();
+    // The form is pre-filled from the saved party, not left blank.
+    expect(
+      screen.getByRole("option", { name: "VI", selected: true }),
+    ).toBeTruthy();
+  });
+
+  test("live /profile shows an invalid-party error from the edit redirect", async () => {
+    readApiMock.mockResolvedValue({ ok: true, value: UNSET_PROFILE });
+    render(await live({ error: "invalid" }));
+    expect(screen.getByRole("alert").textContent).toMatch(/not accepted/);
+  });
+
+  test("live /profile is not configured, never a false empty state", async () => {
+    readApiMock.mockResolvedValue({ ok: false, reason: "not_configured" });
+    render(await live());
+    expect(
+      screen.queryByRole("heading", { name: "No profile yet" }),
+    ).toBeNull();
+    expect(screen.getByText(/not available right now/)).toBeTruthy();
+  });
+
+  test("live /profile reports a failure on our side, never an empty party", async () => {
+    readApiMock.mockResolvedValue({ ok: false, reason: "unavailable" });
+    render(await live());
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "No profile yet" }),
+    ).toBeNull();
+  });
+});
+
+describe("profile adapters", () => {
+  test("toPartyMembers uses Sponsor/Dependent N wording, never a category code", () => {
+    const members = toPartyMembers(PARTY);
+    expect(members).toEqual([
+      { id: SPONSOR_ID, name: "Sponsor", roleText: "Sponsor of the party" },
+      {
+        id: DEPENDENT_ID,
+        name: "Dependent 1",
+        roleText: "Dependent of the sponsor",
+      },
+    ]);
+    expect(toPartyMembers(null)).toEqual([]);
+  });
+
+  test("toPartyForm carries the sponsor's category and each dependent's age band", () => {
+    const form = toPartyForm(PARTY);
+    expect(form.sponsor).toEqual({
+      id: SPONSOR_ID,
+      categoryAttestation: "VI",
+      ageBand: "adult",
+    });
+    expect(form.dependents).toEqual([
+      { id: DEPENDENT_ID, categoryAttestation: "unknown", ageBand: "under_14" },
+    ]);
+  });
+
+  test("toPartyForm falls back to a blank sponsor when unset", () => {
+    const form = toPartyForm(null);
+    expect(form.sponsor.id).toBe("");
+    expect(form.dependents).toEqual([]);
+  });
+
+  test("toProfileScreenModel never computes an eligibility conclusion", () => {
+    const model = toProfileScreenModel(SET_PROFILE);
+    expect(model.status).toBe("ready");
+    expect(model.eligibility).toEqual({
+      state: "unknown",
+      travelerCount: 2,
+      detailHref: "/profile/eligibility",
+    });
+  });
+
+  test("toProfileScreenModel carries the edit route's error into the form", () => {
+    const model = toProfileScreenModel(UNSET_PROFILE, "invalid");
+    expect(model.partyForm.error).toBe("invalid");
+    expect(
+      toProfileScreenModel(UNSET_PROFILE, "not-a-real-error").partyForm.error,
+    ).toBeUndefined();
   });
 });
 
