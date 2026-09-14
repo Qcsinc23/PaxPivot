@@ -178,9 +178,10 @@ are unaffected in their happy path — see the same-origin/size test coverage ab
 
 Fill in before merge.
 
-**Branch:** `foundation/TASK-046-web-request-hardening` from `main` @ `25f1264`.
+**Branch:** `foundation/TASK-046-web-request-hardening`, rebased onto `main` @ `81e98f1`
+(TASK-049 merged after this branch was cut; unrelated — audit docs only).
 
-**Commit:** `a5cd955`, `d0d1bc0`, `f242976` (PR: see title above).
+**Commit:** `d1b69de`, `591abcc`, `dc6af24`, `31c6901`, `e312633` (PR: see title above).
 
 **Files changed:** the owned paths above.
 
@@ -190,10 +191,10 @@ existing logic.
 
 **Migrations:** none.
 
-**Verification run:** on `f242976`, `make check` (format-check, lint, typecheck, test-unit —
-283 Python + 376 Vitest, test-integration — 40, build, migrate, migrate-check, compose-check)
-exited 0. `pnpm exec vitest run` in `apps/web`: 27 files, 376 tests passed, including the new
-`request-guards.test.ts` (17), `rate-limit.test.ts` (11), and the extended `auth.test.ts` (9)
+**Verification run:** on `e312633`, `make check` (format-check, lint, typecheck, test-unit —
+283 Python + 377 Vitest, test-integration — 40, build, migrate, migrate-check, compose-check)
+exited 0. `pnpm exec vitest run` in `apps/web`: 27 files, 377 tests passed, including the new
+`request-guards.test.ts` (18), `rate-limit.test.ts` (11), and the extended `auth.test.ts` (9)
 and `trips-route.test.ts` (7).
 
 **Known limitations / risks:** the rate limiter is per-process memory (`ponytail:` comment in
