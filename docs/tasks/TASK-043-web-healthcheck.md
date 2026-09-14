@@ -315,14 +315,13 @@ Positive (criterion a) — the healthcheck exactly as Compose renders it, via co
     up -d --wait --no-build --no-deps web
   -> exit 0, wall time 5s (timed with `date +%s`). Container StartedAt 12:21:50.189Z; first probe
      Start 12:21:55.235Z (+5.05s) — healthy on that very first probe, no failures. `--no-deps`
-     started only `web`; `api` never ran, proving no API dependency. (Fresh review 3: the +5.05s
-     is not "roughly half of `interval`" by coincidence — Docker Engine >= 25 applies an internal
-     default start interval of 5s during `start_period` even when `start_interval` is not
-     configured (moby `defaultStartInterval`, shipped in Engine 25.0.0, moby PR #40894). These
-     measurements were taken on Engine 29.3.1 (`docker version --format
-     '{{.Server.Version}}'`), so probes land about every 5s until `start_period` ends, then at
-     the configured `interval: 10s`. On an Engine < 25 the first probe comes after a full
-     `interval` (~10s) instead.)
+     started only `web`; `api` never ran, proving no API dependency. (Measured on Docker Engine
+     29.3.1. While a container is `starting` inside `start_period`, Docker probes at its default
+     start interval when `start_interval` is not set: 5s since Engine 27.0.0 (moby
+     `defaultStartInterval`, moby PR #47799); before that the default fell back to `interval`.
+     So here probes land about every 5s until the first success, then every 10s. On an engine
+     older than 27 the first probe comes after a full `interval`, about 10s, and `up --wait`
+     takes correspondingly longer.)
   Torn down: `docker compose --env-file <scratch> -f compose.prod.yml -p task043 down --remove-orphans -v`.
 
 Steady cadence (criterion b) — same run, container left up, sampled again ~26s later:
@@ -337,16 +336,15 @@ Negative (criterion c) — same setup, the scratch override file (not committed)
   -> exit 1 ("container task043-web-1 is unhealthy"), wall time 51s. Container StartedAt
      12:22:58.195Z. docker inspect .State.Health: {"Status":"unhealthy","FailingStreak":3,
      "Log":[5 entries, all ExitCode 1]} at offsets +20.31s, +25.37s, +30.44s, +40.53s, +50.60s.
-     The first three (+20.31s, +25.37s, +30.44s — ~5.06s/5.07s apart) are Engine 25's internal
-     default 5s start-interval cadence during the 30s `start_period` (see the corrected mechanism
-     in the positive-case note above), not a coincidence. FailingStreak 3 (not 5) shows only
+     The first three (+20.31s, +25.37s, +30.44s — ~5.06s/5.07s apart) are the engine's default 5s
+     start interval during the 30s `start_period` (Engine 29.3.1; see the positive-case note). FailingStreak 3 (not 5) shows only
      checks at/after the `start_period` boundary count toward `retries`: the +30.44s check (right
      at that boundary, itself one of the 5s-cadence probes) is the first counted failure, then
      +40.53s and +50.60s (each ~10.08s later, the configured `interval` once past `start_period`)
      are the 2nd and 3rd, crossing `retries: 3` and flipping to `unhealthy` at ~51s — the same
      "first counted failure at the start_period boundary, then (retries-1) more at the configured
-     interval" pattern observed in round 2 at the larger (60s/30s) scale, now correctly attributed
-     to Engine 25's default start cadence rather than a leftover `start_interval` artifact. Docker's
+     interval" pattern observed in round 2 at the larger (60s/30s) scale; moby `handleProbeResult`
+     counts a failure toward `FailingStreak` only once the probe starts at or after `start_period`. Docker's
      health `Log` keeps only the 5 most recent entries, so any checks before +20.31s are not
      visible here — the clean, unbroken 10s steady cadence is established separately and
      unambiguously by the positive run above.
@@ -379,10 +377,8 @@ locally.
 no code/config change):** review 3 confirmed everything else (rendered config, `up --wait` timing,
 `make check`, `make migrate-test`, scope, drift guard) and found one wording defect: round 3's
 Handoff attributed the `+5.05s` first-probe timing to "roughly half of `interval`" by coincidence.
-The real mechanism is Docker Engine >= 25's internal default start interval of 5s during
-`start_period` (moby `defaultStartInterval`, shipped in Engine 25.0.0, moby PR #40894), which
-applies even without `start_interval` configured — the local engine (29.3.1) has it, an
-Engine < 25 would not. Corrected both the positive-case and negative-case timing explanations
+The real mechanism is the engine's default start interval during `start_period` (see round 5
+below for the corrected version and PR attribution). Corrected both the positive-case and negative-case timing explanations
 above to name that mechanism instead of the coincidental one; no measurement changed, and
 `compose.prod.yml` was not touched (nothing about the actual healthcheck config was wrong, only
 the prose explaining an already-correct measurement). Checked the PR body and `docs/DEPLOYMENT.md`
@@ -446,6 +442,14 @@ curl -o /dev/null -s -w '%{http_code}\n' https://$PAXPIVOT_DOMAIN/login     # ex
 curl -o /dev/null -s -w '%{http_code}\n' https://$PAXPIVOT_DOMAIN/terminals # expect 307 (signed out)
 docker inspect --format '{{.State.Health.Status}}' <web container id>      # expect healthy
 ```
+
+**Round 5 (2026-09-14, fresh review 4; docs-only, no code or config change):** review 4 found that
+round 4 credited the 5s default start interval to Engine 25.0.0 / moby PR #40894. PR #40894 added
+the configurable `start_interval` field, and its unset default fell back to `interval`. The 5s
+`defaultStartInterval` came from moby PR #47799 and first shipped in Engine 27.0.0. Corrected the
+positive-case and negative-case notes to that, stated the engine the measurements ran on
+(29.3.1), and said what an older engine does. No measurement changed. Verification: drift guard
+only (docs-only).
 
 **Next dependency:** none; this closes the "Found during M1" healthcheck bullet in the reconciled
 plan.
