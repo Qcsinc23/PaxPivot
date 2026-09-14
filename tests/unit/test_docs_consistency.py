@@ -101,11 +101,16 @@ def test_every_documented_make_target_exists(readme: str) -> None:
 
 
 def test_readme_referenced_paths_exist(readme: str) -> None:
-    """Every repository path the README links to is real; a dead link misleads the reader."""
+    """Every repository path the README links to is real; a dead link misleads the reader.
+
+    A `#section` anchor is dropped before the check, so a valid link into a heading is not
+    reported as a missing file.
+    """
     links = re.findall(r"\]\(([^)#][^)]*)\)", readme)
     broken = [
         target
         for target in links
-        if not target.startswith(("http://", "https://")) and not (ROOT / target).exists()
+        if not target.startswith(("http://", "https://"))
+        and not (ROOT / target.split("#", 1)[0]).exists()
     ]
     assert broken == [], f"README.md links to missing paths: {broken}"
