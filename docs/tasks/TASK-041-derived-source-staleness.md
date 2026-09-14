@@ -35,11 +35,20 @@ None (TASK-024 read services and TASK-025 provider are merged).
 
 ```text
 apps/api/paxpivot/application/read_services.py
+apps/api/paxpivot/domain/source.py                  (POSITIVE_STATES, shared with the validator)
+apps/web/lib/presentation/adapters/terminals.ts     (opportunitiesNote, review finding)
+apps/web/tests/adapters.test.tsx
 tests/unit/test_read_services.py
 tests/integration/test_sources_terminals_db.py
 tests/integration/test_source_checks_db.py
 docs/tasks/TASK-041-derived-source-staleness.md
 ```
+
+The web adapter and domain paths were added after review: once the API derives `source_stale`,
+the terminal detail's opportunity note would otherwise fall through to "No opportunities are
+published for this terminal right now" for stale evidence — a current-absence claim from evidence
+that is not current (PRD §9.5). Merging the API change alone would make that wording live, so the
+two ship together.
 
 ## Read-only context
 
@@ -132,14 +141,28 @@ make migrate-test
 
 ```text
 red run (tests first)                 -> 2 failed (fresh at 6h31m, no_departures at 7h) | 10 passed
-make format                           -> PASS (reformatted the new test only)
-make check                            -> PASS (exit 0)
+make format                           -> PASS
+make check (after review fixes)       -> PASS (exit 0)
   format-check / lint / typecheck     -> PASS
-  test-unit                           -> PASS: 263 Python (+6), 338 web
+  test-unit                           -> PASS: 264 Python (+7), 339 web (+1)
   test-integration                    -> PASS: 40 (fixture reads now use the fixture clock)
   build / migrate / migrate-check     -> PASS
 make migrate-test                     -> PASS (baseline, drift detection, seed, 24 CHECK rules, roundtrip)
 ```
+
+**Review (fresh, 0 Critical / 1 Important → fixed / 3 Minor → 2 fixed, 1 declined):**
+
+- *Important (fixed):* `apps/web/lib/presentation/adapters/terminals.ts::opportunitiesNote` fell
+  through to "No opportunities are published for this terminal right now" for any state other than
+  a failed read or `no_departures_published`. Stale evidence keeps `retrieval: succeeded`, so once
+  the API derives `source_stale` the terminal detail would have made a current-absence claim from
+  evidence that is not current. It now says the last successful check is out of date for
+  `source_stale`, and that nothing is known for every other non-fresh state; a web test renders both.
+- *Minor (fixed):* `no_compatible_opportunity` added to the boundary table (7 cases).
+- *Minor (fixed):* the positive-state set now lives once, as `domain/source.py::POSITIVE_STATES`,
+  used by the observation validator and by `effective`.
+- *Minor (declined):* two integration tests read source health with the wall clock but assert only
+  presence or a kill-switch flag, never a state; pinning their clock changes no behaviour.
 
 **Known limitations / risks:** the window is a code constant, not per-source policy; the effective
 state depends on the API host's clock.

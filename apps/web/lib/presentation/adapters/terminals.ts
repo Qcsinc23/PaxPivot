@@ -179,6 +179,14 @@ function opportunitiesNote(summary: TerminalSummaryRead): string {
   if (latest.state === "no_departures_published") {
     return "This source published no departures.";
   }
+  if (latest.state === "source_stale") {
+    return "The last successful check is out of date, so nothing current is known about departures here.";
+  }
+  if (latest.state !== "fresh") {
+    // Changed, missing, conflicting, restricted or held for review: a read that succeeded is still
+    // not a reading of what is published, so it must not be worded as one either.
+    return "The latest check could not establish what is published, so nothing is known about departures here.";
+  }
   return "No opportunities are published for this terminal right now.";
 }
 

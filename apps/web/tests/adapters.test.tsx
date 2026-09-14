@@ -310,6 +310,41 @@ describe("terminal detail opportunity wording", () => {
     }
   });
 
+  test("a stale or otherwise non-current check is never worded as 'none are published'", () => {
+    for (const [state, note] of [
+      [
+        "source_stale",
+        "The last successful check is out of date, so nothing current is known about departures here.",
+      ],
+      [
+        "source_changed_unparsed",
+        "The latest check could not establish what is published, so nothing is known about departures here.",
+      ],
+    ] as const) {
+      // The API derives staleness at read time (TASK-041): the read itself still succeeded.
+      const model = toTerminalDetailScreenModel(
+        {
+          ...detail,
+          summary: {
+            ...base,
+            latest: {
+              ...(base.latest as NonNullable<typeof base.latest>),
+              retrieval: "succeeded",
+              state,
+            },
+          },
+        },
+        { now: NOW },
+      );
+      expect(model.opportunitiesNote).toBe(note);
+
+      const { unmount } = render(<TerminalDetailScreen model={model} />);
+      const text = (document.body.textContent ?? "").toLowerCase();
+      expect(text).not.toContain("no opportunities are published");
+      unmount();
+    }
+  });
+
   test("a never-checked terminal says so rather than claiming an absence", () => {
     const never = toTerminalDetailScreenModel(
       { ...detail, summary: { ...base, latest: null } },

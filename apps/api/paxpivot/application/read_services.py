@@ -37,6 +37,7 @@ from paxpivot.application.result import ApplicationError, Failure, Result, Succe
 from paxpivot.application.source_explanation import explain_source
 from paxpivot.application.source_gate import engaged_switch
 from paxpivot.domain.source import (
+    POSITIVE_STATES,
     KillSwitch,
     PolicyReviewState,
     ProcessingMode,
@@ -51,20 +52,16 @@ from paxpivot.domain.terminal import Terminal, TerminalOperationalFact
 # source, whatever its cadence: a source without a cadence is never more current than one with.
 FRESHNESS_WINDOW = timedelta(hours=6, minutes=30)
 
-# States that assert something from a successful read, so they can go out of date. Failure,
-# restricted, review, conflict and supersession states already say "not current" on their own.
-_CURRENT_ONLY_STATES = frozenset(
-    {SourceState.FRESH, SourceState.NO_DEPARTURES, SourceState.NO_COMPATIBLE}
-)
-
 
 def effective(observation: SourceObservation, now: datetime) -> SourceObservation:
     """The observation as it reads at ``now``; the stored observation is never changed.
 
-    A read stamped after ``now`` (clock skew) is not aged into anything.
+    Only positive states go out of date: failure, restricted, review, conflict and supersession
+    states already say "not current" on their own. A read stamped after ``now`` (clock skew) is
+    not aged into anything.
     """
     if (
-        observation.state in _CURRENT_ONLY_STATES
+        observation.state in POSITIVE_STATES
         and now - observation.provenance.observed_at > FRESHNESS_WINDOW
     ):
         return observation.model_copy(update={"state": SourceState.STALE})

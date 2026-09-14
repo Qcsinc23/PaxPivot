@@ -204,6 +204,7 @@ def test_a_restricted_source_contributes_no_evidence_to_a_terminal() -> None:
         (SourceState.FRESH, timedelta(hours=6, minutes=30), SourceState.FRESH),
         (SourceState.FRESH, timedelta(hours=6, minutes=31), SourceState.STALE),
         (SourceState.NO_DEPARTURES, timedelta(hours=7), SourceState.STALE),
+        (SourceState.NO_COMPATIBLE, timedelta(hours=7), SourceState.STALE),
         (SourceState.UNREACHABLE, timedelta(hours=10), SourceState.UNREACHABLE),
         # Observed after `now` (clock skew): never aged into anything.
         (SourceState.FRESH, -timedelta(minutes=5), SourceState.FRESH),
@@ -218,6 +219,7 @@ def test_every_read_reports_the_effective_state_at_generated_at(
     network headline, the terminal detail and source health — while failure states keep their
     own meaning. The stored observation is never changed: the state is derived at read time.
     """
+    interpreted = state in {SourceState.NO_DEPARTURES, SourceState.NO_COMPATIBLE}
     stored = observation(
         SOURCE_A,
         "freshness-window",
@@ -226,12 +228,8 @@ def test_every_read_reports_the_effective_state_at_generated_at(
         retrieval=(
             RetrievalState.FAILED if state == SourceState.UNREACHABLE else RetrievalState.SUCCEEDED
         ),
-        extraction=(
-            ExtractionState.EXACT
-            if state == SourceState.NO_DEPARTURES
-            else ExtractionState.NOT_ATTEMPTED
-        ),
-        parser_version="synthetic-parser-v1" if state == SourceState.NO_DEPARTURES else None,
+        extraction=ExtractionState.EXACT if interpreted else ExtractionState.NOT_ATTEMPTED,
+        parser_version="synthetic-parser-v1" if interpreted else None,
     )
     sources, observations = FakeSources([SOURCE_A]), FakeObservations([stored])
     now = T0 + age
