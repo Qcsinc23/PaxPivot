@@ -12,8 +12,10 @@ import type {
   TerminalNetworkRead,
   TripRead,
 } from "@/lib/api/contracts";
+import { toCommercialHandoffViewModel } from "@/lib/presentation/adapters/commercial-handoff";
 import { toTerminalsToCheckViewModel } from "@/lib/presentation/adapters/terminals-to-check";
 import { toTripDetailModel } from "@/lib/presentation/adapters/trips";
+import { CommercialHandoff } from "./CommercialHandoff";
 import { TerminalsToCheck } from "./TerminalsToCheck";
 
 type Props = { params: Promise<{ tripId: string }> };
@@ -93,6 +95,7 @@ export default async function TripPage({ params }: Props) {
           body="This is a failure on our side. Your request is unchanged."
         />
       )}
+      <CommercialHandoff model={toCommercialHandoffViewModel(trip)} />
       <p className="pp-sub">{GUARANTEE_TEXT}</p>
     </>
   );
