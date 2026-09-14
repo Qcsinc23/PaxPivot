@@ -2,7 +2,7 @@
 
 ## Status
 
-`review`
+`done` — merged to `main` in 25f1264 (PR #52); final fresh review (5th) 0 Critical / 0 Important
 
 ## Assigned role
 
@@ -259,8 +259,8 @@ Important findings is required before this agent may merge its own PR.
 **Branch:** `foundation/TASK-043-web-healthcheck` (rebased onto `main` @ `df0723d`, after the
 TASK-040 status-normalization merge, PR #51)
 
-**Commit:** `d6d1400` — "TASK-043: add web container healthcheck so up --wait returns only when
-Next.js serves"
+**Commit:** merged to `main` as `25f1264` (PR #52) — "TASK-043: add web container healthcheck so
+up --wait returns only when Next.js serves"
 
 **Files changed:**
 

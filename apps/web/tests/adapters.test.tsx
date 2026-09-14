@@ -222,6 +222,43 @@ describe("terminal detail adapter", () => {
     expect(screen.queryByRole("link", { name: "Watch" })).toBeNull();
     await expectNoAxeViolations(container, ["region"]);
   });
+
+  // TASK-044: a restricted 72-hour schedule source is never retrieved (TASK-037), so it never
+  // has an observation. Before this fix, no observation fell through to the generic "Not checked
+  // yet" -> "Unknown" pill, silently dropping the restricted wording. It must say "Open
+  // yourself" (source-state.ts's restricted label) instead, with or without an observation.
+  test("a restricted 72-hour schedule source shows 'Open yourself', never 'Unknown'", () => {
+    const restrictedSource = {
+      source_id: "schedule-artifact-a",
+      name: "Example terminal-a 72-hour schedule (AMC artifact)",
+      url: "https://amc.example.invalid/terminal-a/72hr-folder/",
+      kind: "schedule_artifact" as const,
+      enabled: true,
+      review_state: "restricted" as const,
+      latest: null,
+    };
+    const withRestrictedSource: TerminalDetailRead = {
+      ...detail,
+      sources: [...detail.sources, restrictedSource],
+    };
+    const withRestriction = toTerminalDetailScreenModel(withRestrictedSource, {
+      now: NOW,
+    });
+    const row = withRestriction.evidence.rows.find(
+      (r) => r.id === "schedule-artifact-a",
+    );
+    expect(row?.value).toEqual({ status: "known", value: "Open yourself" });
+    expect(row?.href).toBe(restrictedSource.url);
+
+    render(
+      <TerminalDetailScreen model={withRestriction} initialTab="evidence" />,
+    );
+    const restrictedRow = screen
+      .getByText(restrictedSource.name)
+      .closest("li") as HTMLElement;
+    expect(within(restrictedRow).getByText("Open yourself")).toBeTruthy();
+    expect(within(restrictedRow).queryByText("Unknown")).toBeNull();
+  });
 });
 
 describe("source health adapter", () => {

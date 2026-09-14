@@ -24,6 +24,7 @@ import type {
   TerminalCardView,
 } from "@/lib/presentation/types";
 import { lexemeFor } from "@/components/paxpivot/SourceStateBadge";
+import { SOURCE_STATE_LEXICON } from "@/lib/presentation/source-state";
 import {
   evidenceTone,
   formatAge,
@@ -142,7 +143,12 @@ function factValue(
   return fact ? known(fact.value) : unknown("Not published");
 }
 
-function ageView(
+/**
+ * The source's own time beside PaxPivot's read time (SRC-008), or "Page showed no timestamp"
+ * when the source never printed one. Exported so other trip-scoped compositions (TASK-044) can
+ * reuse it instead of re-deriving age from raw observation fields.
+ */
+export function ageView(
   summary: TerminalSummaryRead,
   now: Date,
 ): EvidenceAgeView | undefined {
@@ -211,15 +217,31 @@ export function toTerminalDetailScreenModel(
     },
     { label: "Parking", value: factValue(read.facts, "parking") },
   ];
-  const evidenceRows: EvidenceRowView[] = read.sources.map((source) => ({
-    id: source.source_id,
-    label: source.name,
-    value: source.latest
-      ? known(lexemeFor(source.latest.state).label)
-      : unknown(NOT_CHECKED),
-    tone: evidenceTone(source.latest),
-    href: source.url,
-  }));
+  const evidenceRows: EvidenceRowView[] = read.sources.map((source) => {
+    // A restricted (user-open-only) source is never retrieved, so it never has an observation
+    // (TASK-037): falling through to "Not checked yet" would render the generic "Unknown" pill
+    // and lose the restricted wording entirely. The review state itself already says which
+    // source-state applies, with or without an observation on file.
+    if (!source.latest && source.review_state === "restricted") {
+      const restricted = SOURCE_STATE_LEXICON.restricted_user_open_only;
+      return {
+        id: source.source_id,
+        label: source.name,
+        value: known(restricted.label),
+        tone: restricted.tone,
+        href: source.url,
+      };
+    }
+    return {
+      id: source.source_id,
+      label: source.name,
+      value: source.latest
+        ? known(lexemeFor(source.latest.state).label)
+        : unknown(NOT_CHECKED),
+      tone: evidenceTone(source.latest),
+      href: source.url,
+    };
+  });
   return {
     status: "ready",
     terminal,

@@ -3,6 +3,15 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import ResultsPage from "@/app/trips/[tripId]/page";
 import { readApi } from "@/lib/api/client";
+import type { ApiResult } from "@/lib/api/client";
+import type {
+  SourceEvidenceRead,
+  TerminalDetailRead,
+  TerminalNetworkRead,
+  TerminalSourceRead,
+  TerminalSummaryRead,
+  TripRead,
+} from "@/lib/api/contracts";
 import { ResultsScreen } from "@/components/screens/results/ResultsScreen";
 import { unknown } from "@/lib/presentation/fact";
 import {
@@ -278,36 +287,327 @@ describe("Why this order", () => {
   });
 });
 
+/**
+ * TASK-044 fixtures: the page reads `/api/v1/trips/{id}`, `/api/v1/terminals` and one
+ * `/api/v1/terminals/{id}` per registered terminal, so the mock must branch on path rather than
+ * return one fixed value for every call.
+ */
+const TRIP_ID = "6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7";
+const MDL_ID = "11111111-1111-4111-8111-111111111111";
+const DOVER_ID = "22222222-2222-4222-8222-222222222222";
+const BWI_ID = "33333333-3333-4333-8333-333333333333";
+const ANDREWS_ID = "44444444-4444-4444-8444-444444444444";
+const MDL_SCHEDULE_URL = "https://amc.example.mil/mdl/72hr-folder/";
+
+function mockRoutes(routes: Record<string, ApiResult<unknown>>) {
+  readApiMock.mockImplementation(((path: string) => {
+    if (!(path in routes)) {
+      throw new Error(`unexpected readApi(${path}) call in this test`);
+    }
+    return Promise.resolve(routes[path]);
+  }) as typeof readApi);
+}
+
+function trip(originTerminalId: string, originName: string): TripRead {
+  return {
+    trip_id: TRIP_ID,
+    origin_terminal_id: originTerminalId,
+    origin_terminal_name: originName,
+    destination_text: "Somewhere",
+    window_start: "2026-10-01T06:00:00Z",
+    window_end: "2026-10-04T06:00:00Z",
+    party_size: 2,
+    created_at: "2026-09-11T12:00:00Z",
+  };
+}
+
+function evidence(
+  overrides: Partial<SourceEvidenceRead> = {},
+): SourceEvidenceRead {
+  return {
+    observation_id: "obs-1",
+    state: "fresh",
+    observed_at: "2026-09-14T11:30:00Z",
+    source_time: "2026-09-14T11:00:00Z",
+    retrieval: "succeeded",
+    extraction: "exact_text",
+    parser_version: "synthetic-parser-v1",
+    explanation: "Synthetic explanation.",
+    ...overrides,
+  };
+}
+
+function terminalSummary(
+  overrides: Partial<TerminalSummaryRead> &
+    Pick<TerminalSummaryRead, "terminal_id" | "name">,
+): TerminalSummaryRead {
+  return {
+    installation: null,
+    timezone: "UTC",
+    operational_state: "verified",
+    entrance: null,
+    entrance_kind: null,
+    official_url: `https://example.invalid/${overrides.terminal_id}`,
+    latest: evidence(),
+    ...overrides,
+  };
+}
+
+const mdl = terminalSummary({
+  terminal_id: MDL_ID,
+  name: "Joint Base MDL Passenger Terminal",
+});
+const dover = terminalSummary({
+  terminal_id: DOVER_ID,
+  name: "Dover AFB Passenger Terminal",
+  latest: evidence({ state: "source_stale" }),
+});
+const bwi = terminalSummary({
+  terminal_id: BWI_ID,
+  name: "BWI AMC Passenger Terminal",
+  latest: null,
+});
+const andrews = terminalSummary({
+  terminal_id: ANDREWS_ID,
+  name: "Joint Base Andrews Passenger Terminal",
+  latest: evidence({ state: "source_changed_unparsed" }),
+});
+
+function scheduleSource(
+  summary: TerminalSummaryRead,
+  url: string,
+): TerminalSourceRead {
+  return {
+    source_id: `${summary.terminal_id}-schedule`,
+    name: `${summary.name} 72-hour schedule (AMC artifact)`,
+    url,
+    kind: "schedule_artifact",
+    enabled: true,
+    review_state: "restricted",
+    latest: null,
+  };
+}
+
+function terminalDetail(
+  summary: TerminalSummaryRead,
+  url: string,
+): TerminalDetailRead {
+  return {
+    generated_at: "2026-09-14T12:00:00Z",
+    summary,
+    entrance_instructions: null,
+    facts: [],
+    sources: [scheduleSource(summary, url)],
+  };
+}
+
+/** A state pill's own label, ignoring the age suffix and the sr-only elaboration. */
+function pillLabel(scope: HTMLElement): string {
+  return scope.querySelector(".pp-pill")?.firstChild?.textContent?.trim() ?? "";
+}
+
 describe("live /trips/[tripId] route", () => {
-  test("renders the saved request and states that no route was searched", async () => {
-    readApiMock.mockResolvedValue({
-      ok: true,
-      value: {
-        trip_id: "6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7",
-        origin_terminal_id: "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a",
-        origin_terminal_name: "Registered Terminal",
-        destination_text: "Somewhere",
-        window_start: "2026-10-01T06:00:00Z",
-        window_end: "2026-10-04T06:00:00Z",
-        party_size: 2,
-        created_at: "2026-09-11T12:00:00Z",
+  test("lists every registered terminal, origin first, with an honest state and the registered schedule link", async () => {
+    mockRoutes({
+      [`/api/v1/trips/${TRIP_ID}`]: { ok: true, value: trip(MDL_ID, mdl.name) },
+      // Deliberately not in origin-first or alphabetical order: the adapter orders, not the API.
+      "/api/v1/terminals": {
+        ok: true,
+        value: {
+          generated_at: "2026-09-14T12:00:00Z",
+          terminals: [dover, bwi, andrews, mdl],
+        } satisfies TerminalNetworkRead,
       },
+      [`/api/v1/terminals/${MDL_ID}`]: {
+        ok: true,
+        value: terminalDetail(mdl, MDL_SCHEDULE_URL),
+      },
+      [`/api/v1/terminals/${DOVER_ID}`]: {
+        ok: true,
+        value: terminalDetail(
+          dover,
+          "https://amc.example.mil/dover/72hr-folder/",
+        ),
+      },
+      [`/api/v1/terminals/${BWI_ID}`]: {
+        ok: true,
+        value: terminalDetail(bwi, "https://amc.example.mil/bwi/72hr-folder/"),
+      },
+      // A source failure never hides a terminal: Andrews' own detail read fails outright.
+      [`/api/v1/terminals/${ANDREWS_ID}`]: { ok: false, reason: "unavailable" },
     });
-    render(
-      await ResultsPage({
-        params: Promise.resolve({
-          tripId: "6f1a2b3c-4d5e-4f60-8a71-92b3c4d5e6f7",
-        }),
-      }),
+
+    const { container } = render(
+      await ResultsPage({ params: Promise.resolve({ tripId: TRIP_ID }) }),
     );
 
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
-      "Registered Terminal → Somewhere",
-    );
-    expect(screen.getByText("No routes searched yet")).toBeTruthy();
+    expect(readApiMock).toHaveBeenCalledWith(`/api/v1/trips/${TRIP_ID}`);
+    expect(readApiMock).toHaveBeenCalledWith("/api/v1/terminals");
+    for (const id of [MDL_ID, DOVER_ID, BWI_ID, ANDREWS_ID]) {
+      expect(readApiMock).toHaveBeenCalledWith(`/api/v1/terminals/${id}`);
+    }
+
+    // Origin first, regardless of the network payload's own order.
+    const [mdlPos, doverPos, bwiPos, andrewsPos] = positions(container, [
+      mdl.name,
+      dover.name,
+      bwi.name,
+      andrews.name,
+    ]);
+    expect(mdlPos).toBeGreaterThanOrEqual(0);
+    expect(mdlPos!).toBeLessThan(doverPos!);
+    expect(mdlPos!).toBeLessThan(bwiPos!);
+    expect(mdlPos!).toBeLessThan(andrewsPos!);
+
+    expect(screen.getByText(/not a ranking/)).toBeTruthy();
+    expect(
+      screen.getByText("PaxPivot does not read departure schedules yet."),
+    ).toBeTruthy();
+    expect(screen.getByText(/not guaranteed/)).toBeTruthy();
+
+    const mdlCard = screen
+      .getByRole("heading", { name: mdl.name })
+      .closest("article") as HTMLElement;
+    expect(pillLabel(mdlCard)).toBe("Fresh");
+    expect(
+      within(mdlCard)
+        .getByRole("link", {
+          name: "72-hour schedule — open yourself",
+        })
+        .getAttribute("href"),
+    ).toBe(MDL_SCHEDULE_URL);
+
+    const doverCard = screen
+      .getByRole("heading", { name: dover.name })
+      .closest("article") as HTMLElement;
+    expect(pillLabel(doverCard)).toBe("Stale");
+
+    const bwiCard = screen
+      .getByRole("heading", { name: bwi.name })
+      .closest("article") as HTMLElement;
+    expect(within(bwiCard).getByText("Not checked yet")).toBeTruthy();
+
+    // Andrews' own detail read failed: the terminal still appears, with its network-reported
+    // state intact, but the schedule link is honestly unavailable rather than absent or guessed.
+    const andrewsCard = screen
+      .getByRole("heading", { name: andrews.name })
+      .closest("article") as HTMLElement;
+    expect(pillLabel(andrewsCard)).toBe("Unreadable");
+    expect(
+      within(andrewsCard).queryByRole("link", { name: /72-hour schedule/ }),
+    ).toBeNull();
+    expect(
+      within(andrewsCard).getByText(
+        /could not load this terminal's schedule link/i,
+      ),
+    ).toBeTruthy();
+
+    // The three not-yet-computed facts appear for every terminal, never as a zero or a guess.
+    expect(screen.getAllByText("Destinations served")).toHaveLength(4);
+    expect(screen.getAllByText("Drive time")).toHaveLength(4);
+
+    expect(screen.queryByText("No routes searched yet")).toBeNull();
     expect(screen.queryByText(/Example /)).toBeNull();
     expect(screen.queryByText("Best Space-A")).toBeNull();
     expect(screen.queryByText("Safest overall")).toBeNull();
+  });
+
+  test("never renders forbidden wording: flights, departures, seats, probability or a chance of anything", async () => {
+    mockRoutes({
+      [`/api/v1/trips/${TRIP_ID}`]: { ok: true, value: trip(MDL_ID, mdl.name) },
+      "/api/v1/terminals": {
+        ok: true,
+        value: {
+          generated_at: "2026-09-14T12:00:00Z",
+          terminals: [mdl, dover, bwi, andrews],
+        } satisfies TerminalNetworkRead,
+      },
+      [`/api/v1/terminals/${MDL_ID}`]: {
+        ok: true,
+        value: terminalDetail(mdl, MDL_SCHEDULE_URL),
+      },
+      [`/api/v1/terminals/${DOVER_ID}`]: {
+        ok: true,
+        value: terminalDetail(
+          dover,
+          "https://amc.example.mil/dover/72hr-folder/",
+        ),
+      },
+      [`/api/v1/terminals/${BWI_ID}`]: {
+        ok: true,
+        value: terminalDetail(bwi, "https://amc.example.mil/bwi/72hr-folder/"),
+      },
+      [`/api/v1/terminals/${ANDREWS_ID}`]: { ok: false, reason: "unavailable" },
+    });
+
+    const { container } = render(
+      await ResultsPage({ params: Promise.resolve({ tripId: TRIP_ID }) }),
+    );
+
+    let text = container.textContent ?? "";
+    // Two known, reviewed, legitimate occurrences: this page's own honest disclaimer, and the
+    // shared SourceStateBadge accessibility text for the "fresh" state (unchanged foundation
+    // wording, TASK-006). Strip them before checking for a real violation.
+    const KNOWN_SAFE = [
+      "PaxPivot does not read departure schedules yet.",
+      "not a reservation or a seat",
+    ];
+    for (const safe of KNOWN_SAFE) {
+      expect(text).toContain(safe);
+      text = text.replace(safe, "");
+    }
+    for (const banned of [/\bflights?\b/i, /\bdepartures?\b/i, /\bseats?\b/i]) {
+      expect(text).not.toMatch(banned);
+    }
+    for (const phrase of ["no flights", "probability", "chance of"]) {
+      expect(text.toLowerCase()).not.toContain(phrase);
+    }
+  });
+
+  test("has no axe violations on the terminals-to-check list", async () => {
+    mockRoutes({
+      [`/api/v1/trips/${TRIP_ID}`]: { ok: true, value: trip(MDL_ID, mdl.name) },
+      "/api/v1/terminals": {
+        ok: true,
+        value: {
+          generated_at: "2026-09-14T12:00:00Z",
+          terminals: [mdl, dover, bwi, andrews],
+        } satisfies TerminalNetworkRead,
+      },
+      [`/api/v1/terminals/${MDL_ID}`]: {
+        ok: true,
+        value: terminalDetail(mdl, MDL_SCHEDULE_URL),
+      },
+      [`/api/v1/terminals/${DOVER_ID}`]: {
+        ok: true,
+        value: terminalDetail(
+          dover,
+          "https://amc.example.mil/dover/72hr-folder/",
+        ),
+      },
+      [`/api/v1/terminals/${BWI_ID}`]: {
+        ok: true,
+        value: terminalDetail(bwi, "https://amc.example.mil/bwi/72hr-folder/"),
+      },
+      [`/api/v1/terminals/${ANDREWS_ID}`]: { ok: false, reason: "unavailable" },
+    });
+
+    const { container } = render(
+      await ResultsPage({ params: Promise.resolve({ tripId: TRIP_ID }) }),
+    );
+    await expectNoAxeViolations(container, ["region"]);
+  });
+
+  test("a failure loading the terminal network is a failure on our side, not an empty list", async () => {
+    mockRoutes({
+      [`/api/v1/trips/${TRIP_ID}`]: { ok: true, value: trip(MDL_ID, mdl.name) },
+      "/api/v1/terminals": { ok: false, reason: "unavailable" },
+    });
+
+    render(await ResultsPage({ params: Promise.resolve({ tripId: TRIP_ID }) }));
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByText(/failure on our side/)).toBeTruthy();
   });
 
   test("a malformed trip id is not found, never a failure on our side", async () => {

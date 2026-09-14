@@ -27,8 +27,11 @@ What works end to end today:
   observations ([TASK-042](docs/tasks/TASK-042-source-reliability-report.md)).
 - **Trip requests.** `POST/GET /api/v1/trips` and `GET /api/v1/trips/{id}` persist what the
   traveler asked for (origin terminal, destination text, window, party size) behind the
-  principal gate. The Plan form posts to `/trips/new` and lands on the trip page, which states
-  plainly that no route has been searched.
+  principal gate. The Plan form posts to `/trips/new` and lands on the trip page, which lists
+  every registered pilot terminal worth checking — origin first, explicitly not a ranking — each
+  with its own source state, read age, official-page link and the registered restricted 72-hour
+  schedule link the traveler must open themselves, and states plainly that PaxPivot does not read
+  departure schedules yet.
 - **Pilot access.** A shared passphrase sets a signed, `HttpOnly`, `Secure` session cookie; the
   web server calls the API with a server-only bearer token that never reaches a browser. A
   production deployment without both secrets fails closed ([ADR-005](docs/decisions/ADR-005-pilot-access-boundary.md)).
