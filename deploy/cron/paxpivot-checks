@@ -1,0 +1,9 @@
+# Source-check pass every 6 hours (TASK-024/025), tracked in the repo so it survives a
+# reinstall. Installed with:
+#   install -m 0644 deploy/cron/paxpivot-* /etc/cron.d/
+#   chmod +x /opt/paxpivot/deploy/run-checks.sh /opt/paxpivot/deploy/backup.sh /opt/paxpivot/deploy/prune-images.sh
+# deploy/run-checks.sh appends check-sources output to backups/checks.log itself; the redirect
+# below is a safety net that also captures anything the script prints before that (e.g. a `cd`
+# failure) so a broken checkout doesn't fail silently.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+0 */6 * * * root cd /opt/paxpivot && ./deploy/run-checks.sh >>/opt/paxpivot/backups/checks.log 2>&1

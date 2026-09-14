@@ -32,6 +32,7 @@ scheduler runs inside the stack; source checks and backups run from host cron.
 | `PAXPIVOT_SESSION_SECRET` | random, ≥ 32 chars |
 | `PAXPIVOT_PILOT_PASSPHRASE` | ≥ 20 chars; the single pilot user's sign-in |
 | `FIRECRAWL_API_KEY` | the product owner's Firecrawl key (server-side only). Without it `check-sources` retrieves nothing and exits 2 |
+| `PAXPIVOT_HEARTBEAT_URL` | optional (TASK-045): a dead-man monitor ping URL for `deploy/run-checks.sh`. Leave unset to disable; see "Heartbeat" below |
 
 Generate with `openssl rand -hex 32`. Rotating `PAXPIVOT_SESSION_SECRET` signs everyone out.
 
@@ -48,16 +49,26 @@ Generate with `openssl rand -hex 32`. Rotating `PAXPIVOT_SESSION_SECRET` signs e
 
 ## First start / upgrade (on the VPS)
 
+Cron is installed from the repo (TASK-045), not hand-typed. Do this once on a new host, and again
+whenever `deploy/cron/paxpivot-*` or the scripts they call change — both are safe to re-run:
+
+```bash
+cd /opt/paxpivot
+chmod +x deploy/run-checks.sh deploy/backup.sh deploy/prune-images.sh
+install -m 0644 deploy/cron/paxpivot-checks deploy/cron/paxpivot-backup /etc/cron.d/
+```
+
 ```bash
 cd /opt/paxpivot && git pull --ff-only
+./deploy/backup.sh   # pg_dump BEFORE the upgrade, so a bad deploy has a same-day restore point
 TAG=$(git rev-parse --short HEAD)
+PREVIOUS_TAG=$(grep '^PAXPIVOT_TAG=' .env.production | cut -d= -f2)   # keep for rollback/pruning
 docker build -f apps/api/Dockerfile -t paxpivot-api:$TAG .
 docker build -f apps/web/Dockerfile -t paxpivot-web:$TAG .
-# set PAXPIVOT_TAG=$TAG in .env.production (note the previous value for rollback), then:
+# set PAXPIVOT_TAG=$TAG in .env.production, then:
 docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml up -d --wait --no-build
 # (a host without a reverse proxy: add `--profile caddy` and drop the traefik override)
 docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml exec api python -m paxpivot.tooling seed
-curl -fsS https://$PAXPIVOT_DOMAIN/login >/dev/null   # 200: proxy + web + TLS up
 docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml exec api python -c \
   "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/ready').read())"
 ```
@@ -69,23 +80,77 @@ sign-in secrets are set (ADR-005).
 `web` has a Docker healthcheck (TASK-043): it probes `GET /login` on `127.0.0.1:$PORT` inside the
 container every 10s, a route that renders without calling the API, so `--wait` blocks until
 Next.js is actually serving, not merely until the container is running. Traefik's Docker provider
-only adds a container to a router's pool once Docker reports it `healthy`, so once `--wait` returns
-0 the public `/login` request no longer needs a retry window. Avoid switching tags within a few
-minutes of a scheduled check (00:00, 06:00, 12:00, 18:00 UTC), so a restart never costs a check
-run.
+only adds a container to a router's pool once Docker reports it `healthy`, but on this shared
+Dokploy/Traefik host that provider reload itself lags behind Docker's health state: a 2026-09-14
+deploy observed the public `/login` still answering 404 for about 2 seconds after `--wait` returned
+0 (TASK-045; corrects TASK-043's original claim that the request "no longer needs a retry window"
+once `--wait` returns — that was wrong on this host). Poll instead of judging the first response:
+
+```bash
+code=""
+for i in $(seq 1 30); do
+  code=$(curl -o /dev/null -s -w '%{http_code}' https://$PAXPIVOT_DOMAIN/login)
+  [ "$code" = "200" ] && break
+  sleep 2
+done
+echo "final status after up to 60s: $code"
+```
+
+Only treat the deploy as failed, and only roll back (see below), once that ~60-second poll never
+reaches 200 — a single 404 or 502 immediately after `--wait` returns is the expected Traefik-reload
+race on this host, not a bad deploy.
+
+Once the poll above reaches 200, drop old images, keeping only the tag just deployed and the
+previous one (about a dozen otherwise accumulate on this host), with the tracked script:
+
+```bash
+./deploy/prune-images.sh "$PREVIOUS_TAG"
+```
+
+`deploy/prune-images.sh` is self-contained rather than trusting shell variables left over from
+earlier in this runbook: it re-reads the currently deployed tag from `.env.production` itself and
+refuses to prune anything if that, or the `<previous-tag>` argument you give it, is empty — so
+running it alone in a fresh shell (`$TAG`/`$PREVIOUS_TAG` unset) aborts instead of matching every
+tag and deleting the running and rollback images. It also skips any tag still used by a running
+container.
+
+Avoid switching tags within a few minutes of a scheduled check (00:00, 06:00, 12:00, 18:00 UTC),
+so a restart never costs a check run.
 
 ## Source checks (TASK-025)
 
-`/etc/cron.d/paxpivot-checks` runs at 00:00, 06:00, 12:00 and 18:00 UTC:
-`docker compose … exec -T api python -m paxpivot.tooling check-sources >> /opt/paxpivot/backups/checks.log 2>&1`
-— one metadata-only retrieval per approved source through Firecrawl (4 credits per run, about 16
-a day), appended as immutable observations; `/advanced` and `/terminals` show the resulting
-states. Nothing is parsed. A healthy run ends with
+`/etc/cron.d/paxpivot-checks` (tracked as `deploy/cron/paxpivot-checks`; installed per "First
+start / upgrade" above) runs `deploy/run-checks.sh` at 00:00, 06:00, 12:00 and 18:00 UTC. The
+script runs the same command as before —
+`docker compose … exec -T api python -m paxpivot.tooling check-sources`, appended to
+`/opt/paxpivot/backups/checks.log` — one metadata-only retrieval per approved source through
+Firecrawl (4 credits per run, about 16 a day), appended as immutable observations; `/advanced` and
+`/terminals` show the resulting states. Nothing is parsed. A healthy run ends with
 `Source checks: recorded=4 skipped=5 rejected=0 provider_failures=0`.
 
 Freshness is derived when read (TASK-041): a source whose last successful read is older than
 6.5 hours shows as **Stale**. A stopped cron, host or provider therefore becomes visible in the
-app, but nothing notifies anyone yet (no heartbeat; decision D-4 in the plan).
+app; `deploy/run-checks.sh` also pings an optional heartbeat URL after every successful run
+(TASK-045) so a dead-man monitor can alert a person on the *absence* of that ping — see
+"Heartbeat" below.
+
+## Heartbeat (dead-man monitor)
+
+`deploy/run-checks.sh` (TASK-045) pings `PAXPIVOT_HEARTBEAT_URL` after every successful
+`check-sources` run. This is a dead-man monitor: it alerts on a **missing** ping, not a received
+one, so a stopped cron, a crashed container, a hung `docker compose exec`, or a real
+`check-sources` failure all surface the same way — silence — instead of a false "still alive" ping
+papering over a real problem.
+
+Setup (owner-provided secret, one time):
+
+1. Create a free monitor at a provider such as healthchecks.io or Cronitor, with an expected
+   period of 6 hours (matching `deploy/cron/paxpivot-checks`) and a reasonable grace window.
+2. Put the ping URL it gives you in `/opt/paxpivot/.env.production` as `PAXPIVOT_HEARTBEAT_URL=`.
+   `deploy/run-checks.sh` reads only this one key, by `grep`, and never sources the rest of the
+   file.
+3. Leave it empty (the `.env.example` default) to disable the ping; nothing else about the check
+   run changes.
 
 ## Source reliability report (TASK-042)
 
@@ -108,18 +173,46 @@ and keep the output with the plan.
 
 ## Backup and restore
 
-The daily dump is automatic (`/etc/cron.d/paxpivot-backup`; errors go to
-`/opt/paxpivot/backups/backup.log`). A manual dump and a restore test into a scratch database:
+The daily dump is automatic (`/etc/cron.d/paxpivot-backup`, tracked as
+`deploy/cron/paxpivot-backup`; installed per "First start / upgrade" above). It runs
+`deploy/backup.sh` at 03:15 UTC, which writes `/opt/paxpivot/backups/paxpivot-YYYY-MM-DD.dump` via
+`pg_dump -Fc`, logs a success or failure line to `/opt/paxpivot/backups/backup.log`, and prunes
+dumps older than 30 days. Dumps contain trip data, so `deploy/backup.sh` sets `umask 077` before
+creating the dump and the log — the directory itself and any pre-existing dumps need their own
+one-time fix:
 
 ```bash
+chmod 700 /opt/paxpivot/backups
+chmod 600 /opt/paxpivot/backups/paxpivot-*.dump   # one-time, for dumps written before this change
+```
+
+A manual dump and a restore test into a scratch database:
+
+```bash
+./deploy/backup.sh   # writes today's dump and a result line in backup.log, same as the cron job
 docker compose --env-file .env.production -f compose.prod.yml exec -T postgres \
-  pg_dump -U paxpivot -Fc paxpivot > paxpivot-$(date -u +%F).dump
+  sh -c 'createdb -U paxpivot restore_test && pg_restore -U paxpivot -d restore_test' \
+  < /opt/paxpivot/backups/paxpivot-YYYY-MM-DD.dump
 docker compose --env-file .env.production -f compose.prod.yml exec -T postgres \
-  sh -c 'createdb -U paxpivot restore_test && pg_restore -U paxpivot -d restore_test' < paxpivot-YYYY-MM-DD.dump
+  dropdb -U paxpivot restore_test
 ```
 
 Observations and terminal facts are append-only; a lost volume is lost history, and until an
-off-host copy exists, a lost host is lost backups too.
+off-host copy exists, a lost host is lost backups too (D-5, still open).
+
+**Monthly restore drill:** once a month, run the restore half of the commands above against the
+most recent automatic dump in `/opt/paxpivot/backups/` (not a fresh manual one) and spot-check a
+row count in `restore_test` before dropping it, e.g.:
+
+```bash
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
+  exec -T postgres psql -U paxpivot -d restore_test -Atc "SELECT count(*) FROM sources;"
+```
+
+should be close to the live count. A dump that restores cleanly with data present is the only real
+proof backups work;
+this is the same check TASK-045's local verification ran (seed data → dump → restore → matching
+counts) applied to a real host backup.
 
 ## Rollback
 
