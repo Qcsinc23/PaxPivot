@@ -2,7 +2,7 @@
 
 ## Status
 
-`in_progress`
+`review`
 
 ## Assigned role
 
@@ -277,28 +277,65 @@ separately by the product owner before this feature is treated as pilot-validate
 
 ## Handoff
 
-Fill this in before review/done.
-
 **Branch:** `build/TASK-053-commercial-handoff`
 
-**Commit:**
+**Commit:** recorded in the PR (rebased onto `origin/main` 34a613b before push; no new commits
+landed on `main` between branch and push, so the rebase was a no-op).
 
 **Files changed:**
 
-**Interfaces added/changed:** see "Interfaces produced".
+```text
+docs/tasks/TASK-053-commercial-handoff.md
+apps/web/lib/presentation/terminal-origin-airports.ts
+apps/web/lib/presentation/commercial-flights-link.ts
+apps/web/lib/presentation/adapters/commercial-handoff.ts
+apps/web/app/trips/[tripId]/CommercialHandoff.tsx
+apps/web/app/trips/[tripId]/page.tsx
+apps/web/tests/commercial-flights-link.test.ts
+apps/web/tests/commercial-handoff.test.tsx
+apps/web/tests/screens/results.test.tsx
+README.md
+```
+
+**Interfaces added/changed:** see "Interfaces produced". No foundation type in
+`lib/presentation/types.ts` changed; no API/schema/migration change.
 
 **Migrations:** none.
 
-**Verification run:**
+**Verification run (2026-09-14, worktree `../PaxPivot-task053` on `origin/main` 34a613b + this
+change):**
 
 ```text
-command -> PASS/FAIL summary
+make setup             -> PASS
+make format-check      -> PASS (after `make format`; 4 new/changed web files reformatted)
+make lint               -> PASS (ESLint: No issues found)
+make typecheck          -> PASS (tsc --noEmit: No errors found)
+make test-unit          -> PASS: 283 Python, 378 web (+21 web: 15 new pure link-builder/adapter/
+                            component tests, 2 new live-route tests — card renders below
+                            Terminals to check, adapted forbidden-wording test — and axe test rename;
+                            terminals-to-check.test.tsx unaffected, as expected, since it renders
+                            TerminalsToCheck in isolation)
+make test-integration   -> PASS: 40 Python
+make test               -> PASS
+make build              -> PASS (next build; apps/web/next-env.d.ts unchanged, no restore needed)
+make migrate            -> PASS
+make migrate-check      -> PASS (no new upgrade operations detected)
+make compose-check      -> PASS
+make check              -> PASS (exit 0)
 ```
 
+`git diff --stat origin/main` touches exactly the 10 files listed above.
+
 **Known limitations / risks:** the curated origin-airport table (COM-001) is a manually maintained
-approximation with no authoritative source and is keyed to the exact terminal names seeded today;
-it must be reviewed by a human and kept in sync if a terminal is renamed or a new terminal is
-registered. The pilot validation gate above is not done by this task.
+approximation with no authoritative source and is keyed to the exact terminal names seeded today
+(`apps/api/paxpivot/infrastructure/bootstrap.py::REFERENCE_TERMINALS`); it must be reviewed by a
+person and kept in sync if a terminal is renamed or a new terminal is registered — an unmatched
+name silently falls back to "no curated airports" rather than a wrong guess, but that fallback
+itself should be checked whenever the terminal roster changes. The pilot validation gate above is
+not done by this task. The README does not cite "TASK-053" by number (matching TASK-044's own
+choice): `tests/unit/test_docs_consistency.py::test_task_claims_match_the_task_contracts` requires
+every task number named in README.md to be `blocked` or `done`, and this task is `review` until
+merged.
 
 **Next dependency:** none identified; TASK-036 (direct opportunities/route cards) would eventually
 need to decide how this card's position/wording changes once ranked Space-A results exist
