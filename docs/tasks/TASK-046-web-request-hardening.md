@@ -209,10 +209,12 @@ are unaffected in their happy path — see the same-origin/size test coverage ab
 
 Fill in before merge.
 
-**Branch:** `foundation/TASK-046-web-request-hardening`, rebased onto `main` @ `81e98f1`
-(TASK-049 merged after this branch was cut; unrelated — audit docs only).
+**Branch:** `foundation/TASK-046-web-request-hardening`, rebased onto `main` @ `abf7010`
+(TASK-053 merged after this branch was cut; unrelated — commercial handoff feature under
+`apps/web/app/trips/[tripId]`, not touched by this task).
 
-**Commit:** `d1b69de`, `591abcc`, `dc6af24`, `31c6901`, `e312633` (PR: see title above).
+**Commit:** `089c973`, `37ae122`, `0256dd9`, `c348135`, `de46b50`, `d960bc4`, `97fa9d8`,
+`6597ab9` (PR: see title above).
 
 **Files changed:** the owned paths above.
 
@@ -222,11 +224,22 @@ existing logic.
 
 **Migrations:** none.
 
-**Verification run:** on `e312633`, `make check` (format-check, lint, typecheck, test-unit —
-283 Python + 377 Vitest, test-integration — 40, build, migrate, migrate-check, compose-check)
-exited 0. `pnpm exec vitest run` in `apps/web`: 27 files, 377 tests passed, including the new
-`request-guards.test.ts` (18), `rate-limit.test.ts` (11), and the extended `auth.test.ts` (9)
-and `trips-route.test.ts` (7).
+**Verification run:** on `6597ab9`, `make check` (format-check, lint, typecheck, test-unit —
+283 Python + 424 Vitest, test-integration — 40, build, migrate, migrate-check, compose-check)
+exited 0. `pnpm exec vitest run` in `apps/web`: 30 files, 424 tests passed (the Vitest count
+grew from 377 across two review rounds plus TASK-053's own tests arriving via rebase),
+including `request-guards.test.ts` (22, up from 18), `rate-limit.test.ts` (15, up from 11),
+`auth.test.ts` (11, up from 9) and `trips-route.test.ts` (7, unchanged).
+
+**Mutation-testing evidence (review round 2):** applied, locally and temporarily, the exact
+mutation the reviewer described — `session/route.ts`'s `validPassphrase` computed as
+`clientBlocked ? false : timingSafeEqual(...)` instead of always running the compare. Re-ran
+`apps/web/tests/auth.test.ts`: exactly one test failed —
+`"always runs the constant-time compare, even once the client is already blocked (regression,
+TASK-046 review 2)"` — at the call-count assertion (`expected 233 to be 234`), with all other
+10 tests in the file still passing. Reverted the mutation immediately after (confirmed via
+`git diff` showing no change to `session/route.ts`) and re-ran the full suite green before
+committing the real fix (the test itself, added in `6597ab9`).
 
 **Known limitations / risks:** the rate limiter is per-process memory (`ponytail:` comment in
 `lib/auth/rate-limit.ts`) — correct for the pilot's single `web` replica, reset on restart, and
