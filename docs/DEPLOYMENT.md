@@ -86,13 +86,16 @@ docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.
   exec -T api python -m paxpivot.tooling source-report 30
 ```
 
-Read-only. For every enabled, unrestricted source it prints checks read against checks expected,
-the longest gap, gaps over 6.5 h, content changes, an upper bound on change-detection p95, and a
-PASS / WATCH / STOP / UNKNOWN verdict against the pilot's source-health gate (pass at ≥ 95 %
-completion and detection ≤ 6.5 h; stop below 90 % or on a gap over 18.5 h). A source first
-observed inside the window is measured from its first check and can only WATCH until the whole
-window is covered. Exit 1 when a source must stop, 2 when there are no observations. Run it
-weekly until the 30-day gate and keep the output with the plan.
+Read-only. It measures only the sources `check-sources` may currently retrieve (the same gate);
+disabled, paused, restricted and kill-switched sources print as `SKIPPED … not measured (<reason>)`
+because their silence is a decision, not an outage. For each measured source it prints checks read
+against checks expected, the longest gap, gaps over 6.5 h, content changes, an upper bound on
+change-detection p95, and a PASS / WATCH / STOP / UNKNOWN verdict against the pilot's source-health
+gate (pass at ≥ 95 % completion and detection ≤ 6.5 h; stop below 90 % or on a gap over 18.5 h).
+A source first observed inside the window is measured from its first check, and a source whose
+reads carry no content hash has unmeasurable detection; either can only WATCH. Exit 1 when a
+measured source must stop, 2 when there are no observations. Run it weekly until the 30-day gate
+and keep the output with the plan.
 
 ## Backup and restore
 
