@@ -311,19 +311,25 @@ def capture_corpus_command(source_id: str) -> int:
 def source_report(days: int) -> int:
     """The pilot's source-health gate over the last ``days``, per source (TASK-042). Read-only.
 
-    Measures every enabled source that is not restricted. Exit codes a person or scheduler can
-    act on: 1 when any source must stop, 2 when no source has a single observation in the
-    window, 0 otherwise (pass, watch or unknown).
+    Measures only the sources the pipeline may currently retrieve (the gate check-sources
+    applies); every other source is listed as not measured, with the reason, because its silence
+    is a decision rather than an outage. Exit codes a person or scheduler can act on: 1 when any
+    measured source must stop, 2 when no measured source has an observation in the window,
+    0 otherwise (pass, watch or unknown).
     """
     from datetime import UTC, datetime, timedelta
 
-    from paxpivot.application.source_reliability import Verdict, reliability
-    from paxpivot.domain.source import PolicyReviewState
+    from paxpivot.application.source_reliability import Verdict, reliability, report_scope
     from paxpivot.infrastructure import database as db
     from paxpivot.infrastructure.repositories import (
+        SqlKillSwitchRepository,
         SqlSourceObservationRepository,
         SqlSourceRepository,
     )
+
+    # ponytail: whole history per source, newest first, capped; 6-hourly checks write ~120 rows
+    # a month. A time-bounded repository read if a source ever checks far more often.
+    history_limit = 10_000
 
     def hours(value: timedelta | None) -> str:
         return "unknown" if value is None else f"{value.total_seconds() / 3600:.1f} h"
@@ -334,21 +340,16 @@ def source_report(days: int) -> int:
     engine = create_engine(os.environ["DATABASE_URL"])
     with db.read_snapshot(engine) as connection:
         observations = SqlSourceObservationRepository(connection)
-        measured = [
-            (
-                source,
-                reliability(
-                    # ponytail: whole history, newest first, capped; 6-hourly checks write ~120
-                    # rows a month. A time-bounded repository read if a source ever checks hourly.
-                    observations.list_for_source(source.identity.source_id, limit=10_000),
-                    source.cadence_minutes,
-                    start,
-                    now,
-                ),
+        in_scope, not_measured = report_scope(
+            SqlSourceRepository(connection).list_sources(),
+            SqlKillSwitchRepository(connection).list_engaged(),
+        )
+        histories = {
+            source.identity.source_id: observations.list_for_source(
+                source.identity.source_id, limit=history_limit
             )
-            for source in SqlSourceRepository(connection).list_sources()
-            if source.enabled and source.policy.review_state != PolicyReviewState.RESTRICTED
-        ]
+            for source in in_scope
+        }
     engine.dispose()
 
     print(
@@ -356,19 +357,30 @@ def source_report(days: int) -> int:
         "Expected checks assume the scheduler runs at each source's registered cadence; "
         "detection is an upper bound (the gap before the read that saw a change)."
     )
-    for source, result in measured:
+    results = []
+    for source in in_scope:
+        history = histories[source.identity.source_id]
+        result = reliability(history, source.cadence_minutes, start, now)
+        results.append(result)
         completion = "unknown" if result.completion is None else f"{result.completion:.1f}%"
-        since = f"; measured from its first check {result.start:%Y-%m-%d}" if result.clipped else ""
+        detection = (
+            hours(result.detection_p95) if result.hashed else "unmeasurable (no content hashes)"
+        )
+        notes = [f"measured from its first check {result.start:%Y-%m-%d}"] if result.clipped else []
+        if len(history) == history_limit:
+            notes.append(f"history truncated at {history_limit} observations")
         print(
             f"{result.verdict.value.upper():7} {source.name}: completion {completion} "
             f"({result.successful} read of {result.expected} expected, "
             f"{result.recorded} recorded); longest gap {hours(result.longest_gap)}; "
             f"gaps over 6.5 h {result.gaps_over_window}; changes {result.changes}; "
-            f"detection p95 {hours(result.detection_p95)}{since}"
+            f"detection p95 {detection}" + "".join(f"; {note}" for note in notes)
         )
-    if any(result.verdict == Verdict.STOP for _, result in measured):
+    for source, reason in not_measured:
+        print(f"SKIPPED {source.name}: not measured ({reason})")
+    if any(result.verdict == Verdict.STOP for result in results):
         return 1
-    return 0 if any(result.recorded for _, result in measured) else 2
+    return 0 if any(result.recorded for result in results) else 2
 
 
 def seed() -> None:

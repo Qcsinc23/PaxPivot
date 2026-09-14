@@ -3,9 +3,19 @@
 from collections.abc import Collection
 from datetime import datetime, timedelta
 
-from paxpivot.application.source_reliability import Verdict, reliability
+from paxpivot.application.source_reliability import Verdict, reliability, report_scope
 from paxpivot.domain.source import RetrievalState, SourceObservation, SourceState
-from support_sources import NOW, SOURCE_A, observation
+from support_sources import (
+    NOW,
+    PAUSED,
+    SOURCE_A,
+    SOURCE_B,
+    SOURCE_D,
+    SOURCES,
+    FakeSwitches,
+    observation,
+    source,
+)
 
 CADENCE = 360
 SIX_HOURS = timedelta(hours=6)
@@ -49,7 +59,7 @@ def test_a_complete_history_passes_the_gate() -> None:
     assert result.expected == 120 and result.recorded == 121 and result.successful == 121
     assert result.completion == 100.0
     assert result.longest_gap == SIX_HOURS and result.gaps_over_window == 0
-    assert result.changes == 30 and result.detection_p95 == SIX_HOURS
+    assert result.hashed and result.changes == 30 and result.detection_p95 == SIX_HOURS
 
 
 def test_one_missed_run_is_counted_but_does_not_fail_the_gate() -> None:
@@ -81,6 +91,20 @@ def test_slow_change_detection_keeps_a_source_from_passing() -> None:
     assert result.verdict == Verdict.WATCH
 
 
+def test_hashes_that_never_change_still_pass_the_detection_half() -> None:
+    result = reliability(checks(START - SIX_HOURS, change_every=1_000), CADENCE, START, NOW)
+    assert result.hashed and result.changes == 0 and result.detection_p95 is None
+    assert result.verdict == Verdict.PASS
+
+
+def test_without_content_hashes_change_detection_is_unmeasurable_and_cannot_pass() -> None:
+    unhashed = [o.model_copy(update={"content_hash": None}) for o in checks(START - SIX_HOURS)]
+    result = reliability(unhashed, CADENCE, START, NOW)
+    assert result.completion == 100.0 and not result.hashed
+    assert result.changes == 0 and result.detection_p95 is None
+    assert result.verdict == Verdict.WATCH
+
+
 def test_a_newly_registered_source_is_measured_from_its_first_check_and_cannot_pass() -> None:
     first = NOW - timedelta(days=3)
     result = reliability(checks(first), CADENCE, START, NOW)
@@ -101,3 +125,16 @@ def test_a_source_observed_before_the_window_but_silent_in_it_stops() -> None:
     assert result.recorded == 0 and result.successful == 0 and result.completion == 0.0
     assert result.longest_gap == NOW - START
     assert result.verdict == Verdict.STOP
+
+
+def test_only_sources_the_pipeline_may_retrieve_are_measured() -> None:
+    """A paused, disabled, restricted or kill-switched source is not checked, so its silence is a
+    decision the report must never print as an outage (same gate as check-sources)."""
+    paused = source("terminal-paused", terminal="a", policy=PAUSED)
+    measured, not_measured = report_scope([*SOURCES, paused], FakeSwitches().list_engaged())
+    reasons = {s.identity.source_id: reason for s, reason in not_measured}
+    assert SOURCE_A in measured
+    assert reasons[paused.identity.source_id] == "source.paused"
+    assert reasons[SOURCE_B.identity.source_id] == "source.kill_switch_engaged"
+    assert reasons[SOURCE_D.identity.source_id] == "source.disabled"
+    assert not set(reasons) & {s.identity.source_id for s in measured}
