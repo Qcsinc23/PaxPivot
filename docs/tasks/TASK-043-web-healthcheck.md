@@ -84,10 +84,11 @@ healthcheck:
       "CMD-SHELL",
       "node -e \"const p=process.env.PORT||3000;fetch('http://127.0.0.1:'+p+'/login').then((r)=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))\"",
     ]
-  interval: 2s
+  interval: 30s
   timeout: 3s
-  retries: 30
-  start_period: 10s
+  retries: 3
+  start_period: 60s
+  start_interval: 2s
 ```
 
 It probes `127.0.0.1:$PORT` inside the container — the same host:port the Next.js server actually
@@ -109,15 +110,34 @@ exactly the signal operators already treat as "web is up." Consequence: the heal
 `healthy` even while `api`/`postgres`/`redis` are down or unreachable, which is required — a web
 outage must not cascade into reporting `web` unhealthy for a dependency it doesn't own here.
 
-**Timing.** `interval`/`timeout` (2s/3s) match `postgres`'s existing healthcheck in
-`compose.prod.yml`; `retries: 30` (vs. postgres's 45) reflects that a pre-built Next.js standalone
-server binds its port in low single-digit seconds once the container process starts, not the tens
-of seconds Postgres can take on a cold volume. `start_period: 10s` is new (neither existing
-healthcheck in this file sets one) because, unlike `postgres`/`redis`, `web` needs a brief grace
-window for Node's process startup and first module evaluation before the first probe can succeed;
-a failure inside `start_period` does not count against `retries`, so it costs nothing when the
-container is already fast (a successful probe still flips it to `healthy` immediately) and only
-matters on a slow start.
+**Timing (revised after review 1).** The first version used `interval: 2s` steady-state, matching
+`postgres`. A fresh review measured that on a real container this costs roughly 10% CPU every 2s
+indefinitely, because each probe forks a fresh Node process — acceptable for a deploy-time check,
+not for a probe that runs forever on a small single-core-ish pilot VPS. The healthcheck now
+separates the two concerns with `start_interval` (Docker Engine >= 25 / Compose >= 2.20):
+
+- `start_interval: 2s` — the fast cadence used only while the container is `starting`, so a deploy
+  still gets quick feedback (Next.js binds its port in low single-digit seconds locally).
+- `interval: 30s` — the steady-state cadence once the container is `healthy` (or once
+  `start_period` elapses without a success), so the forked-Node probe costs negligible CPU at run
+  time instead of running every 2s forever.
+- `start_period: 60s` — generous grace before a failing probe counts toward `retries`, safely above
+  the ~1-3s Next.js actually takes to bind locally, without extending steady-state cost.
+- `retries: 3` at the 30s steady interval (not 30 retries at 2s): three consecutive steady-state
+  failures (~90s) is enough evidence the process is actually down, not just slow.
+- `timeout: 3s` unchanged.
+
+**Fallback on an older Docker daemon.** `start_interval` was added in Docker Engine 25 / Compose
+2.20; `docs/DEPLOYMENT.md`'s host requirement only says "Docker Engine + Compose v2" (no version
+pinned), and the pilot VPS's exact engine version is not recorded in this repository. An engine
+that predates the field ignores it rather than erroring (Compose does not reject an unknown
+healthcheck sub-field on an older engine), so the fallback behavior is: probes run at the normal
+`interval` (30s) throughout, including while `starting`. Worst case, `up --wait` takes up to about
+one `interval` (~30s) longer to observe the first successful probe than on an engine that honors
+`start_interval` — still comfortably inside the 60s `start_period`, so `--wait` still succeeds, just
+slower to report it. The Handoff's deploy steps record `docker version --format
+'{{.Server.Version}}'` so this gets confirmed (or the fallback path gets seen) at actual deploy
+time.
 
 **`depends_on` on `web`.** Only `proxy` (the bundled Caddy profile, off on the Traefik pilot host)
 declares `depends_on: web`, currently `condition: service_started`. Changed to
@@ -177,27 +197,41 @@ Manual (recorded in Handoff): docker build + docker run positive/negative health
 
 ## Verification commands
 
+`make compose-check` runs `docker compose config --quiet` with no `-f` flags, so it validates the
+default local-dev `compose.yml`, not `compose.prod.yml`; it is still required (repository-wide
+check) but is not evidence for the production file. The production config is validated directly
+with `-f compose.prod.yml` (and the Traefik override), against a scratch `.env.production` with
+placeholder values matching `docs/DEPLOYMENT.md`'s required keys (never committed).
+
 ```bash
-docker compose -f compose.prod.yml config
-docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml config --quiet
-make compose-check
+docker compose -f compose.prod.yml config                                            # fails without env; expected — see note below
+docker compose --env-file <scratch .env.production> -f compose.prod.yml config --quiet
+docker compose --env-file <scratch .env.production> -f compose.prod.yml -f deploy/compose.traefik.yml config --quiet
+make compose-check   # validates compose.yml (local dev), not compose.prod.yml
+docker version --format '{{.Server.Version}}'
+docker compose --version 2>/dev/null || docker compose version
+
 docker build -f apps/web/Dockerfile -t paxpivot-web:task043 .
-docker run -d --name paxpivot-web-task043 \
-  --health-cmd "node -e \"const p=process.env.PORT||3000;fetch('http://127.0.0.1:'+p+'/login').then((r)=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))\"" \
-  --health-interval=2s --health-timeout=3s --health-retries=30 --health-start-period=10s \
-  -e PAXPIVOT_API_URL=http://127.0.0.1:1 \
-  -e PAXPIVOT_API_TOKEN=x -e PAXPIVOT_SESSION_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \
-  -e PAXPIVOT_PILOT_PASSPHRASE=xxxxxxxxxxxxxxxxxxxx \
-  paxpivot-web:task043
-docker inspect --format '{{json .State.Health}}' paxpivot-web-task043   # expect starting -> healthy, api never running
-docker rm -f paxpivot-web-task043
-# Negative: same probe against a port nothing serves
-docker run --rm paxpivot-web:task043 node -e "fetch('http://127.0.0.1:9/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1)); " ; echo "exit=$?"
+
+# Positive (criterion b): the healthcheck exactly as Compose renders it, API not started.
+docker compose --env-file <scratch .env.production> -f compose.prod.yml -p task043 \
+  up -d --wait --no-build --no-deps web            # record wall time; expect exit 0
+docker inspect --format '{{json .State.Health}}' task043-web-1   # expect starting -> healthy quickly
+# sample again after ~70s to see the steady 30s cadence in .Log
+docker compose --env-file <scratch .env.production> -f compose.prod.yml -p task043 down --remove-orphans -v
+
+# Negative (criterion c): override the command so nothing listens, same healthcheck.
+# Scratch override (not committed): services.web.command: ["sleep", "3600"]
+docker compose --env-file <scratch .env.production> -f compose.prod.yml -f <scratch override.yml> \
+  -p task043 up -d --wait --no-build --no-deps web   # expect exit 1; record elapsed time
+docker inspect --format '{{json .State.Health}}' task043-web-1   # expect unhealthy
+docker compose --env-file <scratch .env.production> -f compose.prod.yml -p task043 down --remove-orphans -v
+
 make setup
 make check
 make migrate-test
-$(uv run --frozen 2>/dev/null; true)  # docs guard runs inside make test-unit / make check
 docker rmi paxpivot-web:task043
+rm -f <scratch .env.production> <scratch override.yml>
 ```
 
 ## UI behaviour (screen tasks only)
@@ -245,35 +279,68 @@ docs/tasks/TASK-043-web-healthcheck.md
 
 **Migrations:** none.
 
-**Verification run (2026-09-14, on the rebased branch):**
+**Verification run — round 1 (2026-09-14, on the rebased branch, `interval: 2s` steady-state):**
+superseded by round 2 below after fresh review 1 found the steady-state CPU cost; kept for
+history. `docker build` + `docker run --health-*` positive/negative transitions passed; `make
+check`/`make migrate-test` passed (283 Python + 341 web unit, 40 integration).
+
+**Verification run — round 2 (2026-09-14, after fresh review 1: `start_interval`/steady-`interval`
+retiming, `/ready` deploy-step fix, `make compose-check` scope clarified):**
 
 ```text
-docker compose --env-file .env.production -f compose.prod.yml config --quiet
-  -> PASS (valid; required-var interpolation for PAXPIVOT_DOMAIN/PAXPIVOT_API_TOKEN/etc. needs an
-     env file exactly as docs/DEPLOYMENT.md's own deploy commands use — a bare
-     `docker compose -f compose.prod.yml config` with no env file fails on the pre-existing
-     `${VAR:?...}` guards, unrelated to this change)
-docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml \
-  config --quiet -> PASS; resolved `web.healthcheck` block confirmed correct (test/interval/
-  timeout/retries/start_period all present as authored)
-make compose-check -> PASS (docker compose config --quiet on the default compose.yml, exit 0)
+docker version --format '{{.Server.Version}}'          -> 29.3.1 (local Docker Desktop)
+docker compose version                                 -> v5.1.1
+  (both comfortably >= the start_interval minimum: Engine 25 / Compose 2.20)
 
-Positive (criterion 2): docker build -f apps/web/Dockerfile -t paxpivot-web:task043 .  -> built
-  clean. docker run -d --health-cmd '<the compose probe>' --health-interval=2s --health-timeout=3s
-  --health-retries=30 --health-start-period=10s -e PAXPIVOT_API_URL=http://127.0.0.1:1 (nothing
-  listening) ... paxpivot-web:task043
-  -> docker inspect .State.Health: starting immediately after start, healthy on the very first
-     probe (~1s later), 4 consecutive healthy checks observed, 0 errors/warnings in logs, API
-     never reachable throughout. Proves no API dependency.
+docker compose --env-file <scratch .env.production> -f compose.prod.yml config --quiet
+  -> PASS (a bare `docker compose -f compose.prod.yml config` with no env file still fails on the
+     pre-existing `${VAR:?...}` guards — unrelated to this change, and expected; DEPLOYMENT.md's
+     own deploy commands always pass --env-file)
+docker compose --env-file <scratch .env.production> -f compose.prod.yml -f deploy/compose.traefik.yml \
+  config --quiet -> PASS; resolved `web.healthcheck` confirmed with start_interval: 2s / interval:
+  30s / timeout: 3s / retries: 3 / start_period: 1m0s, exactly as authored
+make compose-check -> PASS, but note: this target runs `docker compose config --quiet` with no
+  `-f` flags, so it validates the repository's default local-dev `compose.yml`, not
+  `compose.prod.yml`. It is still a required repository-wide check and passes, but the two
+  `docker compose -f compose.prod.yml ...` commands above are the actual production-config
+  evidence (Makefile intentionally not changed; out of scope).
 
-Negative (criterion 3): same image, command overridden to `sleep 3600` (nothing serves the port),
-  healthcheck with retries=3/start_period=1s for a fast cycle -> starting for ~4s, then unhealthy
-  with FailingStreak 3, each probe run exiting code 1. Also ran the probe as a one-off against the
-  wrong port (9 instead of $PORT) on a running container: `node -e "...fetch('http://127.0.0.1:9
-  /login')..."` -> exit 1.
+docker build -f apps/web/Dockerfile -t paxpivot-web:task043 .  -> built clean
+docker run --rm node:24.15.0-slim sh -c 'which curl; which wget'  -> both empty (neither present),
+  confirming the node -e/fetch probe is required, not merely preferred
 
-Base-image check: `docker run --rm node:24.15.0-slim sh -c 'which curl; which wget'` -> both empty
-  (neither present), confirming the node -e/fetch choice is required, not merely preferred.
+Positive (criterion b) — the healthcheck exactly as Compose renders it, via compose itself, not
+hand-copied `docker run --health-*` flags:
+  docker compose --env-file <scratch .env.production> -f compose.prod.yml -p task043 \
+    up -d --wait --no-build --no-deps web
+  -> exit 0, wall time 3s (timed with `date +%s` before/after). `--no-deps` starts only `web`,
+     skipping `api`/`postgres`/`redis` entirely — `api` never ran during this test, proving no API
+     dependency. `docker inspect .State.Health` immediately after: {"Status":"healthy",
+     "FailingStreak":0,"Log":[{"Start":"2026-09-14T11:59:27.553Z",...,"ExitCode":0}]} — healthy on
+     the very first probe.
+  Sampled again ~75s later (container left running) to see the steady cadence once healthy:
+     Log now held three entries — Start 11:59:27.553, 11:59:57.729 (+30.18s), 12:00:27.883
+     (+30.15s) — a clean, precise 30s steady interval, confirming the CPU-cost fix actually takes
+     effect once past startup.
+  Torn down: `docker compose --env-file <scratch> -f compose.prod.yml -p task043 down --remove-orphans -v`.
+
+Negative (criterion c) — same setup, a scratch override file (not committed) setting
+  `services.web.command: ["sleep", "3600"]` so nothing listens on the port, same healthcheck as
+  authored in compose.prod.yml:
+  docker compose --env-file <scratch .env.production> -f compose.prod.yml -f <scratch override.yml> \
+    -p task043 up -d --wait --no-build --no-deps web
+  -> exit 1 ("container task043-web-1 is unhealthy"), wall time 121s.
+     docker inspect .State.Health: {"Status":"unhealthy","FailingStreak":3,"Log":[5 entries, all
+     ExitCode 1]}. Container StartedAt 12:01:09.663Z; the 5 retained log entries (Docker keeps only
+     the most recent 5) landed at +56.40s, +58.51s, +60.60s, +90.69s, +120.78s — i.e. three checks
+     ~2.1s apart (the tail of the `start_interval: 2s` fast cadence that ran, mostly scrolled out of
+     the 5-entry log, throughout the 60s `start_period`), then two checks exactly 30.09s apart (the
+     steady `interval`). FailingStreak 3 (not 5) confirms only checks at/after the `start_period`
+     boundary count toward `retries`: the check at +60.60s (just past the 60s boundary) is the
+     first counted failure, then +90.69s and +120.78s are the 2nd and 3rd, crossing `retries: 3`
+     and flipping to `unhealthy` at ~121s — see "Known limitations" below for why this is faster
+     than the naive `start_period + retries × interval` (150s) estimate.
+  Torn down the same way afterward.
 
 make check -> PASS (exit 0)
   format-check / lint / typecheck                 -> PASS
@@ -290,22 +357,35 @@ git status --porcelain after `make check` (which runs `pnpm build`) -> clean; ap
   was not rewritten this run (Next.js 16.3.4), so nothing needed restoring from origin/main.
 ```
 
-All local Docker verification artifacts (containers `paxpivot-web-task043`,
-`paxpivot-web-task043-neg`, image `paxpivot-web:task043`, the scratch `.env.production`) were
-removed after verification; nothing was left running or tagged locally.
+All local Docker verification artifacts (containers, the `task043` compose project's network/
+volume, image `paxpivot-web:task043`, the scratch `.env.production` and the scratch command-
+override compose file) were removed after verification; nothing was left running or tagged
+locally.
 
 **Known limitations / risks:** a single `web` replica means a brief window while `--wait` is still
 blocking (container `starting`) is expected downtime for that restart — Traefik has no other
 backend to route to during that window and returns a proxy error rather than serving stale content;
-this is unchanged from before and zero-downtime deploys are out of scope. `retries: 30` /
-`interval: 2s` gives roughly a minute of grace before Docker gives up and reports `unhealthy`; if
-production `web` startup is ever much slower than observed locally (~1s to first successful probe),
-`--wait`'s own default timeout (compose's `--wait-timeout`, not overridden here) would still bound
-the deploy command.
+this is unchanged from before and zero-downtime deploys are out of scope. No `--wait-timeout` is set
+on the deploy command, so `up --wait` does not time out on its own; the actual bound is the
+healthcheck's own state machine, and it is *not* simply `start_period + retries × interval` (60s +
+90s = 150s) — measured empirically at **~121s** (criterion c below) with nothing listening on the
+port. The reason: `docker inspect`'s `.State.Health.Log` retains only the 5 most recent checks, so
+the ~28 fast (`start_interval: 2s`) failures during the 60s `start_period` scroll out of view, but
+the timestamps of the 5 retained checks show the mechanism precisely — a fast check already
+in flight lands right at the `start_period` boundary (`+60.6s` in the observed run) and becomes the
+*first* failure that counts toward `retries` (failures strictly inside `start_period` never count),
+then two more failures at the 30s steady `interval` (`+90.7s`, `+120.8s`) reach `retries: 3` and the
+container flips to `unhealthy`. So the practical bound is closer to
+`start_period + (retries - 1) × interval` (≈ 120s) than the naive sum, because the boundary check
+that starts the counted streak lands at the *start* of `start_period`'s last `interval`-worth of
+counted failures, not a full `interval` after it. Either way, once `web` is genuinely down, Compose
+sees the terminal `unhealthy` state and `up --wait` exits 1 well under two minutes rather than
+hanging indefinitely.
 
 **Deploy-and-verify steps (not executed; VPS has no `make`):**
 
 ```bash
+docker version --format '{{.Server.Version}}'   # record the VPS engine version (start_interval needs >= 25)
 cd /opt/paxpivot && git pull --ff-only   # picks up the new compose.prod.yml
 TAG=$(git rev-parse --short HEAD)
 docker build -f apps/api/Dockerfile -t paxpivot-api:$TAG .
@@ -313,7 +393,11 @@ docker build -f apps/web/Dockerfile -t paxpivot-web:$TAG .
 # set PAXPIVOT_TAG=$TAG in .env.production (note the previous value for rollback)
 docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml up -d --wait --no-build
 # do not run this within ~5 minutes of the 00/06/12/18 UTC source checks
-curl -fsS https://$PAXPIVOT_DOMAIN/ready   # inside the stack only; see docs/DEPLOYMENT.md for the exec form
+# /ready is api-only and unreachable from outside the stack (docs/DEPLOYMENT.md:21); a public
+# curl of it 307s to /login (web's isPublicPath guard) and `curl -f` alone would wrongly exit 0
+# on that redirect, so use the internal exec form instead (docs/DEPLOYMENT.md:61-62):
+docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.traefik.yml exec api python -c \
+  "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/ready').read())"
 curl -o /dev/null -s -w '%{http_code}\n' https://$PAXPIVOT_DOMAIN/login     # expect 200, immediately after --wait returns
 curl -o /dev/null -s -w '%{http_code}\n' https://$PAXPIVOT_DOMAIN/terminals # expect 307 (signed out)
 docker inspect --format '{{.State.Health.Status}}' <web container id>      # expect healthy

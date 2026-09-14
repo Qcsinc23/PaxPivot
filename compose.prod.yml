@@ -36,15 +36,23 @@ services:
       # HOSTNAME=0.0.0.0 PORT=3000). `/login` renders without calling the API server-side
       # (apps/web/app/login/page.tsx -> accessConfig() reads only env vars; see TASK-043), so
       # this reports healthy independent of api/postgres/redis.
+      # start_interval gives a fast (2s) probe cadence only while `starting`, so `--wait` sees
+      # a deploy resolve quickly; the steady-state `interval` (30s) keeps a forked-Node probe
+      # from costing meaningful CPU indefinitely on the pilot VPS (TASK-043 review: ~10% CPU at
+      # a 2s steady interval). start_interval needs Docker Engine >= 25 / Compose >= 2.20; an
+      # older daemon ignores the field and probes at `interval` throughout, including during
+      # `starting` — worst case `--wait` takes ~1 interval (30s) longer to see the first
+      # healthy probe, still well inside the 60s start_period.
       test:
         [
           "CMD-SHELL",
           "node -e \"const p=process.env.PORT||3000;fetch('http://127.0.0.1:'+p+'/login').then((r)=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))\"",
         ]
-      interval: 2s
+      interval: 30s
       timeout: 3s
-      retries: 30
-      start_period: 10s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
     depends_on:
       api:
         condition: service_healthy
