@@ -20,9 +20,13 @@ layouts, from one token that owns the control's height.
 PRD Milestone D (production UX, honest absence/failure UX) and the shared screen rules
 (`docs/tasks/SCREEN_TASK_RULES.md`: touch targets, nothing interactive obscured). The reserve
 existed but was undersized: `.pp-main` reserved `nav-height + space-8` (96 px) while the control's
-top edge sits 128 px above the viewport bottom, and the desktop breakpoint dropped the reserve to
-32 px with the control 24 px from the bottom. The last row and the disclaimer ended up under the
-control.
+top edge sits 120 px above the viewport bottom (76 px offset + 44 px control), and on the desktop
+layout the content kept only 36 px of bottom padding and the disclaimer no margin, while the
+control's top edge sits 68 px up. The last row and the disclaimer ended up under the control.
+
+Pages with a sticky action bar (`body[data-sticky-bar]`: plan, route detail, compare, readiness)
+hide the control by design; their bar is in normal flow, so they keep the navigation-only reserve
+and carry no dead space for a control that is not shown.
 
 Rows passing under the control *while scrolling* are normal floating-action behaviour and are not
 in scope; only the resting position at the document end is.
@@ -144,6 +148,27 @@ hit test at document end (elementsFromPoint over the whole control, 4 px grid, 2
 
 `/showcase` itself and the plan, route-detail, compare and readiness screens set
 `data-sticky-bar`, which hides the control by design, so they cannot be used for this hit test.
+
+**Review (fresh, 0 Critical / 1 Important → fixed / 1 Minor → fixed):**
+
+- *Important:* the new reserve also applied on sticky-action-bar pages, where the control is hidden
+  and the bar is in normal flow — measured before the fix on `/showcase/route-detail` and
+  `/showcase/compare`: `.pp-main` 144 px and `.pp-guarantee` 144 px on mobile, 100 px / 76 px on
+  desktop, for a control that is not shown. Fixed with `body[data-sticky-bar]` overrides on both
+  layouts (navigation-only reserve), pinned by the regression test.
+- The pre-existing mobile disclaimer margin (`--nav-height`, 60 px) left the disclaimer's last 5 px
+  under the rendered 65 px bar; the sticky-page override adds `--space-2`.
+- *Minor:* the "why" numbers in this file were corrected (120 px, 36 px).
+
+After the fix, at the document end:
+
+```text
+/showcase/route-detail 390  -> main padding 96 px, disclaimer margin 68 px, disclaimer 3 px above the bar, sticky bar above it, no overflow
+/showcase/compare      390  -> disclaimer 3 px above the bar
+/showcase/route-detail 1280 -> main padding 36 px, disclaimer margin 0, disclaimer fully visible
+/showcase/terminals 390/1280 (control shown) -> unchanged: only pp-shell__body under the control
+shell.test.tsx              -> 9 passed; prettier clean
+```
 
 **Known limitations / risks:** CSS-only; the regression test reads the stylesheet text, so it
 pins the reserve rules, and the hit test is the behavioural proof.

@@ -168,6 +168,20 @@ describe("AppShell", () => {
     expect(
       desktopRule(css, ".pp-guarantee").match(/margin-bottom:([^;]+);/)?.[1],
     ).toContain("var(--fab-height)");
+
+    // A sticky action bar hides the control (and sits in normal flow), so those pages reserve
+    // the navigation only, on both layouts, instead of dead space for a control not shown.
+    expect(rule(css, "body[data-sticky-bar] .pp-fab")).toContain(
+      "display: none",
+    );
+    for (const find of [rule, desktopRule]) {
+      const main = find(css, "body[data-sticky-bar] .pp-main");
+      const footer = find(css, "body[data-sticky-bar] .pp-guarantee");
+      expect(main).toContain("padding-bottom");
+      expect(footer).toContain("margin-bottom");
+      expect(main).not.toContain("--fab-height");
+      expect(footer).not.toContain("--fab-height");
+    }
   });
 });
 

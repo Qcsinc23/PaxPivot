@@ -107,6 +107,21 @@ body[data-sticky-bar] .pp-fab {
   text-align: center;
 }
 
+/* A sticky action bar hides the floating Ask action, and the bar sits in normal flow, so these
+   pages reserve the navigation only instead of room for a control that is not shown. */
+body[data-sticky-bar] .pp-main {
+  padding-bottom: calc(
+    var(--nav-height) + var(--space-8) + env(safe-area-inset-bottom, 0px)
+  );
+}
+
+body[data-sticky-bar] .pp-guarantee {
+  /* The rendered bar is a few pixels taller than --nav-height (its top padding and border). */
+  margin-bottom: calc(
+    var(--nav-height) + var(--space-2) + env(safe-area-inset-bottom, 0px)
+  );
+}
+
 @media (min-width: 60rem) {
   .pp-shell {
     flex-direction: row;
@@ -181,6 +196,14 @@ body[data-sticky-bar] .pp-fab {
 
   .pp-guarantee {
     margin-bottom: calc(var(--fab-height) + var(--space-6));
+  }
+
+  body[data-sticky-bar] .pp-main {
+    padding-bottom: var(--space-8);
+  }
+
+  body[data-sticky-bar] .pp-guarantee {
+    margin-bottom: 0;
   }
 
   .pp-fab {
