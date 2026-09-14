@@ -18,7 +18,7 @@ services:
       - caddy-data:/data
     depends_on:
       web:
-        condition: service_started
+        condition: service_healthy
   web:
     image: paxpivot-web:${PAXPIVOT_TAG:-local}
     build:
@@ -30,6 +30,24 @@ services:
       PAXPIVOT_API_TOKEN: ${PAXPIVOT_API_TOKEN:?set PAXPIVOT_API_TOKEN}
       PAXPIVOT_SESSION_SECRET: ${PAXPIVOT_SESSION_SECRET:?set PAXPIVOT_SESSION_SECRET}
       PAXPIVOT_PILOT_PASSPHRASE: ${PAXPIVOT_PILOT_PASSPHRASE:?set PAXPIVOT_PILOT_PASSPHRASE}
+    healthcheck:
+      # No curl/wget in the node:24-slim image and this adds no packages; node's built-in
+      # `fetch` probes the same host:port Next.js binds (apps/web/Dockerfile sets
+      # HOSTNAME=0.0.0.0 PORT=3000). `/login` renders without calling the API server-side
+      # (apps/web/app/login/page.tsx -> accessConfig() reads only env vars; see TASK-043), so
+      # this reports healthy independent of api/postgres/redis. One engine-agnostic
+      # interval/timeout/retries/start_period (see TASK-043 for why) is kept short enough that a
+      # deploy still resolves quickly while an idle forked-Node probe every 10s costs negligible
+      # CPU (TASK-043 review 1 found ~10% CPU at a 2s steady interval).
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"const p=process.env.PORT||3000;fetch('http://127.0.0.1:'+p+'/login').then((r)=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       api:
         condition: service_healthy
