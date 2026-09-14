@@ -308,6 +308,69 @@ def capture_corpus_command(source_id: str) -> int:
     return 0
 
 
+def source_report(days: int) -> int:
+    """The pilot's source-health gate over the last ``days``, per source (TASK-042). Read-only.
+
+    Measures every enabled source that is not restricted. Exit codes a person or scheduler can
+    act on: 1 when any source must stop, 2 when no source has a single observation in the
+    window, 0 otherwise (pass, watch or unknown).
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from paxpivot.application.source_reliability import Verdict, reliability
+    from paxpivot.domain.source import PolicyReviewState
+    from paxpivot.infrastructure import database as db
+    from paxpivot.infrastructure.repositories import (
+        SqlSourceObservationRepository,
+        SqlSourceRepository,
+    )
+
+    def hours(value: timedelta | None) -> str:
+        return "unknown" if value is None else f"{value.total_seconds() / 3600:.1f} h"
+
+    configure()
+    now = datetime.now(UTC)
+    start = now - timedelta(days=days)
+    engine = create_engine(os.environ["DATABASE_URL"])
+    with db.read_snapshot(engine) as connection:
+        observations = SqlSourceObservationRepository(connection)
+        measured = [
+            (
+                source,
+                reliability(
+                    # ponytail: whole history, newest first, capped; 6-hourly checks write ~120
+                    # rows a month. A time-bounded repository read if a source ever checks hourly.
+                    observations.list_for_source(source.identity.source_id, limit=10_000),
+                    source.cadence_minutes,
+                    start,
+                    now,
+                ),
+            )
+            for source in SqlSourceRepository(connection).list_sources()
+            if source.enabled and source.policy.review_state != PolicyReviewState.RESTRICTED
+        ]
+    engine.dispose()
+
+    print(
+        f"Source reliability {start:%Y-%m-%d %H:%M} to {now:%Y-%m-%d %H:%M} UTC ({days} days). "
+        "Expected checks assume the scheduler runs at each source's registered cadence; "
+        "detection is an upper bound (the gap before the read that saw a change)."
+    )
+    for source, result in measured:
+        completion = "unknown" if result.completion is None else f"{result.completion:.1f}%"
+        since = f"; measured from its first check {result.start:%Y-%m-%d}" if result.clipped else ""
+        print(
+            f"{result.verdict.value.upper():7} {source.name}: completion {completion} "
+            f"({result.successful} read of {result.expected} expected, "
+            f"{result.recorded} recorded); longest gap {hours(result.longest_gap)}; "
+            f"gaps over 6.5 h {result.gaps_over_window}; changes {result.changes}; "
+            f"detection p95 {hours(result.detection_p95)}{since}"
+        )
+    if any(result.verdict == Verdict.STOP for _, result in measured):
+        return 1
+    return 0 if any(result.recorded for _, result in measured) else 2
+
+
 def seed() -> None:
     from paxpivot.infrastructure.bootstrap import seed_reference_data
 
@@ -371,6 +434,8 @@ if __name__ == "__main__":
         raise SystemExit(check_sources())
     elif action == "capture-corpus":
         raise SystemExit(capture_corpus_command(sys.argv[2]))
+    elif action == "source-report":
+        raise SystemExit(source_report(int(sys.argv[2]) if len(sys.argv) > 2 else 30))
     elif action == "cold-start-check":
         cold_start_check(int(sys.argv[2]) if len(sys.argv) > 2 else 20)
     elif action == "dev":
