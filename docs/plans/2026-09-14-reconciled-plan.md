@@ -682,8 +682,8 @@ Task numbers are proposals. Take the next free number at creation time; `TASK-03
 ```text
 You are the foundation agent for PaxPivot (/Users/sherwyngraham/Projects/PaxPivot). Read AGENTS.md,
 docs/agent/WORKFLOW.md, docs/agent/MERGE_POLICY.md, then this plan:
-/private/tmp/claude-501/-Users-sherwyngraham-Projects-PaxPivot/75308b66-5bd2-492e-b74f-40ecc0941b7f/scratchpad/paxpivot-reconciled-plan-2026-09-14.md
-(if that path is gone, the essentials are below).
+docs/plans/2026-09-14-reconciled-plan.md (start with its "Status" section; the essentials are
+also below).
 
 Milestone M1 "Trustworthy source watch". Work packages, in order:
 WP-01 land floating-Ask CSS fix (TASK-039) → WP-02 README truth + guard fixes + task-status
