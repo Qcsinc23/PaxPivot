@@ -208,7 +208,7 @@ and are already invoked as separate steps rather than folded into `check`.
 - [x] README's Makefile command table documents `audit`, `build-images-check` and the extended
       `compose-check`; the Vitest version in the toolchain list matches `package.json`.
       `tests/unit/test_docs_consistency.py::test_every_documented_make_target_exists` passes.
-- [ ] CI's `scaffold` job is green on this PR's head SHA (recorded in Handoff once observed).
+- [x] CI's `scaffold` job is green on this PR's head SHA (recorded in Handoff below).
 - [x] No unrelated files changed.
 
 ## Required tests
@@ -274,8 +274,14 @@ before merge is requested.
 **Branch:** `foundation/TASK-047-ci-dependency-gates`
 
 **Commit:** four focused commits on the branch (vitest bump; Makefile + `deploy/ci.env`; CI
-workflow wiring; README) plus this task-file commit; see `git log origin/main..HEAD`. PR head SHA
-to be recorded here once CI is observed.
+workflow wiring; README) plus the task-file commit; see `git log origin/main..HEAD`. PR head SHA
+`3ee837e1586f8950305e67252fdbd9175f6fec1b` (PR #55).
+
+**PR:** https://github.com/Qcsinc23/PaxPivot/pull/55
+
+**CI:** `scaffold` — SUCCESS on `3ee837e1586f8950305e67252fdbd9175f6fec1b`
+(https://github.com/Qcsinc23/PaxPivot/actions/runs/34849226892/job/103992625782), 2m46s
+end-to-end (`make audit` 4s, `make build-images-check` 44s).
 
 **Files changed:**
 
@@ -339,9 +345,9 @@ extended `docker compose ... config --quiet` without `--env-file deploy/ci.env` 
   currently require via `${VAR:?...}`. If a later task (e.g. TASK-045) adds a new required
   variable to those files, `make compose-check` will start failing until that variable's dummy
   value is added to `deploy/ci.env`.
-- CI's `scaffold` job runtime with the two new steps has not yet been observed on GitHub Actions
-  (recorded below once available); the previous run took ~2 minutes and `timeout-minutes: 20` was
-  left unchanged, with local timings suggesting ample margin.
+- CI's `scaffold` job runtime with the two new steps: observed at 2m46s on PR #55's head
+  (`make audit` 4s, `make build-images-check` 44s; the job was ~2m5s before this task), well
+  inside the unchanged `timeout-minutes: 20`.
 
 **Next dependency:** None. `docs/architecture/SCAFFOLD_EVIDENCE.md` and `IMPROVEMENT_LOG.md`
 still describe the pre-TASK-047 CI step list; updating them was left out of this task's owned
