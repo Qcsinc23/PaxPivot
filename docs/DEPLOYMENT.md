@@ -86,9 +86,10 @@ docker compose --env-file .env.production -f compose.prod.yml -f deploy/compose.
   exec -T api python -m paxpivot.tooling source-report 30
 ```
 
-Read-only. It measures only the sources `check-sources` may currently retrieve (the same gate);
-disabled, paused, restricted and kill-switched sources print as `SKIPPED … not measured (<reason>)`
-because their silence is a decision, not an outage. For each measured source it prints checks read
+Read-only. It measures only the sources a `check-sources` run would read (the run's own skip
+decision, with the Firecrawl provider); disabled, paused, restricted, kill-switched and unwired
+sources print as `SKIPPED … not measured (<reason>)` because their silence is a decision or a
+configuration fact, not an outage. For each measured source it prints checks read
 against checks expected, the longest gap, gaps over 6.5 h, content changes, an upper bound on
 change-detection p95, and a PASS / WATCH / STOP / UNKNOWN verdict against the pilot's source-health
 gate (pass at ≥ 95 % completion and detection ≤ 6.5 h; stop below 90 % or on a gap over 18.5 h).
