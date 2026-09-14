@@ -2,7 +2,7 @@
 
 ## Status
 
-`in_progress`
+`review` — PR #60 open, head `e817b484095187647edf43665399161ba4f1a978`, `scaffold` check pending.
 
 ## Assigned role
 
@@ -180,25 +180,60 @@ merge (see PR body).
 
 ## Handoff
 
-Fill in before review/done.
-
 **Branch:** `foundation/TASK-050-traveler-profile`
 
-**Commit:**
+**Commit:** `e817b484095187647edf43665399161ba4f1a978` (PR #60)
 
-**Files changed:**
+**Files changed:** `apps/api/paxpivot/domain/profile.py`,
+`apps/api/paxpivot/application/profile_service.py`,
+`apps/api/paxpivot/application/ports/repositories.py` (ProfileReader/ProfileRepository),
+`apps/api/paxpivot/infrastructure/{database,repositories,schema_probe}.py`, `apps/api/paxpivot/api.py`,
+`apps/api/migrations/versions/0006_traveler_profile.py`, `apps/web/lib/api/{contracts,client}.ts`,
+`apps/web/lib/presentation/{screens/profile.ts,adapters/profile.ts}`,
+`apps/web/components/screens/profile/{ProfileScreen.tsx,PartyForm.tsx}`,
+`apps/web/app/profile/{page.tsx,edit/route.ts}`, `docs/architecture/CONTRACTS.md`, `README.md`,
+`docs/decisions/ADR-009-private-traveler-profile.md`, this task file, and tests
+(`tests/unit/{test_profile,test_api_v1,test_trip_request,support_sources}.py`,
+`tests/integration/{test_profile_db,test_db_correctness}.py`,
+`apps/web/tests/{screens/profile,profile-route}.test.ts(x)`).
 
-**Interfaces added/changed:**
+**Interfaces added/changed:** see "Interfaces produced" above; `writeApi` in
+`apps/web/lib/api/client.ts` gained an additive `method` option (default `POST`, unchanged for
+`/trips/new`) so the profile route handler can `PUT`.
 
-**Migrations:** `0006_traveler_profile`
+**Migrations:** `0006_traveler_profile` (applied; `make migrate-check` reports no drift;
+`make migrate-test` reports "33 CHECK rules and roundtrip: PASS", up from 24).
 
-**Verification run:**
+**Verification run** (fresh worktree, local Compose Postgres/Redis):
 
 ```text
-command -> PASS/FAIL summary
+make setup            -> PASS
+make format-check     -> PASS
+make lint              -> PASS (ruff + eslint)
+make typecheck         -> PASS (mypy strict + tsc)
+make test-unit         -> PASS (300 Python; 371 web run standalone — see risk note)
+make test-integration  -> PASS (48 tests, 8 new in test_profile_db.py)
+make build             -> PASS (sdist/wheel + next build; next-env.d.ts unchanged)
+make migrate           -> PASS
+make migrate-check     -> PASS
+make migrate-test      -> PASS
+make compose-check     -> PASS
 ```
 
 **Known limitations / risks:**
+- The sponsor's age band is not collected by the form; it is fixed to `adult` (documented in
+  ADR-009). A future task can add the field without a schema change if that turns out wrong.
+- The cross-check "a dependent's sponsor_id names a row whose role is sponsor" is enforced at
+  the API boundary only, not by a DB trigger (documented and justified in ADR-009): `PUT` is the
+  only writer and always validates the whole party first.
+- One unrelated, pre-existing web test (`tests/screens/terminals.test.tsx`'s axe check) timed
+  out under this box's heavy concurrent-agent load during one `make check` run; it is unrelated
+  to this change (no profile files touched) and passed cleanly in three separate isolated runs
+  and one full `make check` run with no other load — a known repo quirk ("Web axe tests may
+  time out under load; rerun them alone first").
+- No "clear my profile" action exists yet (deliberately out of scope; see ADR-009 retention
+  section for the future path).
 
-**Next dependency:** TASK-035 (eligibility engine) consumes `profile_service.get_profile` /
-`NewParty.to_party_facts()`.
+**Next dependency:** TASK-035 (eligibility engine) consumes `application/profile_service.py::get_profile`
+and `domain/profile.py::NewParty.to_party_facts()`. TASK-051 (linking trips to the party) depends
+on this task being merged.
