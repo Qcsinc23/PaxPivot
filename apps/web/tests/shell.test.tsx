@@ -95,8 +95,18 @@ describe("AppShell", () => {
   });
 
   test("hides the Ask action on the Ask screen itself", () => {
-    renderShell("/ask");
+    const { unmount } = renderShell("/ask");
     expect(screen.queryByRole("link", { name: "Ask PaxPivot" })).toBeNull();
+    // The page stops reserving room for a control it does not show, and lets go on leaving.
+    expect(document.body.dataset.noFab).toBe("true");
+    unmount();
+    expect(document.body.dataset.noFab).toBeUndefined();
+  });
+
+  test("a page that shows the Ask action does not mark the body", () => {
+    renderShell("/terminals");
+    expect(screen.getByRole("link", { name: "Ask PaxPivot" })).toBeTruthy();
+    expect(document.body.dataset.noFab).toBeUndefined();
   });
 
   test("shell has no axe violations", async () => {
@@ -116,4 +126,104 @@ describe("AppShell", () => {
     expect(css).toMatch(/env\(safe-area-inset-top/);
     expect(css).toMatch(/--hit:|min-height: var\(--hit\)/);
   });
+
+  /**
+   * The floating Ask action is fixed over the page, above the bottom navigation, so the
+   * scrollable content and the standing disclaimer each have to reserve room for the whole
+   * control. Without that reserve the control is what ends up on top of the last row at the
+   * bottom of the page.
+   */
+  test("the page reserves room for the floating Ask action", () => {
+    const css = withoutComments(
+      readFileSync(join(process.cwd(), "styles/components.css"), "utf8"),
+    );
+    const tokens = withoutComments(
+      readFileSync(join(process.cwd(), "styles/tokens.css"), "utf8"),
+    );
+
+    // One token owns the control's height, so the reserve and the control cannot drift apart.
+    expect(token(tokens, "--fab-height")).toBe(
+      "calc(var(--hit) + var(--space-2))",
+    );
+
+    // The bottom inset of the scroll area must clear the navigation plus the whole control.
+    const padding = rule(css, ".pp-main")
+      .match(/padding:([^;]+);/)?.[1]
+      ?.replace(/\s+/g, " ")
+      .trim();
+    expect(padding).toBeTruthy();
+    for (const part of ["var(--nav-height)", "var(--fab-height)"]) {
+      expect(padding).toContain(part);
+    }
+    expect(padding).toContain("env(safe-area-inset-bottom");
+
+    // The standing disclaimer is last in the document, so it needs the same reserve.
+    const footer = rule(css, ".pp-guarantee")
+      .match(/margin-bottom:([^;]+);/)?.[1]
+      ?.replace(/\s+/g, " ")
+      .trim();
+    expect(footer).toBeTruthy();
+    for (const part of ["var(--nav-height)", "var(--fab-height)"]) {
+      expect(footer).toContain(part);
+    }
+
+    // The control itself still has to be a comfortable touch target.
+    expect(rule(css, ".pp-fab")).toContain("min-height: var(--hit)");
+
+    // The desktop layout hides the bottom navigation but moves the control lower, and it
+    // overrides both reserves; neither may drop below the control it is clearing.
+    expect(
+      desktopRule(css, ".pp-main").match(/padding:([^;]+);/)?.[1],
+    ).toContain("var(--fab-height)");
+    expect(
+      desktopRule(css, ".pp-guarantee").match(/margin-bottom:([^;]+);/)?.[1],
+    ).toContain("var(--fab-height)");
+
+    // A sticky action bar (in normal flow) and the Ask screen itself hide the control, so those
+    // pages reserve the navigation only, on both layouts, instead of dead space for a control
+    // that is not shown.
+    expect(rule(css, "body[data-sticky-bar] .pp-fab")).toContain(
+      "display: none",
+    );
+    for (const find of [rule, desktopRule]) {
+      const main = find(css, "body[data-no-fab] .pp-main");
+      const footer = find(css, "body[data-no-fab] .pp-guarantee");
+      expect(main).toContain("padding-bottom");
+      expect(footer).toContain("margin-bottom");
+      expect(main).not.toContain("--fab-height");
+      expect(footer).not.toContain("--fab-height");
+    }
+    // Both marks share those rules, on the mobile and the desktop layout.
+    for (const target of [".pp-main", ".pp-guarantee"]) {
+      expect(css.split(`body[data-sticky-bar] ${target},`).length - 1).toBe(2);
+      expect(css.split(`body[data-no-fab] ${target} {`).length - 1).toBe(2);
+    }
+  });
 });
+
+/** The bare declarations of the first rule whose selector list starts with `selector`. */
+function rule(css: string, selector: string): string {
+  const index = css.indexOf(`${selector} {`);
+  if (index === -1) throw new Error(`no rule for ${selector}`);
+  return css.slice(index, css.indexOf("}", index));
+}
+
+/** The same rule as overridden inside the first desktop media query. */
+function desktopRule(css: string, selector: string): string {
+  const desktop = css.slice(css.indexOf("@media (min-width: 60rem)"));
+  return rule(desktop, selector);
+}
+
+function withoutComments(css: string): string {
+  // Blank the comment out in place: comments are stripped but every other offset is unchanged,
+  // so selectors can still be located by index.
+  return css.replace(/\/\*[\s\S]*?\*\//g, (comment) =>
+    comment.replace(/[^\n]/g, " "),
+  );
+}
+
+function token(css: string, name: string): string {
+  const value = new RegExp(`${name}:\\s*([^;]+);`).exec(css)?.[1]?.trim();
+  if (value === undefined) throw new Error(`no token ${name}`);
+  return value;
+}
