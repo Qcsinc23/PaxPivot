@@ -32,6 +32,12 @@ What works end to end today:
   with its own source state, read age, official-page link and the registered restricted 72-hour
   schedule link the traveler must open themselves, and states plainly that PaxPivot does not read
   departure schedules yet.
+- **Private traveler/party profile.** `GET/PUT /api/v1/profile` store exactly what eligibility
+  will need — a sponsor plus dependents, each with only a role, a category attestation and an
+  age band — and nothing else (no name, credential number, medical data, document or birth
+  date). `/profile` reads and writes it live: the party, or an honest "no profile yet" state
+  with the same form to set one up. The whole party is replaced atomically; an invalid
+  submission writes nothing. See [ADR-009](docs/decisions/ADR-009-private-traveler-profile.md).
 - **Pilot access.** A shared passphrase sets a signed, `HttpOnly`, `Secure` session cookie; the
   web server calls the API with a server-only bearer token that never reaches a browser. A
   production deployment without both secrets fails closed ([ADR-005](docs/decisions/ADR-005-pilot-access-boundary.md)).
@@ -50,6 +56,8 @@ The API surface, as registered today:
 | `GET` | `/api/v1/trips` | bearer |
 | `GET` | `/api/v1/trips/{trip_id}` | bearer |
 | `POST` | `/api/v1/trips` | bearer |
+| `GET` | `/api/v1/profile` | bearer |
+| `PUT` | `/api/v1/profile` | bearer |
 
 No `/routes`, `/compare`, `/eligibility`, `/readiness` or `/ask` route exists. The API is internal
 to the deployment; the public host serves only the web application.
@@ -70,14 +78,15 @@ What does not exist yet:
 - **No eligibility engine, readiness data, destination resolver, route search, ranking,
   comparison, notifications or AI.** `apps/api/paxpivot/domain/eligibility.py` holds the
   decision contract; nothing produces a decision. `/ask` renders an honest empty state with the
-  composer disabled, and `/profile`, `/profile/eligibility`, `/profile/readiness`,
-  `/trips/{id}/compare` and `/trips/{id}/routes/{id}` are honest empty states fed by no API.
+  composer disabled, and `/profile/eligibility`, `/profile/readiness`, `/trips/{id}/compare` and
+  `/trips/{id}/routes/{id}` are honest empty states fed by no API. `/profile` itself is live
+  (party facts only) but shows no eligibility conclusion.
 - **No alerting, scheduler or worker.** Source checks are driven by host cron; if they stop, the
   app shows the sources as stale within 6.5 hours, but nothing notifies a person. Redis and `rq`
   are declared dependencies and run in Compose, but nothing imports either. Backups are taken
   daily on the host only.
 
-Migrations `0001`–`0005` are applied; the next revision is `0006`. The pilot runs at
+Migrations `0001`–`0006` are applied; the next revision is `0007`. The pilot runs at
 `paxpivot.qcs-cargo.com`.
 
 ## Toolchain
@@ -167,7 +176,7 @@ request/provider payloads.
   provider, the bearer auth boundary, reference-data bootstrap and the CHECK-parity probe.
 - `apps/api/paxpivot/api.py`: HTTP composition; `/health`, `/ready` and the authorized
   `/api/v1` read/write routes.
-- `apps/api/migrations`: single Alembic history, revisions `0001`–`0005`.
+- `apps/api/migrations`: single Alembic history, revisions `0001`–`0006`.
 - `apps/api/paxpivot/tooling.py`: the local/operator CLI behind the `make` targets.
 - `tests/unit`, `tests/integration`, `tests/fixtures`: synthetic-only test inputs. Captured
   source samples live in the gitignored `private-fixtures/` and never enter the repository.

@@ -16,10 +16,11 @@ explicit null for unknown values and timezone-aware timestamps. They are not dat
 | domain/trip.py (TASK-034) | NewTripRequest: origin_terminal_id, destination_text, window_start < window_end within MAX_WINDOW (30 days), party_size 1–9; TripRequest adds trip_id, created_at |
 | domain/eligibility.py | TravelerFacts: pseudonymous ID, sponsor/dependent role, normalized traveler_class and category attestation, age band, sponsor reference and accompaniment; PartyFacts validates unique IDs and dependent sponsor references |
 | domain/eligibility.py | EligibilityDecision: eligible/ineligible/unknown/outside_supported_scope, mandatory controlling policy ID/version/citations/reasons and unresolved conditions (contract only; no engine produces one yet) |
+| domain/profile.py (TASK-050, ADR-009) | ProfileTraveler: traveler_id, role, category_attestation (I–VI/unknown), age_band, sponsor_id (dependents only) — the minimum PRV-001 allows, no name/credential/medical/document/birth-date/free-text field; NewParty (min 1, max 9 travelers) validates unique ids, a sponsor has no sponsor, a dependent references a party sponsor; NewParty.to_party_facts() -> a genuine PartyFacts, filling TravelerFacts.traveler_class/accompanied with an explicit placeholder/None, never a guess |
 | application/result.py | Success[T](ok=True,value), Failure(ok=False,error), Result[T] discriminated by ok; ApplicationError with static message_key, code and retryability |
 | application/ports/source_provider.py | SourceProvider.provider_id: str — the adapter's own identity, which must equal the source's registered adapter_id before the provider is invoked at all; SourceProvider.observe(source: SourceIdentity) -> Result[SourceObservation], async; metadata only, no raw source payload |
 | application/ports/auth.py | Principal(user_id), Authenticator.authenticate(credential: str or None) -> Result[Principal], async |
-| application/ports/repositories.py | Reader ports SourceReader, ObservationReader (latest_per_source, list_for_source), TerminalReader, KillSwitchReader, TripReader (no mutation methods; what read services and GET routes receive); repository ports extend them with append-only writes (TripRepository.add) — sync protocols |
+| application/ports/repositories.py | Reader ports SourceReader, ObservationReader (latest_per_source, list_for_source), TerminalReader, KillSwitchReader, TripReader, ProfileReader (get_party -> PartyFacts or None) (no mutation methods; what read services and GET routes receive); repository ports extend them with append-only/whole-replace writes (TripRepository.add, ProfileRepository.replace(party): atomic whole-party swap) — sync protocols |
 | application/source_gate.py | authorize_processing(source, mode, switches) -> Result[ProcessingAuthorization]; engaged_switch |
 | application/source_pipeline.py | record_observation(source, provider, observations, switches) -> Result[SourceObservation], async; the provider attach point |
 | application/source_checks.py | run_source_checks(sources, observations, switches, provider, now=) -> SourceCheckRun (recorded/skipped/rejected/provider failures; started_at is an AwareDatetime and a naive `now` is rejected); skip_reason(source, provider_id, switches) -> the gate's message key, `source_provider.identity_mismatch`, or None — the single "will this source be read" decision, shared with the reliability report (TASK-042); exit_code(run) -> 0, 2 (no provider configured) or 3 (provider failure) |
@@ -30,21 +31,23 @@ explicit null for unknown values and timezone-aware timestamps. They are not dat
 | application/read_models.py | SourceEvidenceRead, TerminalSummaryRead, TerminalDetailRead, TerminalNetworkRead, SourceHealthRead (+rows/counts): the /api/v1 wire contracts; no payload refs or hashes |
 | application/read_services.py | list_terminal_network, get_terminal_detail -> Result, list_source_health; FRESHNESS_WINDOW (6 h 30 min, SRC-008) and effective(observation, now) (TASK-041) |
 | application/trip_service.py (TASK-034) | create_trip_request, list_trip_requests, get_trip_request; TripRead, TripListRead |
+| application/profile_service.py (TASK-050, ADR-009) | ProfileRead(status: set/unset, party: PartyFacts or None) — never a fabricated default; get_profile(profiles) -> ProfileRead; replace_profile(new_party, profiles) -> Result[ProfileRead], validates the whole party as a genuine PartyFacts before any write |
 | application/source_reliability.py (TASK-042) | report_scope(sources, switches, provider_id) -> measured sources plus (source, message_key) for every source `source_checks.skip_reason` skips; reliability(observations, cadence_minutes, start, now) -> SourceReliability (hashed: every successful read carried a content hash; PASS requires it); report_exit_code(results) -> 1 when any source stops, else 2 when nothing was recorded, else 0; Verdict pass / watch / stop / unknown |
 | infrastructure/auth.py | BearerTokenAuthenticator (PAXPIVOT_API_TOKEN, server-only), authenticator_from_env, LOCAL_PRINCIPAL_ID; DenyAllAuthenticator (every credential unauthorized) is the fallback when no token is configured |
 | infrastructure/audit.py | audit_event(logger,event,correlation_id): static event/correlation metadata only |
-| infrastructure/database.py | metadata + Core tables terminals, sources, source_observations, terminal_facts, processing_switches (ADR-004) and trip_requests (TASK-034); engine_from_env; transaction(engine): the explicit commit-on-success, rollback-on-failure write unit of work at REPEATABLE READ; read_snapshot(engine): the read-only unit of work. Repositories over one connection are assembled in `api.py::get_repositories` |
-| infrastructure/repositories.py | SqlSourceRepository, SqlSourceObservationRepository, SqlTerminalRepository, SqlKillSwitchRepository, SqlTripRepository over one Connection; row <-> domain mappers |
+| infrastructure/database.py | metadata + Core tables terminals, sources, source_observations, terminal_facts, processing_switches (ADR-004), trip_requests (TASK-034) and profile/profile_travelers (TASK-050, ADR-009: profile is a database-enforced singleton — `singleton` boolean CHECKed true with a UNIQUE constraint); engine_from_env; transaction(engine): the explicit commit-on-success, rollback-on-failure write unit of work at REPEATABLE READ; read_snapshot(engine): the read-only unit of work. Repositories over one connection are assembled in `api.py::get_repositories` |
+| infrastructure/repositories.py | SqlSourceRepository, SqlSourceObservationRepository, SqlTerminalRepository, SqlKillSwitchRepository, SqlTripRepository, SqlProfileRepository (get_party, replace: upsert the singleton row, delete every traveler row, insert the new ones sponsor-first) over one Connection; row <-> domain mappers |
 | infrastructure/bootstrap.py | seed_reference_data(engine) idempotent; REFERENCE_TERMINALS (four AMC terminals); DIRECTORY_SOURCE (needs_review, disabled); TERMINAL_PAGE_SOURCES (approved, enabled, Firecrawl adapter, 6-hour cadence, metadata and page stamp only); SCHEDULE_ARTIFACT_SOURCES (restricted, never fetched) |
 | infrastructure/providers/firecrawl.py (TASK-025/037/038) | FirecrawlSourceProvider (provider_id `firecrawl`, from_env): one metadata-only retrieval per authorized source — page status, content hash and the page's own time; the retrieved document is discarded in-process; discover_artifact |
-| infrastructure/schema_probe.py | verify_check_parity(connection) -> ParityReport: every domain enum member inserts, invented values and invariant counter-examples are refused by the named CHECK; run by make migrate-test |
+| infrastructure/schema_probe.py | verify_check_parity(connection) -> ParityReport: every domain enum member inserts, invented values and invariant counter-examples are refused by the named CHECK, including the profile/profile_travelers rules (TASK-050); run by make migrate-test |
 | api.py | GET /health -> {"status":"ok"}, liveness only; GET /ready -> 200 only when the database answers at migration head, else 503 {"status":"unavailable"} |
-| api.py (ADR-004, TASK-034) | GET /api/v1/terminals, /api/v1/terminals/{terminal_id}, /api/v1/sources/health, GET and POST /api/v1/trips, GET /api/v1/trips/{trip_id}; every /api/v1 route behind require_principal; get_repositories/get_engine/get_authenticator are the overridable seams |
+| api.py (ADR-004, TASK-034, TASK-050) | GET /api/v1/terminals, /api/v1/terminals/{terminal_id}, /api/v1/sources/health, GET and POST /api/v1/trips, GET /api/v1/trips/{trip_id}, GET and PUT /api/v1/profile; every /api/v1 route behind require_principal; get_repositories/get_engine/get_authenticator are the overridable seams |
 | tooling.py | operator CLI behind the Makefile: setup-env, migrate, migrate-check, migrate-test, seed, check-sources (exit 0/2/3), capture-corpus, source-report (exit 0, 1 when a source must stop, 2 with no observations), cold-start-check, dev |
 | migrations/versions/0002_sources_terminals.py | tables above, CHECK constraints for every enum, append-only trigger on observations and facts |
 | migrations/versions/0003_supersession_integrity.py | supersedes_observation_id must name an existing observation of the same source (composite FK) and never itself (CHECK) |
 | migrations/versions/0004_trip_requests.py | trip_requests table (TASK-034) |
 | migrations/versions/0005_restricted_allows_nothing.py | CHECK: a restricted source allows no processing and retains nothing (TASK-037) |
+| migrations/versions/0006_traveler_profile.py | profile (database-enforced singleton), profile_travelers (role/category_attestation/age_band CHECKs, sponsor_id FK/CHECKs) tables; paxpivot_profile_party_cap trigger caps the party at 9 (TASK-050, ADR-009) |
 
 A SourceObservation is not a ScheduleObservation or an opportunity. Its `fresh` state may
 refer to source metadata only; no automatic movement claim follows. Successful retrieval
@@ -73,6 +76,17 @@ Traveler facts contain no legal conclusion, credentials, medical evidence or bir
 The versioned eligibility engine (TASK-035, blocked) will determine what supported
 traveler_class values mean; no eligibility rules exist yet. A trip request's party size is what
 the traveler submitted; nothing derives seats from it.
+
+The private traveler/party profile (TASK-050, ADR-009) is the pilot's one party: `GET`/
+`PUT /api/v1/profile` are the only routes that read or write it, and it is independent of trip
+requests (linking a party to a trip is TASK-051). `ProfileTraveler` stores only `traveler_id`,
+`role`, `category_attestation`, `age_band` and a dependent's `sponsor_id`; no other field exists
+on that table. `PartyFacts.TravelerFacts.traveler_class`/`accompanied` are never collected here —
+`NewParty.to_party_facts()` fills them with an explicit placeholder (`"unassigned"`) and `None`
+respectively, never a value derived from data the profile does not hold, so no eligibility engine
+may treat either as a real attestation. `profile` is a database-enforced singleton (ADR-005: one
+pilot user, no accounts); a whole-party replace is atomic, and an invalid submission writes
+nothing.
 
 Downstream tasks add functions with signatures fixed in their task contracts, not new shared
 ports/schema. Only foundation tasks add migrations or `/api/v1` routes.
