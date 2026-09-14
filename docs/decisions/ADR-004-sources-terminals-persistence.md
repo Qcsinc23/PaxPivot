@@ -172,6 +172,7 @@ ADR-001 and pilot §16.1; a per-user auth model is out of this slice's scope.
 
 ## Consequences
 
+*As decided in this ADR; later tasks changed parts of this paragraph — see Amendments.*
 Terminals and Advanced can render live registry data once the build tasks wire the pages
 (TASK-021/022). Plan/Results/Route Detail stay on honest empty states; no route engine,
 opportunity builder, Firecrawl crawl, notification or AI code exists. Enabling any real source
@@ -220,3 +221,11 @@ composition root); `apps/web/tests/adapters.test.tsx`, `api-client.test.ts`; `ma
   (migration 0003: same-source composite foreign key, not-self CHECK), CHECK-constraint parity
   probe (`infrastructure/schema_probe.py`) run by `make migrate-test`, and `SourceCheckRun.started_at`
   is an `AwareDatetime`. The sections above were rewritten to match the SQL.
+- **2026-09-14, TASK-040 (record of later tasks; the Consequences paragraph is left as decided).**
+  A Firecrawl retrieval adapter exists and runs every 6 hours for the four approved terminal pages
+  (TASK-025, TASK-038 page time); the 72-hour schedule artifacts are restricted and never fetched
+  (TASK-037, migration 0005). Plan is live and posts trip requests (TASK-034, migration 0004);
+  Results, Compare and Route Detail remain honest empty states, and no route engine, opportunity
+  builder, notification or AI code exists. Read services derive the effective source state at
+  read time (TASK-041). The per-user authentication decision is still open; the pilot runs on
+  ADR-005's shared passphrase.

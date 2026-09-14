@@ -2,7 +2,7 @@
 
 ## Status
 
-`done`
+`done` — merged to `main` in 74abd66 (PR #7).
 
 ## Assigned role
 

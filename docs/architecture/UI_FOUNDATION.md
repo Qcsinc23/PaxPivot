@@ -8,7 +8,8 @@ Companion to `BOUNDARIES.md` and `CONTRACTS.md` for `apps/web`. Decision record:
 apps/web/
   app/                    App Router routes; every route renders inside AppShell
     layout.tsx            fonts, stylesheets, AppShell, viewport (viewport-fit=cover)
-    page.tsx              Plan (stub)      /trips /alerts /terminals /profile /advanced /ask (stubs)
+    page.tsx              Plan (live: posts a trip request)   /trips /terminals /advanced (live API data)
+                          /alerts /profile /ask and trip compare/route pages (honest empty states)
     showcase/page.tsx     development gallery (404 in production)
   styles/
     tokens.css            Espresso App custom properties — the only place visual values live

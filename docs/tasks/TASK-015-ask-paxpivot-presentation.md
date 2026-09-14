@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — implemented on `build/TASK-015-ask-paxpivot` after TASK-019 merged; see Handoff.
+`done` — merged to `main` in 99ab982 (PR #22); status normalized in TASK-040.
 
 ## Assigned role
 

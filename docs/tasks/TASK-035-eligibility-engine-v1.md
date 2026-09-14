@@ -2,7 +2,7 @@
 
 ## Status
 
-`blocked` — decisions delegated by the product owner (2026-09-11); see AUDIT.md §4/§6.
+`blocked` — waits only on the product owner confirming the pilot traveler class and policy citations (decision D-3 in `docs/plans/2026-09-14-reconciled-plan.md`). TASK-034 is done; source permission does not block this task.
 
 ## Assigned role
 
