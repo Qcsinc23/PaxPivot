@@ -1,6 +1,6 @@
 SHELL := /bin/sh
 PY := uv run --frozen
-.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed check-sources cold-start-check build-images dev check
+.PHONY: setup format format-check lint typecheck test-unit test-integration test build services compose-check migrate migrate-check migrate-test seed check-sources source-report cold-start-check build-images dev check
 setup:
 	pnpm install --frozen-lockfile
 	uv sync --frozen
@@ -40,6 +40,10 @@ seed: migrate
 	$(PY) python -m paxpivot.tooling seed
 check-sources: migrate
 	$(PY) python -m paxpivot.tooling check-sources
+# Read-only source-health gate over the last DAYS (TASK-042); exit 1 = a source must stop.
+DAYS ?= 30
+source-report: migrate
+	$(PY) python -m paxpivot.tooling source-report $(DAYS)
 PAXPIVOT_TAG ?= local
 build-images:
 	docker build -f apps/api/Dockerfile -t paxpivot-api:$(PAXPIVOT_TAG) .
