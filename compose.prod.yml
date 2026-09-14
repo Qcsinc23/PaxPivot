@@ -1,13 +1,30 @@
 # Production topology for the single-user pilot (PRD §14.7; ADR-005). Not for local development.
 #   docker compose --env-file .env.production -f compose.prod.yml up -d --wait
 # .env.production is never committed (see docs/DEPLOYMENT.md for the required keys).
+#
+# Resource limits, capability drops and logging (TASK-045) are sized for the shared pilot VPS
+# (4 vCPU / 16 GB, ~7 GB available, many unrelated apps on the same Docker host). Values are
+# ceilings well above observed idle usage (web ~54 MiB, api ~69 MiB, postgres ~21 MiB, redis
+# ~2 MiB), not reservations, so a runaway process is capped without starving the rest of the host.
+# The host's `/etc/docker/daemon.json` already rotates every container's logs the same way
+# (json-file, 10m x 3); the per-service `logging:` block below repeats that only so the repo does
+# not depend on host-level configuration that isn't checked in anywhere.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 services:
   proxy:
     # Only when no reverse proxy exists on the host: `--profile caddy`. Behind an existing
-    # Traefik (deploy/compose.traefik.yml) this service is not started.
+    # Traefik (deploy/compose.traefik.yml) this service is not started, so it is not in scope for
+    # the capability hardening below (TASK-045 scope; see docs/tasks/TASK-045-ops-hardening.md).
     profiles: ["caddy"]
     image: caddy:2.9-alpine
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -25,6 +42,14 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    logging: *default-logging
+    # Already runs as the non-root `paxpivot` user (apps/web/Dockerfile); it needs no Linux
+    # capability at all (binds port 3000, no raw sockets, no filesystem ownership changes), so
+    # every capability is dropped and privilege escalation via setuid/setgid binaries is blocked.
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
     environment:
       PAXPIVOT_API_URL: http://api:8000
       PAXPIVOT_API_TOKEN: ${PAXPIVOT_API_TOKEN:?set PAXPIVOT_API_TOKEN}
@@ -57,6 +82,14 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    logging: *default-logging
+    # Already runs as the non-root `paxpivot` user (apps/api/Dockerfile); uvicorn/alembic need no
+    # Linux capability (binds port 8000, no filesystem ownership changes), so every capability is
+    # dropped and privilege escalation via setuid/setgid binaries is blocked.
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
     environment:
       DATABASE_URL: postgresql+psycopg://paxpivot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/paxpivot
       REDIS_URL: redis://redis:6379/0
@@ -70,6 +103,19 @@ services:
   postgres:
     image: postgis/postgis:16-3.5
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    logging: *default-logging
+    # The upstream entrypoint starts as root to fix data-directory ownership, then drops to the
+    # `postgres` user via gosu (docker-entrypoint.sh in postgis/postgis:16-3.5): CHOWN/FOWNER fix
+    # ownership and permissions on $PGDATA, DAC_OVERRIDE lets the still-root process traverse/read
+    # paths it does not own during that fixup, and SETUID/SETGID are required for gosu itself to
+    # switch from uid 0 to the postgres user. No other capability is exercised. Verified against
+    # both a fresh volume and an existing volume created by origin/main's compose.prod.yml (see
+    # the task Handoff).
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"]
+    security_opt: ["no-new-privileges:true"]
     environment:
       POSTGRES_USER: paxpivot
       POSTGRES_DB: paxpivot
@@ -88,6 +134,17 @@ services:
   redis:
     image: redis:7.4.8-alpine
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.5
+    logging: *default-logging
+    # Same shape as postgres above: docker-entrypoint.sh in redis:7.4.8-alpine starts as root,
+    # chowns its data directory to the `redis` user (CHOWN; FOWNER/DAC_OVERRIDE cover permission
+    # edge cases on that walk), then re-execs as `redis` via su-exec, which needs SETUID/SETGID to
+    # change uid/gid from 0. Data is ephemeral here (`--save "" --appendonly no`, no volume
+    # mounted), so this only ever runs against the image's own directory, never a persisted one.
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"]
+    security_opt: ["no-new-privileges:true"]
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
