@@ -311,12 +311,15 @@ def outcome_for(run: SourceCheckRun, source_id: UUID) -> SourceCheckOutcome:
     return next(o for o in run.outcomes if o.source_id == source_id)
 
 
-def health_now(engine: Engine) -> SourceHealthRead:
+def health_now(engine: Engine, now: datetime = EPOCH) -> SourceHealthRead:
+    """Source health read at the fixture clock: runs record at EPOCH, and a read days later
+    would report them stale (SRC-008)."""
     with engine.connect() as connection:
         return list_source_health(
             SqlSourceRepository(connection),
             SqlSourceObservationRepository(connection),
             SqlKillSwitchRepository(connection),
+            now=now,
         )
 
 

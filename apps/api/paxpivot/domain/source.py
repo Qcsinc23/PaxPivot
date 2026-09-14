@@ -23,6 +23,13 @@ class SourceState(StrEnum):
     WITHDRAWN = "withdrawn"
 
 
+# States that assert something from a successful read (pilot SRC-007). They require one, and they
+# are the only states that go out of date (SRC-008, application/read_services.py).
+POSITIVE_STATES = frozenset(
+    {SourceState.FRESH, SourceState.NO_DEPARTURES, SourceState.NO_COMPATIBLE}
+)
+
+
 class SourceIdentity(Contract):
     source_id: UUID
     url: HttpUrl
@@ -67,8 +74,7 @@ class SourceObservation(Contract):
 
     @model_validator(mode="after")
     def evidence_consistency(self) -> Self:
-        positive = {SourceState.FRESH, SourceState.NO_DEPARTURES, SourceState.NO_COMPATIBLE}
-        if self.state in positive and self.retrieval != RetrievalState.SUCCEEDED:
+        if self.state in POSITIVE_STATES and self.retrieval != RetrievalState.SUCCEEDED:
             raise ValueError("Positive evidence states require successful retrieval")
         parsed = {ExtractionState.EXACT, ExtractionState.REVIEWED}
         if self.state in {SourceState.NO_DEPARTURES, SourceState.NO_COMPATIBLE}:
