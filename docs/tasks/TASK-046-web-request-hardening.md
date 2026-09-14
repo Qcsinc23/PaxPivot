@@ -180,7 +180,7 @@ Fill in before merge.
 
 **Branch:** `foundation/TASK-046-web-request-hardening` from `main` @ `25f1264`.
 
-**Commit:** _(filled in after the focused commit(s) land; see PR)_.
+**Commit:** `a5cd955`, `d0d1bc0`, `f242976` (PR: see title above).
 
 **Files changed:** the owned paths above.
 
@@ -190,7 +190,11 @@ existing logic.
 
 **Migrations:** none.
 
-**Verification run:** _(fresh command output recorded in the PR description before merge)_.
+**Verification run:** on `f242976`, `make check` (format-check, lint, typecheck, test-unit —
+283 Python + 376 Vitest, test-integration — 40, build, migrate, migrate-check, compose-check)
+exited 0. `pnpm exec vitest run` in `apps/web`: 27 files, 376 tests passed, including the new
+`request-guards.test.ts` (17), `rate-limit.test.ts` (11), and the extended `auth.test.ts` (9)
+and `trips-route.test.ts` (7).
 
 **Known limitations / risks:** the rate limiter is per-process memory (`ponytail:` comment in
 `lib/auth/rate-limit.ts`) — correct for the pilot's single `web` replica, reset on restart, and
