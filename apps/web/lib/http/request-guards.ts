@@ -16,15 +16,22 @@ function tooLarge(): Response {
 }
 
 /**
- * Reject a cross-site POST. `Sec-Fetch-Site`, sent by every current Chrome/Firefox/Safari, is
- * the strongest signal: when present, anything but `same-origin` (the real form) or `none` (a
- * user-typed or bookmarked navigation — never script-initiated) is rejected outright.
+ * Reject a cross-site POST. Two independent checks, either of which can refuse the request —
+ * not a fallback chain — so a request cannot pass by satisfying only whichever header this
+ * function happened to look at first:
  *
- * When absent — an older browser, or a non-browser client such as curl or a health probe —
- * fall back to comparing the `Origin` header's host against the request's own `Host` header.
- * Traefik forwards the original `Host` unchanged (`passHostHeader` defaults to true; see
- * `deploy/compose.traefik.yml`, one hop from the client), so it is the request's own idea of
- * its host and safe to trust here without an `X-Forwarded-Host` lookup.
+ * 1. `Sec-Fetch-Site`, sent by every current Chrome/Firefox/Safari and impossible for page
+ *    script to set or override (it is a forbidden header name for `fetch`/`XMLHttpRequest`):
+ *    when present, anything but `same-origin` (the real form) or `none` (a user-typed or
+ *    bookmarked navigation — never script-initiated) is rejected outright.
+ * 2. `Origin`, when present, must have the same host as the request's own `Host` header.
+ *    Traefik forwards the original `Host` unchanged (`passHostHeader` defaults to true; see
+ *    `deploy/compose.traefik.yml`, one hop from the client), so it is the request's own idea of
+ *    its host and safe to trust here without an `X-Forwarded-Host` lookup.
+ *
+ * A real browser sets both consistently, so a legitimate same-origin request always passes
+ * both; checking them independently only matters against a non-browser client that supplies
+ * one correctly and forges the other.
  *
  * When *both* headers are absent, the request is allowed through the rest of this check: a
  * script cannot make a cross-site POST while stripping `Sec-Fetch-Site` (browsers set it
@@ -34,21 +41,25 @@ function tooLarge(): Response {
  */
 export function checkSameOrigin(request: Request): GuardFailure | null {
   const secFetchSite = request.headers.get("sec-fetch-site");
-  if (secFetchSite !== null) {
-    return secFetchSite === "same-origin" || secFetchSite === "none"
-      ? null
-      : { response: forbidden() };
-  }
-  const origin = request.headers.get("origin");
-  if (origin === null) return null;
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host.toLowerCase();
-  } catch {
+  if (
+    secFetchSite !== null &&
+    secFetchSite !== "same-origin" &&
+    secFetchSite !== "none"
+  ) {
     return { response: forbidden() };
   }
-  const host = (request.headers.get("host") ?? "").toLowerCase();
-  return originHost === host ? null : { response: forbidden() };
+  const origin = request.headers.get("origin");
+  if (origin !== null) {
+    let originHost: string;
+    try {
+      originHost = new URL(origin).host.toLowerCase();
+    } catch {
+      return { response: forbidden() };
+    }
+    const host = (request.headers.get("host") ?? "").toLowerCase();
+    if (originHost !== host) return { response: forbidden() };
+  }
+  return null;
 }
 
 /**

@@ -129,16 +129,19 @@ secret names (Handoff).
   - **Same-origin POST enforcement** (`apps/web/lib/http/request-guards.ts::checkSameOrigin`).
     `SameSite=Lax` alone stops a cross-site *authenticated* POST from carrying the session
     cookie, but not a cross-site POST to `/auth/session` itself (no cookie needed to guess a
-    passphrase) or a same-site-cookie-adjacent CSRF variant. Every POST handler now also
-    requires `Sec-Fetch-Site` (when present) to be `same-origin` or `none`, and otherwise falls
-    back to comparing the `Origin` header's host against the request's own `Host` header — which
-    Traefik forwards unchanged (`passHostHeader` defaults to true), confirmed against
-    `deploy/compose.traefik.yml`, so trusting the `Host` header Next.js sees is safe one hop from
-    the client. A request with neither header is allowed through this check: real browsers set
-    at least one of them unconditionally on every fetch/form POST, so their absence means a
-    non-browser client, not a same-origin browser request stripped of its markers, and rejecting
-    such clients outright would also break legitimate non-browser tooling with no attack this
-    check is meant to stop.
+    passphrase) or a same-site-cookie-adjacent CSRF variant. Every POST handler now runs two
+    independent checks, either of which can refuse the request: `Sec-Fetch-Site`, when present,
+    must be `same-origin` or `none`; `Origin`, when present, must have the same host as the
+    request's own `Host` header — which Traefik forwards unchanged (`passHostHeader` defaults to
+    true), confirmed against `deploy/compose.traefik.yml`, so trusting the `Host` header Next.js
+    sees is safe one hop from the client. The checks are independent rather than a fallback
+    chain (checking `Origin` only when `Sec-Fetch-Site` is absent) precisely so a request cannot
+    pass by satisfying only whichever header is checked first; a real browser sets both
+    consistently, so this never affects a legitimate same-origin request. A request with
+    *neither* header is allowed through this check: real browsers set at least one of them
+    unconditionally on every fetch/form POST, so their absence means a non-browser client, not a
+    same-origin browser request stripped of its markers, and rejecting such clients outright
+    would also break legitimate non-browser tooling with no attack this check is meant to stop.
 
   - **Body size limits** (`apps/web/lib/http/request-guards.ts::checkBodySize`). Next's
     `bodySizeLimit` config applies to Server Actions, not Route Handlers, so all three POST

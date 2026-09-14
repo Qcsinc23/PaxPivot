@@ -35,14 +35,14 @@ describe("checkSameOrigin", () => {
     expect(checkSameOrigin(request({ "sec-fetch-site": "none" }))).toBeNull();
   });
 
-  test("falls back to Origin vs Host when Sec-Fetch-Site is absent, rejecting a mismatch", () => {
+  test("checks Origin vs Host too when Sec-Fetch-Site is absent, rejecting a mismatch", () => {
     const result = checkSameOrigin(
       request({ origin: "https://evil.invalid", host: "pilot.invalid" }),
     );
     expect(result?.response.status).toBe(403);
   });
 
-  test("falls back to Origin vs Host, accepting a match", () => {
+  test("checks Origin vs Host too when Sec-Fetch-Site is absent, accepting a match", () => {
     expect(
       checkSameOrigin(
         request({ origin: "https://pilot.invalid", host: "pilot.invalid" }),
@@ -69,14 +69,26 @@ describe("checkSameOrigin", () => {
     expect(checkSameOrigin(request({}))).toBeNull();
   });
 
-  test("Sec-Fetch-Site takes precedence over a present Origin header", () => {
-    // A same-origin Sec-Fetch-Site should short-circuit even if Origin looks foreign, since a
-    // real browser sets both consistently; this only matters for a synthetic/malformed request.
+  test("checks Sec-Fetch-Site and Origin independently, not as a fallback chain", () => {
+    // No real browser sends this combination, but the two checks are independent: an
+    // otherwise same-origin Sec-Fetch-Site does not excuse a forged, mismatched Origin.
+    const result = checkSameOrigin(
+      request({
+        "sec-fetch-site": "same-origin",
+        origin: "https://evil.invalid",
+        host: "pilot.invalid",
+      }),
+    );
+    expect(result?.response.status).toBe(403);
+  });
+
+  test("accepts a request where both headers are present and agree", () => {
     expect(
       checkSameOrigin(
         request({
           "sec-fetch-site": "same-origin",
-          origin: "https://evil.invalid",
+          origin: "https://pilot.invalid",
+          host: "pilot.invalid",
         }),
       ),
     ).toBeNull();
