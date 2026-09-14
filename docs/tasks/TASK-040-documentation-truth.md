@@ -2,7 +2,7 @@
 
 ## Status
 
-`review` — PR open; see Handoff.
+`done` — merged to `main` in 979abc2 (PR #50); final fresh review 0 Critical / 0 Important.
 
 ## Assigned role
 
@@ -117,7 +117,7 @@ merged and deployed state.
 
 **Branch:** `foundation/TASK-040-documentation-truth`
 
-**Commit:** reported in the PR.
+**Commit:** merged to `main` as 979abc2 (PR #50).
 
 **Files changed:** the owned paths above.
 
