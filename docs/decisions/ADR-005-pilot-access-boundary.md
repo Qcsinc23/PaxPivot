@@ -97,48 +97,75 @@ secret names (Handoff).
   for touching it):
 
   - **Login rate limit** (`apps/web/lib/auth/rate-limit.ts`). An in-memory `LoginRateLimiter`
-    counts failed `POST /auth/session` attempts per client over a 15-minute window: 10 failures
-    blocks that client, and a 200-failure global ceiling blocks everyone once many distinct
-    clients fail regardless of any single client's own count. A blocked request is denied with
-    the same `/login?error=1` redirect as a wrong passphrase — no distinguishable response,
-    timing included, since the fixed failure delay still runs either way — so nothing about the
-    block is observable, matching this ADR's existing "never echoes the input" posture. A
-    successful sign-in clears only that client's own failure history, never the global counter,
-    and is otherwise unaffected by other clients' failures, so one noisy attacker cannot lock
-    out the pilot's one legitimate user short of tripping the global ceiling — an accepted
-    trade-off given the ceiling exists precisely to bound damage from many distinct attackers,
-    not to protect against the pilot user locking themselves out (a mistyped passphrase ten
-    times in a row is credential-checked, not merely counted). The limiter is in-process memory
-    only: correct because `compose.prod.yml` runs exactly one `web` replica; it resets on
-    restart and does not survive a redeploy, which is accepted for a single-user pilot (see the
-    module's `ponytail:` comment for the exact bounds).
+    counts failed `POST /auth/session` attempts per client over a 15-minute window, with two
+    independent tiers. **Per-client cap:** 10 failures blocks that client — even with the
+    correct passphrase, until the window slides — and this is the *only* check that can ever
+    refuse a correct passphrase; it depends only on that client's own history, so the pilot
+    user's own IP is affected only by its own failures. **Global ceiling (a slowdown, not a
+    lockout):** once 200 failures land in the window from any mix of clients, a further *wrong*
+    passphrase gets a longer failure delay (5 s instead of 500 ms) — the ceiling never refuses a
+    correct passphrase from a client that isn't itself over its own cap. A first draft of this
+    limiter had the global ceiling *block* everyone once tripped; a security review of this task
+    found that turns it into a trivial, cheap denial-of-service against the pilot's one
+    legitimate user: 200 / 10 = 20 distinct client keys, each failing 10 times, trips it, and a
+    trickle of roughly 13 failed requests a minute spread over those 20 IPs sustains the trip
+    indefinitely — a ~20-IP botnet or open-proxy list is a low bar. This revision guarantees the
+    global ceiling can only ever slow down further guessing, never lock out a legitimate
+    sign-in; the trade-off is that a large-enough distributed attack still gets to *try*
+    indefinitely (just slowly), which is why the passphrase's own length (≥ 20 chars, ADR-005
+    above) remains the real entropy floor this defense leans on — a global slowdown buys time
+    against automation, it does not substitute for passphrase strength. One structured log line
+    (`{"event":"auth_global_rate_limit_tripped"}`, no IP, no passphrase, no per-client counts)
+    is emitted the moment the ceiling trips, once per trip, so an operator can notice sustained
+    distributed guessing without the log itself becoming a way to fingerprint clients. A blocked
+    (per-client-capped) request is denied with the same `/login?error=1` redirect as a wrong
+    passphrase — nothing distinguishes the two to the client — and the constant-time passphrase
+    compare always runs before either rate-limit decision, so a block's timing carries no signal
+    either. A successful sign-in clears only that client's own failure history, never the global
+    counter. The limiter is in-process memory only: correct because `compose.prod.yml` runs
+    exactly one `web` replica; it resets on restart and does not survive a redeploy, accepted
+    for a single-user pilot (see the module's `ponytail:` comment for the exact bounds).
 
-    **Client identity.** `deploy/compose.traefik.yml` and `docs/DEPLOYMENT.md` confirm the
-    topology is one Traefik hop directly in front of `web`, and Traefik's own behavior is to
-    *append* the real peer address to `X-Forwarded-For` rather than trust or rewrite any
-    existing value. A client can send its own `X-Forwarded-For` with any forged prefix it likes
-    (the whole point of the attack this task closes is that the client is untrusted), but it
-    cannot make Traefik *not* append the true peer address as the header's right-most entry.
-    `clientKey()` therefore reads only that right-most entry — the only part of the header this
-    single-hop topology can trust — and ignores everything to its left. Reading the left-most
-    entry instead (a common mistake) would let one attacker present a different "client" on
-    every request purely by varying its own forged prefix, defeating the per-client cap for
-    free; a future multi-hop deployment would need to trust the Nth-from-the-right entry
-    instead, for the same reason.
+    **Client identity — verified facts, not inference.** An earlier draft of this amendment
+    said the right-most-`X-Forwarded-For` trust decision was "confirmed against
+    `deploy/compose.traefik.yml`"; that file carries only Traefik *routing* labels and says
+    nothing about header trust, so the claim was an overstatement caught in review. The actual
+    verification, done live and read-only against the deployed host on **2026-09-14**: the DNS A
+    record for `paxpivot.qcs-cargo.com` resolves directly to the VPS (`82.25.85.157`) with no CDN
+    or other proxy in front, and the host's Traefik v2.11 static configuration
+    (`/etc/dokploy/traefik/traefik.yml`, Dokploy-managed) defines entrypoints `web` (:80) and
+    `websecure` (:443) with neither `forwardedHeaders.trustedIPs` nor `forwardedHeaders.insecure`
+    set — so Traefik does not treat any client-supplied `X-Forwarded-*` header as authoritative,
+    and the `X-Forwarded-For` it hands to `web` ends in the actual TCP peer address it saw. No
+    empirical forged-header probe was run against the live host — the operator shares that
+    network, and a wrong assumption tested live would risk locking them out — so this rests on
+    reading the static configuration, not on an attack rehearsal. **Re-verify if the topology
+    changes**: adding a CDN or another reverse proxy in front of Traefik, or changing either
+    entrypoint's `forwardedHeaders` settings, can change which `X-Forwarded-For` entry (if any)
+    is trustworthy; a deployment with more hops in front of `web` would need to trust the
+    Nth-from-the-right entry instead of the last one, for the same reason this one trusts the
+    last. A client can still send its own `X-Forwarded-For` with any forged prefix it likes —
+    the whole point of the attack this task closes is that the client is untrusted — but under
+    the verified configuration it cannot make Traefik *not* append the true peer address as the
+    header's right-most entry, which is the only entry `clientKey()` reads.
 
   - **Same-origin POST enforcement** (`apps/web/lib/http/request-guards.ts::checkSameOrigin`).
     `SameSite=Lax` alone stops a cross-site *authenticated* POST from carrying the session
     cookie, but not a cross-site POST to `/auth/session` itself (no cookie needed to guess a
     passphrase) or a same-site-cookie-adjacent CSRF variant. Every POST handler now runs two
     independent checks, either of which can refuse the request: `Sec-Fetch-Site`, when present,
-    must be `same-origin` or `none`; `Origin`, when present, must have the same host as the
-    request's own `Host` header — which Traefik forwards unchanged (`passHostHeader` defaults to
-    true), confirmed against `deploy/compose.traefik.yml`, so trusting the `Host` header Next.js
-    sees is safe one hop from the client. The checks are independent rather than a fallback
-    chain (checking `Origin` only when `Sec-Fetch-Site` is absent) precisely so a request cannot
-    pass by satisfying only whichever header is checked first; a real browser sets both
-    consistently, so this never affects a legitimate same-origin request. A request with
-    *neither* header is allowed through this check: real browsers set at least one of them
+    must be `same-origin` or `none`; `Origin`, when present, must have the same host *and*
+    scheme as the request's own effective origin — host against the `Host` header, scheme
+    against `X-Forwarded-Proto` when present else the request URL's own protocol (an earlier
+    draft compared host only, which review found let `Origin: http://<host>` pass against an
+    `https` request). `Host` is what Traefik forwards unchanged (`passHostHeader` defaults to
+    true and nothing in `deploy/compose.traefik.yml` overrides it) one hop from the client — the
+    same single-hop, no-CDN topology verified live above — so trusting it needs no separate
+    `X-Forwarded-Host` lookup. The checks are independent rather than a fallback chain (checking
+    `Origin` only when `Sec-Fetch-Site` is absent) precisely so a request cannot pass by
+    satisfying only whichever header is checked first; a real browser sets both, and both parts
+    of `Origin`, consistently, so this never affects a legitimate same-origin request. A request
+    with *neither* header is allowed through this check: real browsers set at least one of them
     unconditionally on every fetch/form POST, so their absence means a non-browser client, not a
     same-origin browser request stripped of its markers, and rejecting such clients outright
     would also break legitimate non-browser tooling with no attack this check is meant to stop.

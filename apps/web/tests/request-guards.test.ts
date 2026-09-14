@@ -93,6 +93,43 @@ describe("checkSameOrigin", () => {
       ),
     ).toBeNull();
   });
+
+  test("rejects a same-host Origin whose scheme doesn't match X-Forwarded-Proto", () => {
+    const result = checkSameOrigin(
+      request({
+        origin: "http://pilot.invalid",
+        host: "pilot.invalid",
+        "x-forwarded-proto": "https",
+      }),
+    );
+    expect(result?.response.status).toBe(403);
+  });
+
+  test("accepts an Origin whose scheme matches X-Forwarded-Proto", () => {
+    expect(
+      checkSameOrigin(
+        request({
+          origin: "https://pilot.invalid",
+          host: "pilot.invalid",
+          "x-forwarded-proto": "https",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("falls back to the request URL's own protocol when X-Forwarded-Proto is absent", () => {
+    // The `request()` helper below builds requests at https://pilot.invalid/..., so a
+    // http:// Origin is a scheme mismatch even with a matching host and no forwarded header.
+    const mismatched = checkSameOrigin(
+      request({ origin: "http://pilot.invalid", host: "pilot.invalid" }),
+    );
+    expect(mismatched?.response.status).toBe(403);
+    expect(
+      checkSameOrigin(
+        request({ origin: "https://pilot.invalid", host: "pilot.invalid" }),
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("checkBodySize", () => {

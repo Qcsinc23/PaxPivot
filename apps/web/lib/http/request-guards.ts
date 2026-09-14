@@ -24,20 +24,25 @@ function tooLarge(): Response {
  *    script to set or override (it is a forbidden header name for `fetch`/`XMLHttpRequest`):
  *    when present, anything but `same-origin` (the real form) or `none` (a user-typed or
  *    bookmarked navigation — never script-initiated) is rejected outright.
- * 2. `Origin`, when present, must have the same host as the request's own `Host` header.
- *    Traefik forwards the original `Host` unchanged (`passHostHeader` defaults to true; see
- *    `deploy/compose.traefik.yml`, one hop from the client), so it is the request's own idea of
- *    its host and safe to trust here without an `X-Forwarded-Host` lookup.
+ * 2. `Origin`, when present, must have the same host *and* scheme as the request's own
+ *    effective origin: host is compared against the `Host` header, and scheme against
+ *    `X-Forwarded-Proto` when present, else the request URL's own protocol. `Host` is what
+ *    Traefik forwards unchanged (`passHostHeader` defaults to true and nothing in
+ *    `deploy/compose.traefik.yml` overrides it) one hop from the client — the same single-hop,
+ *    no-CDN topology verified live for `clientKey()` in `lib/auth/rate-limit.ts` (2026-09-14) —
+ *    so trusting it here needs no separate `X-Forwarded-Host` lookup. Comparing only the host
+ *    and not the scheme would let `Origin: http://<host>` pass against an `https` request.
  *
- * A real browser sets both consistently, so a legitimate same-origin request always passes
- * both; checking them independently only matters against a non-browser client that supplies
- * one correctly and forges the other.
+ * A real browser sets both headers, and both parts of `Origin`, consistently, so a legitimate
+ * same-origin request always passes; checking them independently only matters against a
+ * non-browser client that supplies one correctly and forges the rest.
  *
- * When *both* headers are absent, the request is allowed through the rest of this check: a
- * script cannot make a cross-site POST while stripping `Sec-Fetch-Site` (browsers set it
- * unconditionally on fetch/form submissions) or `Origin` (also set unconditionally on POST), so
- * a request with neither is not a browser cross-site forgery — it is a non-browser client, and
- * SameSite=Lax already keeps a stray browser session cookie off of it regardless.
+ * When *both* `Sec-Fetch-Site` and `Origin` are absent, the request is allowed through the rest
+ * of this check: a script cannot make a cross-site POST while stripping `Sec-Fetch-Site`
+ * (browsers set it unconditionally on fetch/form submissions) or `Origin` (also set
+ * unconditionally on POST), so a request with neither is not a browser cross-site forgery — it
+ * is a non-browser client, and SameSite=Lax already keeps a stray browser session cookie off of
+ * it regardless.
  */
 export function checkSameOrigin(request: Request): GuardFailure | null {
   const secFetchSite = request.headers.get("sec-fetch-site");
@@ -50,16 +55,33 @@ export function checkSameOrigin(request: Request): GuardFailure | null {
   }
   const origin = request.headers.get("origin");
   if (origin !== null) {
-    let originHost: string;
+    let originUrl: URL;
     try {
-      originHost = new URL(origin).host.toLowerCase();
+      originUrl = new URL(origin);
     } catch {
       return { response: forbidden() };
     }
     const host = (request.headers.get("host") ?? "").toLowerCase();
-    if (originHost !== host) return { response: forbidden() };
+    const originHost = originUrl.host.toLowerCase();
+    const originScheme = originUrl.protocol.replace(":", "").toLowerCase();
+    if (originHost !== host || originScheme !== effectiveScheme(request)) {
+      return { response: forbidden() };
+    }
   }
   return null;
+}
+
+/** `X-Forwarded-Proto` when Traefik set one, else the request URL's own protocol. */
+function effectiveScheme(request: Request): string {
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  if (forwardedProto) {
+    return forwardedProto.split(",")[0]!.trim().toLowerCase();
+  }
+  try {
+    return new URL(request.url).protocol.replace(":", "").toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 /**

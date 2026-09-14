@@ -436,6 +436,34 @@ describe("request hardening (TASK-046)", () => {
       expect(other.headers.get("set-cookie")).not.toBeNull();
     });
   });
+
+  test("a global ceiling tripped by 20+ distinct clients never blocks a fresh client's correct passphrase", async () => {
+    await withEnv(CONFIGURED, async () => {
+      // MAX_FAILURES_GLOBAL (200) / MAX_FAILURES_PER_CLIENT (10) = 20: the documented minimum
+      // number of distinct clients that can trip the global ceiling without any one of them
+      // exceeding its own per-client cap.
+      for (let i = 0; i < 20; i += 1) {
+        const attacker = { "x-forwarded-for": `198.51.100.${i}` };
+        for (let j = 0; j < 10; j += 1) {
+          const failure = await signIn(
+            post({ passphrase: `wrong-${i}-${j}-of-similar-length` }, attacker),
+          );
+          expect(failure.status).toBe(303);
+        }
+      }
+      // A brand-new client — zero failures of its own — still signs in normally: the global
+      // ceiling only ever slows down a *wrong* passphrase, never a correct one (TASK-046 review).
+      const legitimate = await signIn(
+        post(
+          { passphrase: PASSPHRASE, next: "/advanced" },
+          { "x-forwarded-for": "203.0.113.250" },
+        ),
+      );
+      expect(legitimate.status).toBe(303);
+      expect(legitimate.headers.get("location")).toBe("/advanced");
+      expect(legitimate.headers.get("set-cookie")).not.toBeNull();
+    });
+  });
 });
 
 describe("secrets stay server-side", () => {

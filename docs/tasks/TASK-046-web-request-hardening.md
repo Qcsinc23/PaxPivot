@@ -78,26 +78,39 @@ apps/web/lib/api/client.ts::writeApi (unchanged)
 lib/http/request-guards.ts::checkSameOrigin(request) -> GuardFailure | null
 lib/http/request-guards.ts::checkBodySize(request, maxBytes) -> GuardFailure | null
 lib/auth/rate-limit.ts::clientKey(request) -> string
-lib/auth/rate-limit.ts::LoginRateLimiter (isBlocked, recordFailure, recordSuccess, trackedClients)
+lib/auth/rate-limit.ts::failureDelayMs(globalThrottled) -> number
+lib/auth/rate-limit.ts::LoginRateLimiter (isClientBlocked, isGlobalThrottled, recordFailure,
+                                           recordSuccess, trackedClients)
 lib/auth/rate-limit.ts::loginRateLimiter  (process-wide singleton the route handler uses)
-lib/auth/rate-limit.ts::WINDOW_MS, MAX_FAILURES_PER_CLIENT, MAX_FAILURES_GLOBAL, MAX_TRACKED_CLIENTS
+lib/auth/rate-limit.ts::WINDOW_MS, MAX_FAILURES_PER_CLIENT, MAX_FAILURES_GLOBAL,
+                        MAX_TRACKED_CLIENTS, FAILURE_DELAY_MS, GLOBAL_THROTTLE_DELAY_MS
 ```
 
 ## Acceptance criteria
 
-- [x] 11th failed `POST /auth/session` attempt from one client within the window is blocked
-      (same `/login?error=1` response as a wrong passphrase — including when the 11th attempt's
-      passphrase is correct); a different client is unaffected below the global ceiling; a
-      global ceiling blocks a brand-new client once enough distinct clients have failed.
+- [x] 11th failed `POST /auth/session` attempt from one client within the window is blocked —
+      the *per-client* cap, which alone can refuse even a correct passphrase — while a different
+      client is entirely unaffected by it.
+- [x] The global failure ceiling (200 in the window, reachable by 20 distinct clients each
+      failing 10 times) never blocks a correct passphrase from a client that is not itself over
+      its own per-client cap: once tripped, only a further *wrong* passphrase gets a longer
+      failure delay. (Revised from the first draft, where the global ceiling blocked everyone —
+      a security review found that a cheap, sustained distributed attack could use it to lock
+      out the pilot's one legitimate user indefinitely.)
+- [x] The constant-time passphrase compare always runs, before either rate-limit decision is
+      applied — a block's timing carries no information about whether it was a block.
 - [x] Client identity for the rate limiter is the right-most `X-Forwarded-For` entry (the one
-      Traefik itself appends); a forged prefix does not change the derived identity or let an
-      attacker reset their own count.
+      Traefik itself appends, verified live against the deployed host on 2026-09-14 — see the
+      ADR-005 amendment and `lib/auth/rate-limit.ts`); a forged prefix does not change the
+      derived identity or let an attacker reset their own count.
 - [x] The limiter's memory is bounded: expired entries are evicted and the tracked-client count
-      never exceeds its configured cap.
+      never exceeds its configured cap. A structured log line, with no per-client identifying
+      detail, is emitted once per trip of the global ceiling.
 - [x] A POST to `/auth/session`, `/auth/logout` or `/trips/new` with `Sec-Fetch-Site` present and
-      not `same-origin`/`none`, or with an `Origin` whose host does not match the request's
-      `Host`, is rejected with 403. A same-origin request (matching `Sec-Fetch-Site`, matching
-      `Origin`/`Host`, or neither header present) is accepted.
+      not `same-origin`/`none`, or with an `Origin` whose host or scheme does not match the
+      request's effective host/scheme (`Host`; `X-Forwarded-Proto` else the request URL's own
+      protocol), is rejected with 403. A same-origin request (matching `Sec-Fetch-Site`, matching
+      `Origin` host and scheme, or neither header present) is accepted.
 - [x] A POST to any of the three handlers with `Content-Length` missing or over its limit (8 KiB
       auth, 16 KiB trips) is rejected with 413, before `formData()` is called. A maximal
       legitimate request (a 200-character `destination_text` and the rest of the trip form) is
@@ -112,22 +125,33 @@ lib/auth/rate-limit.ts::WINDOW_MS, MAX_FAILURES_PER_CLIENT, MAX_FAILURES_GLOBAL,
 apps/web/tests/request-guards.test.ts   checkSameOrigin: cross-site rejected, same-site rejected,
                                          same-origin accepted (Sec-Fetch-Site and Origin/Host
                                          paths), host comparison is case-insensitive, malformed
-                                         Origin rejected, neither header present allowed;
-                                         checkBodySize: missing/over-limit/non-numeric/negative
-                                         Content-Length rejected, at-limit and small accepted, a
-                                         maximal legitimate trip form's byte size accepted.
+                                         Origin rejected, neither header present allowed,
+                                         Sec-Fetch-Site and Origin checked independently (not a
+                                         fallback), Origin scheme checked against
+                                         X-Forwarded-Proto and against the request URL's own
+                                         protocol when that header is absent; checkBodySize:
+                                         missing/over-limit/non-numeric/negative Content-Length
+                                         rejected, at-limit and small accepted, a maximal
+                                         legitimate trip form's byte size accepted.
 apps/web/tests/rate-limit.test.ts       clientKey: right-most XFF entry, forged-prefix
-                                         resistance, no-header fallback; LoginRateLimiter: 11th
-                                         failure blocked, window expiry via injectable clock,
-                                         global ceiling, success path leaves other/global state
-                                         alone, a client's own success clears only its own
-                                         history, XFF-spoofing does not bypass the limit, memory
-                                         cap on tracked clients, expired entries evicted.
+                                         resistance, no-header fallback; failureDelayMs: the
+                                         longer delay only when throttled; LoginRateLimiter per-
+                                         client cap: 11th failure blocked, window expiry via
+                                         injectable clock, own success clears own history only,
+                                         XFF-spoofing does not reset the count, memory cap on
+                                         tracked clients, expired entries evicted; global
+                                         ceiling: never blocks a fresh/untouched client even once
+                                         tripped, 20-distinct-clients-x-10-failures reachability,
+                                         onGlobalThrottleTripped fires exactly once per trip and
+                                         again after a re-trip, the default logger emits one
+                                         structured event with no identifying detail.
 apps/web/tests/auth.test.ts             "request hardening (TASK-046)": cross-site/mismatched-
                                          Origin POST to /auth/session and /auth/logout rejected,
                                          same-origin accepted; oversize/undeclared-length sign-in
                                          body rejected; 11 failures from one client block even a
-                                         correct passphrase, a different client still succeeds.
+                                         correct passphrase, a different client still succeeds;
+                                         a global ceiling tripped by 20+ distinct clients never
+                                         blocks a fresh client's correct passphrase.
 apps/web/tests/trips-route.test.ts      "trip request route hardening (TASK-046)": cross-site and
                                          mismatched-Origin POST rejected, same-origin accepted;
                                          oversize and undeclared-length body rejected; a maximal
@@ -200,10 +224,20 @@ and `trips-route.test.ts` (7).
 **Known limitations / risks:** the rate limiter is per-process memory (`ponytail:` comment in
 `lib/auth/rate-limit.ts`) — correct for the pilot's single `web` replica, reset on restart, and
 not shared across a future multi-replica deployment. Client identity trusts the right-most
-`X-Forwarded-For` entry, correct only for exactly one proxy hop in front of `web`; adding a CDN
-or a second proxy hop in front of Traefik would require trusting a different, deeper entry
-instead. The global failure ceiling (200/15 min) means a large-enough distributed attack still
-locks out the pilot's one legitimate user; this is an accepted trade-off (see the ADR-005
-amendment) given the alternative (no ceiling at all) is strictly worse.
+`X-Forwarded-For` entry; this is a *verified* fact about the deployed host as of 2026-09-14
+(direct DNS to the VPS, no CDN; Traefik v2.11's `web`/`websecure` entrypoints have neither
+`forwardedHeaders.trustedIPs` nor `forwardedHeaders.insecure` set — see the ADR-005 amendment
+for the exact configuration read), not an assumption from `deploy/compose.traefik.yml` alone
+(an earlier draft overstated that file as the evidence; it only carries routing labels). Adding
+a CDN or another reverse-proxy hop in front of Traefik, or changing either entrypoint's
+`forwardedHeaders` settings, invalidates this and must be re-verified before trusting the same
+header entry again. The global failure ceiling (200 failures / 15 min, reachable by 20 distinct
+clients each failing 10 times) now only ever *slows down* further wrong guesses — it cannot
+block a correct passphrase from an otherwise-untouched client, so it cannot be used to lock out
+the pilot's one legitimate user; a large-enough distributed attack can still keep guessing
+indefinitely, just slowly, which is why the passphrase's own length (≥ 20 chars, ADR-005) is the
+real entropy floor this defense leans on. (A first draft had the global ceiling block everyone
+once tripped; a security review found that made a ~20-IP distributed attack a cheap, indefinite
+denial-of-service against the pilot's one user, and this was corrected before merge.)
 
 **Next dependency:** none known; TASK-044 and TASK-045 are independent parallel tasks.
