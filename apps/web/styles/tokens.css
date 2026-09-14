@@ -85,8 +85,9 @@
   /* interaction */
   --hit: 2.75rem; /* ~44px minimum touch target */
   --nav-height: 3.75rem;
-  /* The floating Ask action's own height (min-height + vertical breathing room). The scroll
-     area reserves this so the control never covers the content underneath it. */
+  /* The floating Ask action's footprint: its 44px touch target plus an 8px clearance gap. The
+     scroll area reserves this so the control never covers the content underneath it; shrinking
+     it to --hit alone would reintroduce the overlap. */
   --fab-height: calc(var(--hit) + var(--space-2));
   --rail-width: 13.5rem;
   --content-max: 44rem;

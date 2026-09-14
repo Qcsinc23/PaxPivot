@@ -95,8 +95,18 @@ describe("AppShell", () => {
   });
 
   test("hides the Ask action on the Ask screen itself", () => {
-    renderShell("/ask");
+    const { unmount } = renderShell("/ask");
     expect(screen.queryByRole("link", { name: "Ask PaxPivot" })).toBeNull();
+    // The page stops reserving room for a control it does not show, and lets go on leaving.
+    expect(document.body.dataset.noFab).toBe("true");
+    unmount();
+    expect(document.body.dataset.noFab).toBeUndefined();
+  });
+
+  test("a page that shows the Ask action does not mark the body", () => {
+    renderShell("/terminals");
+    expect(screen.getByRole("link", { name: "Ask PaxPivot" })).toBeTruthy();
+    expect(document.body.dataset.noFab).toBeUndefined();
   });
 
   test("shell has no axe violations", async () => {
@@ -169,18 +179,24 @@ describe("AppShell", () => {
       desktopRule(css, ".pp-guarantee").match(/margin-bottom:([^;]+);/)?.[1],
     ).toContain("var(--fab-height)");
 
-    // A sticky action bar hides the control (and sits in normal flow), so those pages reserve
-    // the navigation only, on both layouts, instead of dead space for a control not shown.
+    // A sticky action bar (in normal flow) and the Ask screen itself hide the control, so those
+    // pages reserve the navigation only, on both layouts, instead of dead space for a control
+    // that is not shown.
     expect(rule(css, "body[data-sticky-bar] .pp-fab")).toContain(
       "display: none",
     );
     for (const find of [rule, desktopRule]) {
-      const main = find(css, "body[data-sticky-bar] .pp-main");
-      const footer = find(css, "body[data-sticky-bar] .pp-guarantee");
+      const main = find(css, "body[data-no-fab] .pp-main");
+      const footer = find(css, "body[data-no-fab] .pp-guarantee");
       expect(main).toContain("padding-bottom");
       expect(footer).toContain("margin-bottom");
       expect(main).not.toContain("--fab-height");
       expect(footer).not.toContain("--fab-height");
+    }
+    // Both marks share those rules, on the mobile and the desktop layout.
+    for (const target of [".pp-main", ".pp-guarantee"]) {
+      expect(css.split(`body[data-sticky-bar] ${target},`).length - 1).toBe(2);
+      expect(css.split(`body[data-no-fab] ${target} {`).length - 1).toBe(2);
     }
   });
 });

@@ -40,9 +40,15 @@ None.
 ```text
 apps/web/styles/tokens.css
 apps/web/styles/components.css
+apps/web/components/shell/AskPaxPivotAction.tsx   (body mark while hidden; added after re-review)
 apps/web/tests/shell.test.tsx
 docs/tasks/TASK-039-floating-ask-clearance.md
 ```
+
+`AskPaxPivotAction.tsx` was added after the re-review: the Ask screen hides the control by not
+rendering it rather than through a sticky action bar, so without a body mark `/ask` would have
+reserved the full control height (144 px on mobile, up from 96 px before this task) for a
+control that is never there.
 
 ## Read-only context
 
@@ -159,6 +165,19 @@ hit test at document end (elementsFromPoint over the whole control, 4 px grid, 2
 - The pre-existing mobile disclaimer margin (`--nav-height`, 60 px) left the disclaimer's last 5 px
   under the rendered 65 px bar; the sticky-page override adds `--space-2`.
 - *Minor:* the "why" numbers in this file were corrected (120 px, 36 px).
+
+**Re-review (fresh, 0 Critical / 1 Important → fixed / 2 Minor → 1 fixed, 1 declined):**
+
+- *Important (fixed):* `/ask` hides the control by not rendering it, not through a sticky action
+  bar, so it still reserved the full control height (144 px on mobile, 100 px / 76 px on desktop)
+  for a control that is never there. `AskPaxPivotAction` now sets `body[data-no-fab]` while it is
+  hidden (removed on unmount or navigation), and the navigation-only overrides apply to both
+  marks on both layouts. The shell tests pin the mark on `/ask`, its removal on unmount, its
+  absence where the control is shown, and both selectors at both breakpoints.
+- *Minor (fixed):* the `--fab-height` comment now calls it the control's footprint (44 px target
+  plus an 8 px clearance gap), not its own height.
+- *Minor (declined):* desktop reserves do not add `env(safe-area-inset-bottom)`; no desktop rule
+  in the stylesheet does, and the desktop layout has no bottom navigation to clear.
 
 After the fix, at the document end:
 
