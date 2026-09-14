@@ -125,7 +125,32 @@ merged and deployed state.
 
 **Migrations:** none.
 
-**Verification run:** recorded in the PR.
+**Verification run (2026-09-14, on `main` 5ef033e after TASK-039/041/042 merged and deployed):**
+
+```text
+tests/unit/test_docs_consistency.py              -> 5 passed
+drift injection (each change restored afterwards):
+  route registered but not in README             -> test_every_registered_route_is_documented fails
+  README row with no route                       -> test_every_registered_route_is_documented fails
+  a new migration file (stale range)             -> test_readme_reports_the_applied_migration_range fails
+  a task the README names set to `review`        -> test_task_claims_match_the_task_contracts fails
+  an unnamed task set to `blocked`               -> test_task_claims_match_the_task_contracts fails
+  a documented make target renamed               -> test_every_documented_make_target_exists fails
+  a README link pointed at a missing file        -> test_readme_referenced_paths_exist fails
+  restored                                       -> 5 passed
+make check                                       -> PASS (exit 0)
+  format-check / lint / typecheck                -> PASS
+  test-unit                                      -> PASS: 283 Python (+5), 341 web
+  test-integration                               -> PASS: 40
+  build / migrate / migrate-check / compose-check -> PASS
+make migrate-test                                -> PASS (baseline, drift detection, seed, 24 CHECK rules, roundtrip)
+```
+
+The first `make check` on this branch failed at `format-check`: ruff wanted to wrap one line in the new
+guard. Fixed in c149de3; the run above is the clean one. Facts about the VPS in DEPLOYMENT.md
+(UTC clock, cron times, 30-day prune, no `make`, the brief 404 after a web restart) were read on the
+host over SSH on 2026-09-14, and the first production `source-report` is recorded in the plan's
+status section.
 
 **Known limitations / risks:** the guard checks mechanical claims only; prose can still drift.
 
